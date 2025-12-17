@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meu Node - Central de Organizacao</title>
+  <meta name="theme-color" content="#0f172a">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="bg-gradient"></div>
+  <div class="bg-noise"></div>
+
+  <div class="app">
+    <header class="top glass">
+      <div class="brand">
+        <div class="logo-dot"></div>
+        <div>
+          <div class="brand-title">Meu Node</div>
+          <div class="brand-sub">Organizacao flexivel, visual limpo</div>
+        </div>
+      </div>
+      <div class="search-global">
+        <input id="globalSearch" type="search" placeholder="Buscar itens, tags ou notas..." />
+      </div>
+      <div class="quick">
+        <input id="quickInput" type="text" placeholder="Captura rapida: #tag @today" />
+        <select id="quickType"></select>
+        <button id="quickAdd" class="ghost-btn">Adicionar</button>
+      </div>
+      <div class="top-actions">
+        <button id="newItem" class="ghost-btn">Novo item</button>
+        <button id="newType" class="ghost-btn">Novo tipo</button>
+        <button id="newView" class="ghost-btn">Nova visao</button>
+        <button id="openSettings" class="ghost-btn">Ajustes</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="side glass">
+        <section class="side-section">
+          <div class="section-header">
+            <div>
+              <div class="eyebrow">Areas</div>
+              <h2>Espacos</h2>
+            </div>
+            <div class="section-actions">
+              <button id="addArea" class="mini-btn">+</button>
+              <button class="mini-btn toggle" data-toggle="areas">-</button>
+            </div>
+          </div>
+          <div id="areasList" class="list"></div>
+        </section>
+
+        <section class="side-section">
+          <div class="section-header">
+            <div>
+              <div class="eyebrow">Visoes</div>
+              <h2>Vistas</h2>
+            </div>
+            <div class="section-actions">
+              <button id="addView" class="mini-btn">+</button>
+              <button class="mini-btn toggle" data-toggle="views">-</button>
+            </div>
+          </div>
+          <div id="viewsList" class="list"></div>
+        </section>
+
+        <section class="side-section">
+          <div class="section-header">
+            <div>
+              <div class="eyebrow">Tipos</div>
+              <h2>Modelos</h2>
+            </div>
+            <div class="section-actions">
+              <button id="addType" class="mini-btn">+</button>
+              <button class="mini-btn toggle" data-toggle="types">-</button>
+            </div>
+          </div>
+          <div id="typesList" class="list"></div>
+        </section>
+      </aside>
+
+      <section class="main glass">
+        <div class="main-header">
+          <div>
+            <div class="eyebrow">Visao atual</div>
+            <h2 id="mainTitle">Tudo</h2>
+          </div>
+          <div class="main-actions">
+            <select id="layoutSelect">
+              <option value="list">Lista</option>
+              <option value="board">Quadro</option>
+            </select>
+            <select id="sortSelect">
+              <option value="updated">Atualizado</option>
+              <option value="due">Prazo</option>
+              <option value="title">Titulo</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="emptyState" class="empty hidden">
+          <h3>Nenhum item ainda</h3>
+          <p>Crie seu primeiro tipo e comece a organizar do seu jeito.</p>
+          <div class="empty-actions">
+            <button id="emptyNewType" class="ghost-btn">Criar tipo</button>
+            <button id="emptyNewArea" class="ghost-btn">Criar area</button>
+          </div>
+        </div>
+
+        <div id="itemsBoard" class="board hidden"></div>
+        <div id="itemsList" class="items"></div>
+      </section>
+
+      <aside class="details glass">
+        <div class="details-header">
+          <div>
+            <div class="eyebrow">Detalhes</div>
+            <h2>Item</h2>
+          </div>
+          <button id="deleteItem" class="ghost-btn danger">Excluir</button>
+        </div>
+
+        <div id="detailsEmpty" class="empty">
+          <h3>Selecione um item</h3>
+          <p>Edite campos, tags e detalhes aqui.</p>
+        </div>
+
+        <div id="detailsForm" class="details-form hidden">
+          <label class="field">
+            <span>Titulo</span>
+            <input id="itemTitle" type="text" placeholder="Titulo do item" />
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>Tipo</span>
+              <select id="itemType"></select>
+            </label>
+            <label class="field">
+              <span>Area</span>
+              <select id="itemArea"></select>
+            </label>
+          </div>
+
+          <div id="statusRow" class="field-row">
+            <label class="field">
+              <span>Status</span>
+              <select id="itemStatus">
+                <option value="todo">A fazer</option>
+                <option value="doing">Em progresso</option>
+                <option value="done">Feito</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Prazo</span>
+              <input id="itemDue" type="date" />
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Tags</span>
+            <input id="itemTags" type="text" placeholder="tag1, tag2" />
+          </label>
+
+          <div id="progressRow" class="field hidden">
+            <span>Progresso</span>
+            <div class="progress-wrap">
+              <input id="itemProgress" type="range" min="0" max="100" value="0" />
+              <span id="itemProgressValue" class="pill">0%</span>
+            </div>
+          </div>
+
+          <div id="checklistRow" class="field hidden">
+            <div class="field-row">
+              <span>Checklist</span>
+              <button id="addChecklist" class="mini-btn">+</button>
+            </div>
+            <div id="checklistList" class="checklist"></div>
+          </div>
+
+          <div id="customFields" class="custom-fields"></div>
+
+          <label class="field">
+            <span>Notas</span>
+            <textarea id="itemNotes" rows="6" placeholder="Observacoes, ideias, referencias..."></textarea>
+          </label>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <div id="modalBackdrop" class="modal-backdrop hidden">
+    <div class="modal glass">
+      <div class="modal-header">
+        <div>
+          <div class="eyebrow" id="modalEyebrow">Editor</div>
+          <h2 id="modalTitle">Novo</h2>
+        </div>
+        <button id="modalClose" class="mini-btn">x</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+      <div class="modal-actions">
+        <button id="modalDelete" class="ghost-btn danger hidden">Excluir</button>
+        <button id="modalCancel" class="ghost-btn">Cancelar</button>
+        <button id="modalSave" class="ghost-btn">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
