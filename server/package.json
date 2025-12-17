@@ -8,7 +8,7 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "better-sqlite3": "^9.4.3",
+    "@libsql/client": "^0.5.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2"

@@ -1,34 +1,26 @@
-const fs = require("fs");
-const path = require("path");
+const { createClient } = require("@libsql/client");
 const express = require("express");
 const cors = require("cors");
-const Database = require("better-sqlite3");
 require("dotenv").config();
 
 const app = express();
 
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.API_KEY || "change-me";
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, "data.db");
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
 const STATE_KEY = process.env.STATE_KEY || "state";
+const TURSO_URL = process.env.TURSO_URL;
+const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || "";
 
-ensureDbDir(DB_PATH);
-const db = new Database(DB_PATH);
+if (!TURSO_URL) {
+  console.error("Missing TURSO_URL.");
+  process.exit(1);
+}
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS kv (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
-`);
-
-const stmtGet = db.prepare("SELECT value, updated_at FROM kv WHERE key = ?");
-const stmtSet = db.prepare(
-  "INSERT INTO kv (key, value, updated_at) VALUES (@key, @value, @updated_at) " +
-    "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
-);
+const client = createClient({
+  url: TURSO_URL,
+  authToken: TURSO_AUTH_TOKEN,
+});
 
 app.use(
   cors({
@@ -51,15 +43,19 @@ app.use((req, res, next) => {
   return res.status(401).json({ error: "unauthorized" });
 });
 
-app.get("/state", (_req, res) => {
-  const row = stmtGet.get(STATE_KEY);
-  if (!row) return res.status(404).json({ error: "empty" });
-  const parsed = safeJsonParse(row.value);
-  if (!parsed) return res.status(500).json({ error: "invalid_state" });
-  res.json({ state: parsed, updatedAt: row.updated_at });
+app.get("/state", async (_req, res) => {
+  try {
+    const row = await getStateRow();
+    if (!row) return res.status(404).json({ error: "empty" });
+    const parsed = safeJsonParse(row.value);
+    if (!parsed) return res.status(500).json({ error: "invalid_state" });
+    res.json({ state: parsed, updatedAt: Number(row.updated_at) || Date.now() });
+  } catch (error) {
+    res.status(500).json({ error: "db_error" });
+  }
 });
 
-app.put("/state", (req, res) => {
+app.put("/state", async (req, res) => {
   const incoming = req.body && typeof req.body === "object" ? req.body : null;
   const incomingState = incoming && incoming.state ? incoming.state : incoming;
   if (!incomingState || typeof incomingState !== "object") {
@@ -69,18 +65,25 @@ app.put("/state", (req, res) => {
   const incomingUpdatedAt =
     incoming && Number.isFinite(incoming.updatedAt) ? incoming.updatedAt : Date.now();
 
-  stmtSet.run({
-    key: STATE_KEY,
-    value: JSON.stringify(incomingState),
-    updated_at: incomingUpdatedAt,
+  try {
+    await setStateRow(incomingState, incomingUpdatedAt);
+    res.json({ ok: true, updatedAt: incomingUpdatedAt });
+  } catch (error) {
+    res.status(500).json({ error: "db_error" });
+  }
+});
+
+start().catch((error) => {
+  console.error("Failed to start API.", error);
+  process.exit(1);
+});
+
+async function start() {
+  await initDb();
+  app.listen(PORT, () => {
+    console.log(`API pronta na porta ${PORT}`);
   });
-
-  res.json({ ok: true, updatedAt: incomingUpdatedAt });
-});
-
-app.listen(PORT, () => {
-  console.log(`API pronta na porta ${PORT}`);
-});
+}
 
 function safeJsonParse(value) {
   try {
@@ -90,8 +93,29 @@ function safeJsonParse(value) {
   }
 }
 
-function ensureDbDir(dbPath) {
-  const dir = path.dirname(dbPath);
-  if (!dir || dir === ".") return;
-  fs.mkdirSync(dir, { recursive: true });
+async function initDb() {
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS kv (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+}
+
+async function getStateRow() {
+  const result = await client.execute({
+    sql: "SELECT value, updated_at FROM kv WHERE key = ?",
+    args: [STATE_KEY],
+  });
+  return result.rows && result.rows[0] ? result.rows[0] : null;
+}
+
+async function setStateRow(state, updatedAt) {
+  await client.execute({
+    sql:
+      "INSERT INTO kv (key, value, updated_at) VALUES (?, ?, ?) " +
+      "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+    args: [STATE_KEY, JSON.stringify(state), updatedAt],
+  });
 }
