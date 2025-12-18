@@ -2,6 +2,8 @@
 
 const STORAGE_KEY = "meu-node-rebuild-v1";
 const REMOTE_KEY = "meu-node-remote-v1";
+const DEFAULT_API_URL = "https://meu-node.onrender.com";
+const DEFAULT_API_KEY = "meu-node-2025-abc123";
 
 const STATUS_ORDER = ["todo", "doing", "done"];
 const STATUS_LABELS = {
@@ -72,6 +74,10 @@ const sync = { timer: null, busy: false };
 
 function init() {
   bindEvents();
+  remote.url = DEFAULT_API_URL;
+  remote.apiKey = DEFAULT_API_KEY;
+  remote.autoSync = true;
+  saveRemoteConfig();
   renderAll();
   if (remote.autoSync && remote.url) {
     pullState();
@@ -1795,9 +1801,9 @@ function normalizeState(data) {
 
 function defaultRemoteConfig() {
   return {
-    url: "",
-    apiKey: "",
-    autoSync: false,
+    url: DEFAULT_API_URL,
+    apiKey: DEFAULT_API_KEY,
+    autoSync: true,
     lastSyncAt: null,
     lastError: ""
   };
