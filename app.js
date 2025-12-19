@@ -31,6 +31,8 @@ const el = {
   newType: document.getElementById("newType"),
   newView: document.getElementById("newView"),
   openSettings: document.getElementById("openSettings"),
+  moreToggle: document.getElementById("moreToggle"),
+  moreMenu: document.getElementById("moreMenu"),
   addArea: document.getElementById("addArea"),
   addView: document.getElementById("addView"),
   addType: document.getElementById("addType"),
@@ -41,6 +43,8 @@ const el = {
   mainTitle: document.getElementById("mainTitle"),
   activeFilters: document.getElementById("activeFilters"),
   mainActionsExtra: document.getElementById("mainActionsExtra"),
+  quickToggle: document.getElementById("quickToggle"),
+  quickPanel: document.getElementById("quickPanel"),
   syncStatus: document.getElementById("syncStatus"),
   selectionBar: document.getElementById("selectionBar"),
   layoutSelect: document.getElementById("layoutSelect"),
@@ -52,12 +56,15 @@ const el = {
   itemsList: document.getElementById("itemsList"),
   itemsBoard: document.getElementById("itemsBoard"),
   calendarView: document.getElementById("calendarView"),
+  detailsPanel: document.getElementById("detailsPanel"),
+  detailsBackdrop: document.getElementById("detailsBackdrop"),
   detailsEmpty: document.getElementById("detailsEmpty"),
   detailsForm: document.getElementById("detailsForm"),
   detailsQuickActions: document.getElementById("detailsQuickActions"),
   advancedToggle: document.getElementById("advancedToggle"),
   advancedSection: document.getElementById("advancedSection"),
   returnInbox: document.getElementById("returnInbox"),
+  detailsClose: document.getElementById("detailsClose"),
   deleteItem: document.getElementById("deleteItem"),
   itemTitle: document.getElementById("itemTitle"),
   itemType: document.getElementById("itemType"),
@@ -137,10 +144,40 @@ function bindEvents() {
     saveState();
   });
 
+  if (el.quickToggle) {
+    el.quickToggle.addEventListener("click", () => {
+      state.ui.quickOpen = !state.ui.quickOpen;
+      saveState();
+      renderQuickPanel();
+      if (state.ui.quickOpen && el.quickInput) {
+        el.quickInput.focus();
+      }
+    });
+  }
+
   el.newItem.addEventListener("click", () => openNewItemModal());
-  el.newType.addEventListener("click", () => openTypeModal());
-  el.newView.addEventListener("click", () => openViewModal());
-  el.openSettings.addEventListener("click", () => openSettingsModal());
+  el.newType.addEventListener("click", () => {
+    openTypeModal();
+    closeMoreMenu();
+  });
+  el.newView.addEventListener("click", () => {
+    openViewModal();
+    closeMoreMenu();
+  });
+  el.openSettings.addEventListener("click", () => {
+    openSettingsModal();
+    closeMoreMenu();
+  });
+
+  if (el.moreToggle && el.moreMenu) {
+    el.moreToggle.addEventListener("click", () => {
+      toggleMenu(el.moreMenu);
+      el.moreToggle.setAttribute(
+        "aria-expanded",
+        String(!el.moreMenu.classList.contains("hidden"))
+      );
+    });
+  }
 
   el.addArea.addEventListener("click", () => openAreaModal());
   el.addView.addEventListener("click", () => openViewModal());
@@ -315,6 +352,13 @@ function bindEvents() {
     }, { confirmLabel: "Excluir" });
   });
 
+  if (el.detailsClose) {
+    el.detailsClose.addEventListener("click", closeDetails);
+  }
+  if (el.detailsBackdrop) {
+    el.detailsBackdrop.addEventListener("click", closeDetails);
+  }
+
   el.modalClose.addEventListener("click", closeModal);
   el.modalCancel.addEventListener("click", closeModal);
   el.modalSave.addEventListener("click", handleModalSave);
@@ -395,6 +439,15 @@ function renderQuick() {
   el.quickAdd.disabled = false;
 
   el.quickType.value = state.ui.quickTypeId || "";
+}
+
+function renderQuickPanel() {
+  if (!el.quickPanel || !el.quickToggle) {
+    return;
+  }
+  const isOpen = Boolean(state.ui.quickOpen);
+  setHidden(el.quickPanel, !isOpen);
+  el.quickToggle.setAttribute("aria-expanded", String(isOpen));
 }
 
 function buildCountsMap(items, key) {
@@ -535,6 +588,7 @@ function renderMain() {
   el.sortSelect.value = state.ui.sort;
   renderActiveFiltersBar();
   renderMainHeaderActions();
+  renderQuickPanel();
   syncSelection(items);
   renderSelectionBar();
 
@@ -757,7 +811,7 @@ function renderMainHeaderActions() {
     });
     el.mainActionsExtra.append(calendarButton);
   }
-  // Atualiza indicador de sincronização no header, se presente
+  // Atualiza indicador de sincronizacao, se presente.
   if (el.syncStatus) {
     el.syncStatus.textContent = buildSyncStatus();
   }
@@ -1299,10 +1353,34 @@ function renderBoard(items) {
     el.itemsBoard.append(column);
   });
 }
+
+function setDetailsOpen(isOpen) {
+  document.body.classList.toggle("details-open", isOpen);
+  if (el.detailsPanel) {
+    el.detailsPanel.setAttribute("aria-hidden", String(!isOpen));
+  }
+  if (el.detailsBackdrop) {
+    setHidden(el.detailsBackdrop, !isOpen);
+    el.detailsBackdrop.setAttribute("aria-hidden", String(!isOpen));
+  }
+}
+
+function closeDetails() {
+  if (!state.selectedItemId) {
+    setDetailsOpen(false);
+    return;
+  }
+  state.selectedItemId = null;
+  saveState();
+  renderMain();
+  renderDetails();
+}
+
 function renderDetails() {
   const item = getSelectedItem();
+  setDetailsOpen(Boolean(item));
   if (!item) {
-    setHidden(el.detailsEmpty, false);
+    setHidden(el.detailsEmpty, true);
     setHidden(el.detailsForm, true);
     el.deleteItem.disabled = true;
     if (el.returnInbox) {
@@ -2450,6 +2528,9 @@ function handleGlobalShortcuts(event) {
 function handleGlobalClick(event) {
   if (openMenu && !openMenu.contains(event.target)) {
     openMenu.classList.add("hidden");
+    if (openMenu === el.moreMenu && el.moreToggle) {
+      el.moreToggle.setAttribute("aria-expanded", "false");
+    }
     openMenu = null;
   }
   if (commandState.open && el.commandPalette) {
@@ -2981,6 +3062,22 @@ function toggleMenu(menu, shouldOpen) {
     if (openMenu === menu) {
       openMenu = null;
     }
+  }
+  if (menu === el.moreMenu && el.moreToggle) {
+    el.moreToggle.setAttribute("aria-expanded", String(openNow));
+  }
+}
+
+function closeMoreMenu() {
+  if (!el.moreMenu) {
+    return;
+  }
+  el.moreMenu.classList.add("hidden");
+  if (openMenu === el.moreMenu) {
+    openMenu = null;
+  }
+  if (el.moreToggle) {
+    el.moreToggle.setAttribute("aria-expanded", "false");
   }
 }
 
@@ -3689,6 +3786,7 @@ function defaultState() {
       sort: "updated",
       search: "",
       quickTypeId: null,
+      quickOpen: false,
       triageMode: false,
       calendarMonth: null,
       selection: [],
@@ -3732,6 +3830,7 @@ function normalizeState(data) {
     ...base.ui.detailsSections,
     ...((data.ui && data.ui.detailsSections) || {})
   };
+  ui.quickOpen = Boolean(ui.quickOpen);
   ui.selection = Array.isArray(ui.selection) ? ui.selection : [];
   ui.selectionAnchor = Number.isFinite(ui.selectionAnchor) ? ui.selectionAnchor : null;
   const deleted = normalizeDeletedState(data.deleted);

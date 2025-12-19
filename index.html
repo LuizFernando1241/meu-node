@@ -17,7 +17,7 @@
   <div class="bg-noise"></div>
 
   <div class="app" id="appRoot">
-    <header class="top glass">
+    <header class="top panel">
       <div class="brand">
         <div class="logo-dot"></div>
         <div>
@@ -28,76 +28,75 @@
       <div class="search-global">
         <input id="globalSearch" type="search" aria-label="Buscar itens, tags ou notas" placeholder="Buscar itens, tags ou notas..." />
       </div>
-      <div class="quick">
-        <input id="quickInput" type="text" aria-label="Captura rápida" placeholder="Captura rápida: #tag @today" />
-        <select id="quickType" aria-label="Tipo para captura rápida"></select>
-        <button id="quickAdd" class="ghost-btn" aria-label="Adicionar item rápido">Adicionar</button>
-      </div>
       <div class="top-actions">
-        <button id="newItem" class="ghost-btn">Novo item</button>
-        <button id="newType" class="ghost-btn">Criar tipo</button>
-        <button id="newView" class="ghost-btn">Nova visão</button>
-        <button id="openSettings" class="ghost-btn">Ajustes</button>
+        <button id="newItem" class="primary-btn">Novo item</button>
+        <div class="menu">
+          <button id="moreToggle" class="ghost-btn icon-btn" aria-label="Mais ações" aria-expanded="false">&#8942;</button>
+          <div id="moreMenu" class="menu-panel hidden" role="menu">
+            <button id="newType" class="ghost-btn" role="menuitem">Criar tipo</button>
+            <button id="newView" class="ghost-btn" role="menuitem">Nova visão</button>
+            <button id="openSettings" class="ghost-btn" role="menuitem">Ajustes</button>
+          </div>
+        </div>
       </div>
-      <div id="syncStatus" class="list-meta" aria-live="polite"></div>
     </header>
 
     <main class="layout">
-      <aside class="side glass">
-        <section class="side-section" id="flowSection">
-          <div class="section-header">
-            <div>
-              <div class="eyebrow">Fluxo</div>
-              <h2>Fluxo</h2>
+      <aside class="side panel">
+        <div class="side-group">
+          <div class="side-group-title">Navegação</div>
+          <section class="side-section" id="flowSection">
+            <div class="section-header">
+              <h3>Fluxo</h3>
             </div>
-          </div>
-          <div id="flowList" class="list"></div>
-        </section>
+            <div id="flowList" class="list"></div>
+          </section>
 
-        <section class="side-section">
-          <div class="section-header">
-            <div>
-              <div class="eyebrow">Áreas</div>
-              <h2>Áreas</h2>
+          <section class="side-section">
+            <div class="section-header">
+              <h3>Visões</h3>
+              <div class="section-actions">
+                <button id="addView" class="mini-btn" aria-label="Adicionar visão">+</button>
+                <button class="mini-btn toggle" data-toggle="views" aria-controls="viewsList" aria-expanded="true">-</button>
+              </div>
             </div>
-            <div class="section-actions">
-              <button id="addArea" class="mini-btn" aria-label="Adicionar área">+</button>
-              <button class="mini-btn toggle" data-toggle="areas" aria-controls="areasList" aria-expanded="true">-</button>
-            </div>
-          </div>
-          <div id="areasList" class="list"></div>
-        </section>
+            <div id="viewsList" class="list"></div>
+          </section>
+        </div>
 
-        <section class="side-section">
-          <div class="section-header">
-            <div>
-              <div class="eyebrow">Visões</div>
-              <h2>Visões</h2>
-            </div>
-            <div class="section-actions">
-              <button id="addView" class="mini-btn" aria-label="Adicionar visão">+</button>
-              <button class="mini-btn toggle" data-toggle="views" aria-controls="viewsList" aria-expanded="true">-</button>
-            </div>
-          </div>
-          <div id="viewsList" class="list"></div>
-        </section>
+        <div class="side-divider"></div>
 
-        <section class="side-section">
-          <div class="section-header">
-            <div>
-              <div class="eyebrow">Tipos</div>
-              <h2>Tipos</h2>
+        <div class="side-group">
+          <div class="side-group-title">Organização</div>
+          <section class="side-section">
+            <div class="section-header">
+              <h3>Áreas</h3>
+              <div class="section-actions">
+                <button id="addArea" class="mini-btn" aria-label="Adicionar área">+</button>
+                <button class="mini-btn toggle" data-toggle="areas" aria-controls="areasList" aria-expanded="true">-</button>
+              </div>
             </div>
-            <div class="section-actions">
-              <button id="addType" class="mini-btn" aria-label="Adicionar tipo">+</button>
-              <button class="mini-btn toggle" data-toggle="types" aria-controls="typesList" aria-expanded="true">-</button>
+            <div id="areasList" class="list"></div>
+          </section>
+
+          <section class="side-section">
+            <div class="section-header">
+              <h3>Tipos</h3>
+              <div class="section-actions">
+                <button id="addType" class="mini-btn" aria-label="Adicionar tipo">+</button>
+                <button class="mini-btn toggle" data-toggle="types" aria-controls="typesList" aria-expanded="true">-</button>
+              </div>
             </div>
-          </div>
-          <div id="typesList" class="list"></div>
-        </section>
+            <div id="typesList" class="list"></div>
+          </section>
+        </div>
+
+        <div class="side-footer">
+          <div id="syncStatus" class="list-meta" aria-live="polite"></div>
+        </div>
       </aside>
 
-      <section class="main glass">
+      <section class="main panel">
         <div class="main-header">
           <div>
             <div class="eyebrow">Visão atual</div>
@@ -105,6 +104,7 @@
           </div>
           <div class="main-actions">
             <div id="mainActionsExtra" class="main-actions-extra"></div>
+            <button id="quickToggle" class="ghost-btn" aria-controls="quickPanel" aria-expanded="false">Captura rápida</button>
             <select id="layoutSelect" aria-label="Selecionar layout">
               <option value="list">Lista</option>
               <option value="board">Quadro</option>
@@ -115,6 +115,13 @@
               <option value="due">Prazo</option>
               <option value="title">Título</option>
             </select>
+          </div>
+        </div>
+        <div id="quickPanel" class="quick-panel hidden">
+          <div class="quick-form">
+            <input id="quickInput" type="text" aria-label="Captura rápida" placeholder="Captura rápida: #tag @today" />
+            <select id="quickType" aria-label="Tipo para captura rápida"></select>
+            <button id="quickAdd" class="primary-btn" aria-label="Adicionar item rápido">Adicionar</button>
           </div>
         </div>
         <div id="activeFilters" class="active-filters hidden" aria-label="Filtros ativos" aria-live="polite"></div>
@@ -135,13 +142,14 @@
         <div id="calendarView" class="calendar hidden"></div>
       </section>
 
-      <aside class="details glass">
+      <aside id="detailsPanel" class="details panel details-drawer" aria-hidden="true">
         <div class="details-header">
           <div>
             <div class="eyebrow">Detalhes</div>
             <h2>Item</h2>
           </div>
           <div class="details-actions">
+            <button id="detailsClose" class="ghost-btn icon-btn" aria-label="Fechar detalhes">&times;</button>
             <button id="returnInbox" class="ghost-btn">Voltar para Inbox</button>
             <button id="deleteItem" class="ghost-btn danger">Excluir</button>
           </div>
@@ -257,6 +265,8 @@
         </div>
       </aside>
     </main>
+
+    <div id="detailsBackdrop" class="details-backdrop hidden" aria-hidden="true"></div>
   </div>
 
   <div id="modalBackdrop" class="modal-backdrop hidden">
