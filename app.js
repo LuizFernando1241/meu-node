@@ -401,6 +401,7 @@ function defaultState() {
       calendarWeekOffset: 0,
       calendarMonthOffset: 0,
       projectFilter: "active",
+      projectViewMode: "list",
       notesAreaId: null,
       notesNoteId: null,
       inboxSelection: [],
@@ -1461,6 +1462,14 @@ function renderProjectDetail(root, projectId) {
     return;
   }
 
+  const viewToggle = createElement("div", "week-tabs");
+  const listBtn = createButton("Lista", "tab-btn", () => setProjectViewMode("list"));
+  const kanbanBtn = createButton("Kanban", "tab-btn", () => setProjectViewMode("kanban"));
+  listBtn.classList.toggle("active", state.ui.projectViewMode !== "kanban");
+  kanbanBtn.classList.toggle("active", state.ui.projectViewMode === "kanban");
+  viewToggle.append(listBtn, kanbanBtn);
+  root.append(viewToggle);
+
   const summary = createSection("Resumo", "");
   const nameInput = document.createElement("input");
   nameInput.value = project.name;
@@ -1534,27 +1543,31 @@ function renderProjectDetail(root, projectId) {
     }
   });
   tasksSection.body.append(buildField("Nova tarefa", quickInput));
-  STATUS_ORDER.forEach((status) => {
-    const group = createElement("div", "section");
-    const header = createElement("div", "section-header");
-    header.append(
-      createElement("div", "section-title", STATUS_LABELS[status]),
-      createElement("div", "list-meta", "")
-    );
-    group.append(header);
-    const tasks = state.tasks.filter(
-      (task) =>
-        task.projectId === project.id &&
-        !task.archived &&
-        task.status === status
-    );
-    if (!tasks.length) {
-      group.append(createElement("div", "list-meta", "Sem tarefas."));
-    } else {
-      tasks.forEach((task) => group.append(createTaskRow(task)));
-    }
-    tasksSection.body.append(group);
-  });
+  if (state.ui.projectViewMode === "kanban") {
+    tasksSection.body.append(renderProjectKanban(project));
+  } else {
+    STATUS_ORDER.forEach((status) => {
+      const group = createElement("div", "section");
+      const header = createElement("div", "section-header");
+      header.append(
+        createElement("div", "section-title", STATUS_LABELS[status]),
+        createElement("div", "list-meta", "")
+      );
+      group.append(header);
+      const tasks = state.tasks.filter(
+        (task) =>
+          task.projectId === project.id &&
+          !task.archived &&
+          task.status === status
+      );
+      if (!tasks.length) {
+        group.append(createElement("div", "list-meta", "Sem tarefas."));
+      } else {
+        tasks.forEach((task) => group.append(createTaskRow(task)));
+      }
+      tasksSection.body.append(group);
+    });
+  }
   root.append(tasksSection.section);
 
   const notesSection = createSection("Notas do projeto", "");
@@ -1665,6 +1678,7 @@ function renderNotesView(root, noteId) {
   }
 
   layout.append(editor);
+  layout.append(createNotesSidePanel(note));
   root.append(layout);
 }
 
@@ -3141,6 +3155,12 @@ function setCalendarView(view) {
   renderMain();
 }
 
+function setProjectViewMode(mode) {
+  state.ui.projectViewMode = mode;
+  saveState();
+  renderMain();
+}
+
 function shiftCalendarWeek(delta) {
   state.ui.calendarWeekOffset += delta;
   saveState();
@@ -3219,6 +3239,116 @@ function renderCalendarMonth() {
     wrapper.append(cell);
   }
   return wrapper;
+}
+
+function renderProjectKanban(project) {
+  const board = createElement("div", "kanban-grid");
+  STATUS_ORDER.forEach((status) => {
+    const column = createElement("div", "kanban-column");
+    const header = createElement("div", "section-header");
+    header.append(createElement("div", "section-title", STATUS_LABELS[status]));
+    column.append(header);
+    column.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "move";
+      }
+    });
+    column.addEventListener("dragenter", () => column.classList.add("dropping"));
+    column.addEventListener("dragleave", () => column.classList.remove("dropping"));
+    column.addEventListener("drop", (event) => {
+      event.preventDefault();
+      column.classList.remove("dropping");
+      const data = parseDragData(event);
+      if (!data || data.kind !== "task") {
+        return;
+      }
+      const task = getTask(data.id);
+      if (!task || task.projectId !== project.id) {
+        return;
+      }
+      task.status = status;
+      touch(task);
+      saveState();
+      renderMain();
+    });
+    const tasks = state.tasks.filter(
+      (task) =>
+        task.projectId === project.id &&
+        !task.archived &&
+        task.status === status
+    );
+    if (!tasks.length) {
+      column.append(createElement("div", "list-meta", "Sem tarefas."));
+    } else {
+      tasks.forEach((task) => column.append(createKanbanCard(task)));
+    }
+    board.append(column);
+  });
+  return board;
+}
+
+function createKanbanCard(task) {
+  const card = createElement("div", "kanban-card");
+  card.append(createElement("div", "card-title", task.title));
+  const meta = [];
+  if (task.dueDate) {
+    meta.push(task.dueDate);
+  }
+  if (task.priority) {
+    meta.push(PRIORITY_LABELS[task.priority]);
+  }
+  if (meta.length) {
+    card.append(createElement("div", "card-meta", meta.join(" / ")));
+  }
+  card.draggable = true;
+  card.addEventListener("dragstart", (event) => setDragData(event, "task", task.id));
+  card.addEventListener("click", () => selectItem("task", task.id));
+  return card;
+}
+
+function createNotesSidePanel(note) {
+  const panel = createElement("div", "notes-panel");
+  if (!note) {
+    panel.append(createElement("div", "empty", "Sem nota selecionada."));
+    return panel;
+  }
+
+  const links = createSection("Links", "");
+  const linkedTasks = state.tasks.filter(
+    (task) => task.linkedNoteId === note.id || task.sourceNoteId === note.id
+  );
+  if (!linkedTasks.length) {
+    links.body.append(createElement("div", "list-meta", "Sem tarefas vinculadas."));
+  } else {
+    linkedTasks.forEach((task) => links.body.append(createTaskRow(task, { compact: true })));
+  }
+
+  const backlinks = createSection("Backlinks", "");
+  const relatedNotes = state.notes.filter(
+    (entry) =>
+      entry.id !== note.id &&
+      !entry.archived &&
+      matchesNoteSearch(entry, note.title)
+  );
+  if (!relatedNotes.length) {
+    backlinks.body.append(createElement("div", "list-meta", "Sem backlinks."));
+  } else {
+    relatedNotes.forEach((entry) => backlinks.body.append(createNoteCard(entry)));
+  }
+
+  const details = createSection("Detalhes", "");
+  const area = note.areaId ? getArea(note.areaId) : null;
+  const project = note.projectId ? getProject(note.projectId) : null;
+  details.body.append(
+    createElement("div", "list-meta", `Area: ${area ? area.name : "Sem area"}`),
+    createElement("div", "list-meta", `Projeto: ${project ? project.name : "Sem projeto"}`),
+    createElement("div", "list-meta", `Criado: ${note.createdAt || "-"}`),
+    createElement("div", "list-meta", `Atualizado: ${note.updatedAt || "-"}`)
+  );
+
+  panel.append(links.section, backlinks.section, details.section);
+  return panel;
 }
 
 function createAreaSelect(selectedId) {

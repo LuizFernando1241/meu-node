@@ -706,7 +706,7 @@ textarea::placeholder {
 
 .notes-layout {
   display: grid;
-  grid-template-columns: minmax(180px, 220px) 1fr;
+  grid-template-columns: minmax(180px, 220px) 1fr minmax(220px, 320px);
   gap: 12px;
 }
 
@@ -736,6 +736,47 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.notes-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kanban-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.kanban-column {
+  padding: 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 260px;
+}
+
+.kanban-column.dropping {
+  border-color: rgba(242, 106, 79, 0.6);
+  background: rgba(242, 106, 79, 0.12);
+}
+
+.kanban-card {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 22px rgba(31, 26, 20, 0.08);
+  cursor: grab;
+}
+
+.kanban-card:active {
+  cursor: grabbing;
 }
 
 .block {
@@ -1065,6 +1106,9 @@ body.details-open .details-backdrop {
   }
   .week-layout,
   .notes-layout {
+    grid-template-columns: 1fr;
+  }
+  .kanban-grid {
     grid-template-columns: 1fr;
   }
 }
