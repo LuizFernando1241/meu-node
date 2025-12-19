@@ -307,6 +307,11 @@ function closeAllMenus() {
 }
 
 function applyRouteFromLocation() {
+  const query = new URLSearchParams(window.location.search);
+  const forwarded = query.get("path");
+  if (forwarded) {
+    history.replaceState({}, "", forwarded);
+  }
   const path = normalizePath(window.location.pathname);
   const route = parseRoute(path);
   if (!route) {
