@@ -4,6 +4,7 @@ const STORAGE_KEY = "meu-node-v2";
 const REMOTE_KEY = "meu-node-remote-v2";
 const DEFAULT_API_URL = "https://meu-node.onrender.com";
 const DEFAULT_API_KEY = "meu-node-2025-abc123";
+const BASE_PATH = "/meu-node";
 const SAVE_DEBOUNCE_MS = 250;
 
 const STATUS_ORDER = ["todo", "doing", "done"];
@@ -310,9 +311,9 @@ function applyRouteFromLocation() {
   const query = new URLSearchParams(window.location.search);
   const forwarded = query.get("path");
   if (forwarded) {
-    history.replaceState({}, "", forwarded);
+    history.replaceState({}, "", toPublicPath(normalizePath(forwarded)));
   }
-  const path = normalizePath(window.location.pathname);
+  const path = normalizePath(stripBasePath(window.location.pathname));
   const route = parseRoute(path);
   if (!route) {
     navigate("/today", { replace: true });
@@ -329,10 +330,11 @@ function navigate(path, options = {}) {
     return;
   }
   state.ui.route = normalized;
+  const publicPath = toPublicPath(normalized);
   if (options.replace) {
-    history.replaceState({}, "", normalized);
+    history.replaceState({}, "", publicPath);
   } else {
-    history.pushState({}, "", normalized);
+    history.pushState({}, "", publicPath);
   }
   saveState();
   renderAll();
@@ -348,6 +350,27 @@ function normalizePath(path) {
   }
   cleaned = cleaned.replace(/\/+$/, "");
   return cleaned || "/today";
+}
+
+function stripBasePath(path) {
+  if (!path) {
+    return "/";
+  }
+  if (path === BASE_PATH) {
+    return "/";
+  }
+  if (path.startsWith(`${BASE_PATH}/`)) {
+    return path.slice(BASE_PATH.length);
+  }
+  return path;
+}
+
+function toPublicPath(path) {
+  const normalized = normalizePath(path);
+  if (BASE_PATH && BASE_PATH !== "/") {
+    return `${BASE_PATH}${normalized}`;
+  }
+  return normalized;
 }
 
 function parseRoute(path) {
