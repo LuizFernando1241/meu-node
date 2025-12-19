@@ -1,6 +1,9 @@
 "use strict";
 
 const STORAGE_KEY = "meu-node-v2";
+const REMOTE_KEY = "meu-node-remote-v2";
+const DEFAULT_API_URL = "https://meu-node.onrender.com";
+const DEFAULT_API_KEY = "meu-node-2025-abc123";
 const SAVE_DEBOUNCE_MS = 250;
 
 const STATUS_ORDER = ["todo", "doing", "done"];
@@ -65,6 +68,7 @@ const el = {
   countWeek: document.getElementById("countWeek"),
   countProjects: document.getElementById("countProjects"),
   countNotes: document.getElementById("countNotes"),
+  syncStatus: document.getElementById("syncStatus"),
   pageEyebrow: document.getElementById("pageEyebrow"),
   pageTitle: document.getElementById("pageTitle"),
   pageActions: document.getElementById("pageActions"),
@@ -102,13 +106,19 @@ const commandState = {
 };
 
 let state = normalizeState(loadState());
+let remote = normalizeRemote(loadRemoteConfig());
+const sync = { timer: null, busy: false, pending: false, lastPushedHash: "" };
 let saveTimer = null;
 let openMenu = null;
 
 function init() {
   bindEvents();
+  applyDefaultRemoteConfig();
   applyRouteFromLocation();
   renderAll();
+  if (remote.url && remote.apiKey && remote.autoSync) {
+    pullState({ queuePush: true, pushOnEmpty: true });
+  }
 }
 
 init();
@@ -386,7 +396,10 @@ function defaultState() {
       weekStartsMonday: true,
       timeFormat: "24h",
       defaultEventDuration: 60,
-      timeStepMinutes: 30
+      timeStepMinutes: 30,
+      apiUrl: DEFAULT_API_URL,
+      apiKey: DEFAULT_API_KEY,
+      autoSync: true
     },
     meta: {
       lastReviewAt: null
@@ -457,6 +470,9 @@ function saveState(options = {}) {
     saveTimer = null;
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!options.skipSync) {
+    scheduleAutoSync();
+  }
   if (options.render !== false) {
     renderSidebar();
   }
@@ -470,6 +486,273 @@ function saveStateDebounced(options = {}) {
     saveTimer = null;
     saveState(options);
   }, SAVE_DEBOUNCE_MS);
+}
+
+function defaultRemoteConfig() {
+  return {
+    url: DEFAULT_API_URL,
+    apiKey: DEFAULT_API_KEY,
+    autoSync: true,
+    lastSyncAt: null,
+    lastError: ""
+  };
+}
+
+function loadRemoteConfig() {
+  const raw = localStorage.getItem(REMOTE_KEY);
+  if (!raw) {
+    return defaultRemoteConfig();
+  }
+  try {
+    return normalizeRemote(JSON.parse(raw));
+  } catch (error) {
+    return defaultRemoteConfig();
+  }
+}
+
+function normalizeRemote(data) {
+  const base = defaultRemoteConfig();
+  if (!data || typeof data !== "object") {
+    return base;
+  }
+  return {
+    url: typeof data.url === "string" ? data.url : base.url,
+    apiKey: typeof data.apiKey === "string" ? data.apiKey : base.apiKey,
+    autoSync: Boolean(data.autoSync),
+    lastSyncAt: Number.isFinite(data.lastSyncAt) ? data.lastSyncAt : base.lastSyncAt,
+    lastError: typeof data.lastError === "string" ? data.lastError : base.lastError
+  };
+}
+
+function saveRemoteConfig() {
+  localStorage.setItem(REMOTE_KEY, JSON.stringify(remote));
+}
+
+function applyDefaultRemoteConfig() {
+  let updated = false;
+  if (!remote.url && DEFAULT_API_URL) {
+    remote.url = DEFAULT_API_URL;
+    updated = true;
+  }
+  if (!remote.apiKey && DEFAULT_API_KEY) {
+    remote.apiKey = DEFAULT_API_KEY;
+    updated = true;
+  }
+  if (updated) {
+    saveRemoteConfig();
+  }
+  state.settings.apiUrl = remote.url;
+  state.settings.apiKey = remote.apiKey;
+  state.settings.autoSync = remote.autoSync;
+}
+
+function buildApiUrl(path) {
+  const base = (remote.url || "").trim();
+  if (!base) {
+    return "";
+  }
+  return base.replace(/\/+$/, "") + path;
+}
+
+function buildStateUrl() {
+  return buildApiUrl("/state");
+}
+
+function getAuthHeaders() {
+  const headers = { "Content-Type": "application/json" };
+  if (remote.apiKey) {
+    headers["X-API-Key"] = remote.apiKey;
+  }
+  return headers;
+}
+
+function getSyncState(source = state) {
+  return {
+    tasks: source.tasks || [],
+    events: source.events || [],
+    notes: source.notes || [],
+    projects: source.projects || [],
+    areas: source.areas || [],
+    inbox: source.inbox || [],
+    settings: source.settings || {},
+    meta: source.meta || {}
+  };
+}
+
+function hashSyncState(syncState) {
+  try {
+    return JSON.stringify(syncState);
+  } catch (error) {
+    return "";
+  }
+}
+
+function buildSyncStatus() {
+  if (!remote.url) {
+    return "Sync desativado";
+  }
+  if (remote.lastError) {
+    return `Erro: ${remote.lastError}`;
+  }
+  if (remote.lastSyncAt) {
+    return `Ultimo sync: ${new Date(remote.lastSyncAt).toLocaleString("pt-BR")}`;
+  }
+  return remote.autoSync ? "Sync ativo" : "Sync manual";
+}
+
+function refreshSyncStatus(message) {
+  if (el.syncStatus) {
+    el.syncStatus.textContent = message || buildSyncStatus();
+  }
+}
+
+function scheduleAutoSync() {
+  if (!remote.autoSync || !remote.url || !remote.apiKey) {
+    return;
+  }
+  sync.pending = true;
+  if (sync.timer) {
+    clearTimeout(sync.timer);
+  }
+  sync.timer = setTimeout(() => {
+    sync.timer = null;
+    if (sync.busy) {
+      return;
+    }
+    pushState({ silent: true });
+  }, 1000);
+}
+
+async function pushState(options = {}) {
+  const url = buildStateUrl();
+  if (!url) {
+    remote.lastError = "Configure URL";
+    saveRemoteConfig();
+    refreshSyncStatus();
+    return { ok: false, error: remote.lastError };
+  }
+  if (!remote.apiKey) {
+    remote.lastError = "Informe a API Key";
+    saveRemoteConfig();
+    refreshSyncStatus();
+    return { ok: false, error: remote.lastError };
+  }
+  if (sync.busy) {
+    sync.pending = true;
+    return { ok: false, error: "Sync em andamento" };
+  }
+  sync.busy = true;
+  sync.pending = false;
+  try {
+    const payloadState = getSyncState();
+    const payloadHash = hashSyncState(payloadState);
+    if (payloadHash && payloadHash === sync.lastPushedHash) {
+      refreshSyncStatus();
+      return { ok: true, skipped: true };
+    }
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ state: payloadState })
+    });
+    if (!response.ok) {
+      remote.lastError = `HTTP ${response.status}`;
+      saveRemoteConfig();
+      refreshSyncStatus();
+      return { ok: false, error: remote.lastError };
+    }
+    const data = await response.json().catch(() => ({}));
+    remote.lastSyncAt = Number.isFinite(data.updatedAt) ? data.updatedAt : Date.now();
+    remote.lastError = "";
+    saveRemoteConfig();
+    sync.lastPushedHash = payloadHash;
+    refreshSyncStatus();
+    return { ok: true };
+  } catch (error) {
+    remote.lastError = "Falha de rede";
+    saveRemoteConfig();
+    refreshSyncStatus();
+    return { ok: false, error: remote.lastError };
+  } finally {
+    sync.busy = false;
+    if (sync.pending) {
+      scheduleAutoSync();
+    }
+  }
+}
+
+async function pullState(options = {}) {
+  const url = buildStateUrl();
+  if (!url) {
+    remote.lastError = "Configure URL";
+    saveRemoteConfig();
+    refreshSyncStatus();
+    return { ok: false, error: remote.lastError };
+  }
+  if (!remote.apiKey) {
+    remote.lastError = "Informe a API Key";
+    saveRemoteConfig();
+    refreshSyncStatus();
+    return { ok: false, error: remote.lastError };
+  }
+  if (sync.busy) {
+    return { ok: false, error: "Sync em andamento" };
+  }
+  sync.busy = true;
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: getAuthHeaders()
+    });
+    if (response.status === 404) {
+      remote.lastError = "Servidor vazio";
+      saveRemoteConfig();
+      refreshSyncStatus();
+      if (options.pushOnEmpty) {
+        scheduleAutoSync();
+      }
+      return { ok: false, error: remote.lastError };
+    }
+    if (!response.ok) {
+      remote.lastError = `HTTP ${response.status}`;
+      saveRemoteConfig();
+      refreshSyncStatus();
+      return { ok: false, error: remote.lastError };
+    }
+    const data = await response.json().catch(() => null);
+    if (!data || !data.state || typeof data.state !== "object") {
+      remote.lastError = "Resposta invalida";
+      saveRemoteConfig();
+      refreshSyncStatus();
+      return { ok: false, error: remote.lastError };
+    }
+    const normalized = normalizeState(data.state);
+    state = normalized;
+    saveState({ skipSync: true });
+    if (Number.isFinite(data.updatedAt)) {
+      remote.lastSyncAt = data.updatedAt;
+    } else {
+      remote.lastSyncAt = Date.now();
+    }
+    remote.lastError = "";
+    saveRemoteConfig();
+    refreshSyncStatus();
+    if (options.queuePush) {
+      scheduleAutoSync();
+    }
+    renderAll();
+    return { ok: true };
+  } catch (error) {
+    remote.lastError = "Falha de rede";
+    saveRemoteConfig();
+    refreshSyncStatus();
+    return { ok: false, error: remote.lastError };
+  } finally {
+    sync.busy = false;
+    if (sync.pending) {
+      scheduleAutoSync();
+    }
+  }
 }
 
 function normalizeUpdatedAt(value) {
@@ -1040,6 +1323,7 @@ function renderSidebar() {
   setCount(el.countWeek, getNextDaysTasks(7).length);
   setCount(el.countProjects, state.projects.filter((project) => project.status === "active").length);
   setCount(el.countNotes, state.notes.length);
+  refreshSyncStatus();
 }
 
 function renderPageHeader() {
@@ -3616,6 +3900,20 @@ function openSettingsModal() {
   durationInput.type = "number";
   durationInput.min = "15";
   durationInput.value = state.settings.defaultEventDuration;
+  const apiUrlInput = document.createElement("input");
+  apiUrlInput.value = state.settings.apiUrl || "";
+  const apiKeyInput = document.createElement("input");
+  apiKeyInput.value = state.settings.apiKey || "";
+  const autoSyncToggle = document.createElement("input");
+  autoSyncToggle.type = "checkbox";
+  autoSyncToggle.checked = Boolean(state.settings.autoSync);
+  const syncRow = createElement("div", "card-actions");
+  syncRow.append(
+    createButton("Sync agora", "ghost-btn", async () => {
+      refreshSyncStatus("Sincronizando...");
+      await pullState({ queuePush: true, pushOnEmpty: true });
+    })
+  );
 
   openModal({
     eyebrow: "Preferencias",
@@ -3624,7 +3922,11 @@ function openSettingsModal() {
       buildField("Semana inicia segunda", weekToggle),
       buildField("Formato de hora", timeSelect),
       buildField("Passo de horario", stepSelect),
-      buildField("Duracao padrao (min)", durationInput)
+      buildField("Duracao padrao (min)", durationInput),
+      buildField("API URL", apiUrlInput),
+      buildField("API Key", apiKeyInput),
+      buildField("Auto-sync", autoSyncToggle),
+      syncRow
     ],
     saveLabel: "Salvar",
     onSave: () => {
@@ -3632,6 +3934,15 @@ function openSettingsModal() {
       state.settings.timeFormat = timeSelect.value;
       state.settings.defaultEventDuration = Math.max(15, Number(durationInput.value) || 60);
       state.settings.timeStepMinutes = Math.max(15, Number(stepSelect.value) || 30);
+      state.settings.apiUrl = apiUrlInput.value.trim();
+      state.settings.apiKey = apiKeyInput.value.trim();
+      state.settings.autoSync = autoSyncToggle.checked;
+      remote.url = state.settings.apiUrl;
+      remote.apiKey = state.settings.apiKey;
+      remote.autoSync = state.settings.autoSync;
+      remote.lastError = "";
+      saveRemoteConfig();
+      scheduleAutoSync();
       saveState();
       renderAll();
       return true;
