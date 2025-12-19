@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: meu-node-api
+    env: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 18
+      - key: PORT
+        value: 10000
+      - key: JWT_EXPIRES_IN
+        value: 30d
+      - key: CORS_ORIGIN
+        value: https://seu-front.netlify.app
+      - key: STATE_KEY
+        value: state
+      # Configure tambem:
+      # - JWT_SECRET (obrigatorio, valor forte)
+      # - TURSO_URL (obrigatorio)
+      # - TURSO_AUTH_TOKEN (obrigatorio)

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Meu Node - Central de Organizacao</title>
+  <title>Meu Node - Central de Organização</title>
   <meta name="theme-color" content="#0f172a">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -16,38 +16,99 @@
   <div class="bg-gradient"></div>
   <div class="bg-noise"></div>
 
-  <div class="app">
+  <div id="authScreen" class="auth-screen hidden">
+    <div class="auth-card glass">
+      <div class="auth-header">
+        <div class="brand">
+          <div class="logo-dot"></div>
+          <div>
+            <div class="brand-title">Meu Node</div>
+            <div class="brand-sub">Entre para acessar seus dados.</div>
+          </div>
+        </div>
+      </div>
+      <div class="auth-tabs">
+        <button id="authTabLogin" class="ghost-btn auth-tab active" type="button">Entrar</button>
+        <button id="authTabRegister" class="ghost-btn auth-tab" type="button">Criar conta</button>
+      </div>
+      <form id="loginForm" class="auth-form">
+        <label class="field">
+          <span>Email</span>
+          <input id="loginEmail" type="email" autocomplete="email" required />
+        </label>
+        <label class="field">
+          <span>Senha</span>
+          <input id="loginPassword" type="password" autocomplete="current-password" required />
+        </label>
+        <button class="ghost-btn" type="submit">Entrar</button>
+      </form>
+      <form id="registerForm" class="auth-form hidden">
+        <label class="field">
+          <span>Nome</span>
+          <input id="registerName" type="text" autocomplete="name" required />
+        </label>
+        <label class="field">
+          <span>Email</span>
+          <input id="registerEmail" type="email" autocomplete="email" required />
+        </label>
+        <label class="field">
+          <span>Senha</span>
+          <input id="registerPassword" type="password" autocomplete="new-password" required />
+        </label>
+        <button class="ghost-btn" type="submit">Criar conta</button>
+      </form>
+      <div class="auth-divider"></div>
+      <label class="field">
+        <span>API URL</span>
+        <input id="authApiUrl" type="text" placeholder="https://sua-api.com" />
+      </label>
+      <div class="auth-hint">Use a URL do backend publicado.</div>
+      <div id="authMessage" class="list-meta auth-message"></div>
+    </div>
+  </div>
+
+  <div class="app" id="appRoot">
     <header class="top glass">
       <div class="brand">
         <div class="logo-dot"></div>
         <div>
           <div class="brand-title">Meu Node</div>
-          <div class="brand-sub">Organizacao flexivel, visual limpo</div>
+          <div class="brand-sub">Organização flexível, visual limpo</div>
         </div>
       </div>
       <div class="search-global">
         <input id="globalSearch" type="search" placeholder="Buscar itens, tags ou notas..." />
       </div>
       <div class="quick">
-        <input id="quickInput" type="text" placeholder="Captura rapida: #tag @today" />
+        <input id="quickInput" type="text" placeholder="Captura rápida: #tag @today" />
         <select id="quickType"></select>
         <button id="quickAdd" class="ghost-btn">Adicionar</button>
       </div>
       <div class="top-actions">
         <button id="newItem" class="ghost-btn">Novo item</button>
         <button id="newType" class="ghost-btn">Novo tipo</button>
-        <button id="newView" class="ghost-btn">Nova visao</button>
+        <button id="newView" class="ghost-btn">Nova visão</button>
         <button id="openSettings" class="ghost-btn">Ajustes</button>
       </div>
     </header>
 
     <main class="layout">
       <aside class="side glass">
+        <section class="side-section" id="flowSection">
+          <div class="section-header">
+            <div>
+              <div class="eyebrow">Fluxo</div>
+              <h2>Fluxo</h2>
+            </div>
+          </div>
+          <div id="flowList" class="list"></div>
+        </section>
+
         <section class="side-section">
           <div class="section-header">
             <div>
-              <div class="eyebrow">Areas</div>
-              <h2>Espacos</h2>
+              <div class="eyebrow">Áreas</div>
+              <h2>Espaços</h2>
             </div>
             <div class="section-actions">
               <button id="addArea" class="mini-btn">+</button>
@@ -60,7 +121,7 @@
         <section class="side-section">
           <div class="section-header">
             <div>
-              <div class="eyebrow">Visoes</div>
+              <div class="eyebrow">Visões</div>
               <h2>Vistas</h2>
             </div>
             <div class="section-actions">
@@ -89,33 +150,39 @@
       <section class="main glass">
         <div class="main-header">
           <div>
-            <div class="eyebrow">Visao atual</div>
+            <div class="eyebrow">Visão atual</div>
             <h2 id="mainTitle">Tudo</h2>
           </div>
           <div class="main-actions">
+            <div id="mainActionsExtra" class="main-actions-extra"></div>
             <select id="layoutSelect">
               <option value="list">Lista</option>
               <option value="board">Quadro</option>
+              <option value="calendar">Calendário</option>
             </select>
             <select id="sortSelect">
               <option value="updated">Atualizado</option>
               <option value="due">Prazo</option>
-              <option value="title">Titulo</option>
+              <option value="title">Título</option>
             </select>
           </div>
         </div>
+        <div id="activeFilters" class="active-filters hidden" aria-label="Filtros ativos"></div>
+        <div id="selectionBar" class="selection-bar hidden" aria-label="Ações em lote"></div>
 
         <div id="emptyState" class="empty hidden">
           <h3>Nenhum item ainda</h3>
           <p>Crie seu primeiro tipo e comece a organizar do seu jeito.</p>
           <div class="empty-actions">
             <button id="emptyNewType" class="ghost-btn">Criar tipo</button>
-            <button id="emptyNewArea" class="ghost-btn">Criar area</button>
+            <button id="emptyNewArea" class="ghost-btn">Criar área</button>
           </div>
         </div>
 
+        <div id="triagePanel" class="triage hidden"></div>
         <div id="itemsBoard" class="board hidden"></div>
         <div id="itemsList" class="items"></div>
+        <div id="calendarView" class="calendar hidden"></div>
       </section>
 
       <aside class="details glass">
@@ -124,7 +191,10 @@
             <div class="eyebrow">Detalhes</div>
             <h2>Item</h2>
           </div>
-          <button id="deleteItem" class="ghost-btn danger">Excluir</button>
+          <div class="details-actions">
+            <button id="returnInbox" class="ghost-btn">Voltar para Inbox</button>
+            <button id="deleteItem" class="ghost-btn danger">Excluir</button>
+          </div>
         </div>
 
         <div id="detailsEmpty" class="empty">
@@ -133,70 +203,114 @@
         </div>
 
         <div id="detailsForm" class="details-form hidden">
-          <label class="field">
-            <span>Titulo</span>
-            <input id="itemTitle" type="text" placeholder="Titulo do item" />
-          </label>
-          <div class="field-row">
-            <label class="field">
-              <span>Tipo</span>
-              <select id="itemType"></select>
-            </label>
-            <label class="field">
-              <span>Area</span>
-              <select id="itemArea"></select>
-            </label>
-          </div>
-
-          <div id="statusRow" class="field-row">
-            <label class="field">
-              <span>Status</span>
-              <select id="itemStatus">
-                <option value="todo">A fazer</option>
-                <option value="doing">Em progresso</option>
-                <option value="done">Feito</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Prazo</span>
-              <input id="itemDue" type="date" />
-            </label>
-          </div>
-
-          <label class="field">
-            <span>Tags</span>
-            <input id="itemTags" type="text" placeholder="tag1, tag2" />
-          </label>
-
-          <div id="progressRow" class="field hidden">
-            <span>Progresso</span>
-            <div class="progress-wrap">
-              <input id="itemProgress" type="range" min="0" max="100" value="0" />
-              <span id="itemProgressValue" class="pill">0%</span>
+          <div class="details-section">
+            <div class="section-header">
+              <div>
+                <div class="eyebrow">Básico</div>
+              </div>
             </div>
-          </div>
-
-          <div id="checklistRow" class="field hidden">
+            <label class="field">
+              <span>Título</span>
+              <input id="itemTitle" type="text" placeholder="Título do item" />
+            </label>
             <div class="field-row">
-              <span>Checklist</span>
-              <button id="addChecklist" class="mini-btn">+</button>
+              <label class="field">
+                <span>Tipo</span>
+                <select id="itemType"></select>
+              </label>
+              <label class="field">
+                <span>Área</span>
+                <select id="itemArea"></select>
+              </label>
             </div>
-            <div id="checklistList" class="checklist"></div>
+
+            <div id="statusRow" class="field-row">
+              <label class="field">
+                <span>Status</span>
+                <select id="itemStatus">
+                  <option value="todo">A fazer</option>
+                  <option value="doing">Em progresso</option>
+                  <option value="done">Feito</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Prazo</span>
+                <input id="itemDue" type="date" />
+              </label>
+            </div>
+
+            <label class="field">
+              <span>Tags</span>
+              <input id="itemTags" type="text" placeholder="tag1, tag2" />
+            </label>
+
+            <div id="detailsQuickActions" class="details-quick"></div>
           </div>
 
-          <div id="customFields" class="custom-fields"></div>
+          <div class="details-section">
+            <div class="section-header">
+              <div>
+                <div class="eyebrow">Notas</div>
+              </div>
+            </div>
+            <label class="field">
+              <span>Notas</span>
+              <textarea id="itemNotes" rows="6" placeholder="Observações, ideias, referências..."></textarea>
+            </label>
+          </div>
 
-          <label class="field">
-            <span>Notas</span>
-            <textarea id="itemNotes" rows="6" placeholder="Observacoes, ideias, referencias..."></textarea>
-          </label>
+          <div class="details-section">
+            <button id="advancedToggle" class="section-toggle" type="button">
+              <span>Avançado</span>
+              <span class="toggle-icon">+</span>
+            </button>
+            <div id="advancedSection" class="advanced-section hidden">
+              <div id="progressRow" class="field hidden">
+                <span>Progresso</span>
+                <div class="progress-wrap">
+                  <input id="itemProgress" type="range" min="0" max="100" value="0" />
+                  <span id="itemProgressValue" class="pill">0%</span>
+                </div>
+              </div>
+
+              <div id="checklistRow" class="field hidden">
+                <div class="field-row">
+                  <span>Checklist</span>
+                  <button id="addChecklist" class="mini-btn">+</button>
+                </div>
+                <div id="checklistList" class="checklist"></div>
+              </div>
+
+              <div id="customFields" class="custom-fields"></div>
+
+              <div id="recurrenceRow" class="field">
+                <div class="field-row">
+                  <label class="field">
+                    <span>Recorrência</span>
+                    <select id="itemRecurrence">
+                      <option value="">Nenhuma</option>
+                      <option value="daily">Diária</option>
+                      <option value="weekly">Semanal</option>
+                      <option value="monthly">Mensal</option>
+                      <option value="interval">A cada X dias</option>
+                    </select>
+                  </label>
+                  <label id="recurrenceIntervalRow" class="field hidden">
+                    <span>A cada (dias)</span>
+                    <input id="itemRecurrenceInterval" type="number" min="1" />
+                  </label>
+                </div>
+                <div id="recurrenceSource" class="list-meta hidden">Gerado a partir de recorrência.</div>
+              </div>
+            </div>
+          </div>
         </div>
       </aside>
     </main>
   </div>
 
   <div id="modalBackdrop" class="modal-backdrop hidden">
-    <div class="modal glass">
+    <div class="modal glass" role="dialog" aria-modal="true">
       <div class="modal-header">
         <div>
           <div class="eyebrow" id="modalEyebrow">Editor</div>
@@ -212,6 +326,15 @@
       </div>
     </div>
   </div>
+
+  <div id="commandPalette" class="command-palette hidden" role="dialog" aria-modal="true">
+    <div class="command-card glass">
+      <input id="commandInput" type="search" placeholder="Buscar comandos..." />
+      <div id="commandList" class="command-list"></div>
+    </div>
+  </div>
+
+  <div id="toastContainer" class="toast-container"></div>
 
   <script src="app.js"></script>
 </body>
