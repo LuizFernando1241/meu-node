@@ -33,7 +33,7 @@
       </div>
       <form id="loginForm" class="auth-form">
         <label class="field">
-          <span>Email</span>
+          <span>E-mail</span>
           <input id="loginEmail" type="email" autocomplete="email" required />
         </label>
         <label class="field">
@@ -48,7 +48,7 @@
           <input id="registerName" type="text" autocomplete="name" required />
         </label>
         <label class="field">
-          <span>Email</span>
+          <span>E-mail</span>
           <input id="registerEmail" type="email" autocomplete="email" required />
         </label>
         <label class="field">
@@ -77,19 +77,20 @@
         </div>
       </div>
       <div class="search-global">
-        <input id="globalSearch" type="search" placeholder="Buscar itens, tags ou notas..." />
+        <input id="globalSearch" type="search" aria-label="Buscar itens, tags ou notas" placeholder="Buscar itens, tags ou notas..." />
       </div>
       <div class="quick">
-        <input id="quickInput" type="text" placeholder="Captura rápida: #tag @today" />
-        <select id="quickType"></select>
-        <button id="quickAdd" class="ghost-btn">Adicionar</button>
+        <input id="quickInput" type="text" aria-label="Captura rápida" placeholder="Captura rápida: #tag @today" />
+        <select id="quickType" aria-label="Tipo para captura rápida"></select>
+        <button id="quickAdd" class="ghost-btn" aria-label="Adicionar item rápido">Adicionar</button>
       </div>
       <div class="top-actions">
         <button id="newItem" class="ghost-btn">Novo item</button>
-        <button id="newType" class="ghost-btn">Novo tipo</button>
+        <button id="newType" class="ghost-btn">Criar tipo</button>
         <button id="newView" class="ghost-btn">Nova visão</button>
         <button id="openSettings" class="ghost-btn">Ajustes</button>
       </div>
+      <div id="syncStatus" class="list-meta" aria-live="polite"></div>
     </header>
 
     <main class="layout">
@@ -108,11 +109,11 @@
           <div class="section-header">
             <div>
               <div class="eyebrow">Áreas</div>
-              <h2>Espaços</h2>
+              <h2>Áreas</h2>
             </div>
             <div class="section-actions">
-              <button id="addArea" class="mini-btn">+</button>
-              <button class="mini-btn toggle" data-toggle="areas">-</button>
+              <button id="addArea" class="mini-btn" aria-label="Adicionar área">+</button>
+              <button class="mini-btn toggle" data-toggle="areas" aria-controls="areasList" aria-expanded="true">-</button>
             </div>
           </div>
           <div id="areasList" class="list"></div>
@@ -122,11 +123,11 @@
           <div class="section-header">
             <div>
               <div class="eyebrow">Visões</div>
-              <h2>Vistas</h2>
+              <h2>Visões</h2>
             </div>
             <div class="section-actions">
-              <button id="addView" class="mini-btn">+</button>
-              <button class="mini-btn toggle" data-toggle="views">-</button>
+              <button id="addView" class="mini-btn" aria-label="Adicionar visão">+</button>
+              <button class="mini-btn toggle" data-toggle="views" aria-controls="viewsList" aria-expanded="true">-</button>
             </div>
           </div>
           <div id="viewsList" class="list"></div>
@@ -136,11 +137,11 @@
           <div class="section-header">
             <div>
               <div class="eyebrow">Tipos</div>
-              <h2>Modelos</h2>
+              <h2>Tipos</h2>
             </div>
             <div class="section-actions">
-              <button id="addType" class="mini-btn">+</button>
-              <button class="mini-btn toggle" data-toggle="types">-</button>
+              <button id="addType" class="mini-btn" aria-label="Adicionar tipo">+</button>
+              <button class="mini-btn toggle" data-toggle="types" aria-controls="typesList" aria-expanded="true">-</button>
             </div>
           </div>
           <div id="typesList" class="list"></div>
@@ -155,19 +156,19 @@
           </div>
           <div class="main-actions">
             <div id="mainActionsExtra" class="main-actions-extra"></div>
-            <select id="layoutSelect">
+            <select id="layoutSelect" aria-label="Selecionar layout">
               <option value="list">Lista</option>
               <option value="board">Quadro</option>
               <option value="calendar">Calendário</option>
             </select>
-            <select id="sortSelect">
+            <select id="sortSelect" aria-label="Ordenar por">
               <option value="updated">Atualizado</option>
               <option value="due">Prazo</option>
               <option value="title">Título</option>
             </select>
           </div>
         </div>
-        <div id="activeFilters" class="active-filters hidden" aria-label="Filtros ativos"></div>
+        <div id="activeFilters" class="active-filters hidden" aria-label="Filtros ativos" aria-live="polite"></div>
         <div id="selectionBar" class="selection-bar hidden" aria-label="Ações em lote"></div>
 
         <div id="emptyState" class="empty hidden">
@@ -310,13 +311,13 @@
   </div>
 
   <div id="modalBackdrop" class="modal-backdrop hidden">
-    <div class="modal glass" role="dialog" aria-modal="true">
+    <div class="modal glass" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-header">
         <div>
           <div class="eyebrow" id="modalEyebrow">Editor</div>
           <h2 id="modalTitle">Novo</h2>
         </div>
-        <button id="modalClose" class="mini-btn">x</button>
+        <button id="modalClose" class="mini-btn" aria-label="Fechar">x</button>
       </div>
       <div id="modalBody" class="modal-body"></div>
       <div class="modal-actions">
@@ -327,9 +328,9 @@
     </div>
   </div>
 
-  <div id="commandPalette" class="command-palette hidden" role="dialog" aria-modal="true">
+  <div id="commandPalette" class="command-palette hidden" role="dialog" aria-modal="true" aria-label="Paleta de comandos">
     <div class="command-card glass">
-      <input id="commandInput" type="search" placeholder="Buscar comandos..." />
+      <input id="commandInput" type="search" aria-label="Buscar comandos" placeholder="Buscar comandos..." />
       <div id="commandList" class="command-list"></div>
     </div>
   </div>

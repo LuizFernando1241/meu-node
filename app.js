@@ -51,6 +51,7 @@ const el = {
   mainTitle: document.getElementById("mainTitle"),
   activeFilters: document.getElementById("activeFilters"),
   mainActionsExtra: document.getElementById("mainActionsExtra"),
+  syncStatus: document.getElementById("syncStatus"),
   selectionBar: document.getElementById("selectionBar"),
   layoutSelect: document.getElementById("layoutSelect"),
   sortSelect: document.getElementById("sortSelect"),
@@ -117,12 +118,11 @@ let openMenu = null;
 
 function init() {
   bindEvents();
-  remote.url = DEFAULT_API_URL;
-  remote.apiKey = DEFAULT_API_KEY;
-  remote.autoSync = true;
-  saveRemoteConfig();
+  // Não inicializar sincronização automaticamente por segurança.
+  // remote defaults are loaded from localStorage via loadRemoteConfig().
   renderAll();
   applyAuthState();
+  // Apenas puxar estado se o usuário explicitamente configurou autoSync e URL.
   if (auth.token && remote.url && remote.autoSync) {
     pullState();
   }
@@ -335,13 +335,12 @@ function bindEvents() {
     if (!item) {
       return;
     }
-    if (!confirm("Excluir item?")) {
-      return;
-    }
-    state.items = state.items.filter((entry) => entry.id !== item.id);
-    state.selectedItemId = null;
-    saveState();
-    renderAll();
+    confirmWithModal("Excluir item?", () => {
+      state.items = state.items.filter((entry) => entry.id !== item.id);
+      state.selectedItemId = null;
+      saveState();
+      renderAll();
+    }, { confirmLabel: "Excluir" });
   });
 
   el.modalClose.addEventListener("click", closeModal);
@@ -531,6 +530,13 @@ function updateToggleButtons() {
   document.querySelectorAll(".toggle").forEach((btn) => {
     const key = btn.dataset.toggle;
     btn.textContent = state.ui.collapsed[key] ? "+" : "-";
+    try {
+      // aria-expanded should reflect whether the section is open
+      const expanded = !Boolean(state.ui.collapsed[key]);
+      btn.setAttribute("aria-expanded", String(expanded));
+    } catch (e) {
+      // ignore
+    }
   });
 }
 function renderMain() {
@@ -763,6 +769,10 @@ function renderMainHeaderActions() {
       setLayout("calendar");
     });
     el.mainActionsExtra.append(calendarButton);
+  }
+  // Atualiza indicador de sincronização no header, se presente
+  if (el.syncStatus) {
+    el.syncStatus.textContent = buildSyncStatus();
   }
 }
 
@@ -1764,26 +1774,25 @@ function openAreaModal(area) {
     },
     onDelete: area
       ? () => {
-          if (!confirm("Excluir área?")) {
-            return false;
-          }
-          state.areas = state.areas.filter((entry) => entry.id !== area.id);
-          state.items.forEach((item) => {
-            if (item.areaId === area.id) {
-              item.areaId = null;
+          confirmWithModal("Excluir área?", () => {
+            state.areas = state.areas.filter((entry) => entry.id !== area.id);
+            state.items.forEach((item) => {
+              if (item.areaId === area.id) {
+                item.areaId = null;
+              }
+            });
+            state.views.forEach((view) => {
+              if (view.filters && view.filters.areaId === area.id) {
+                view.filters.areaId = null;
+              }
+            });
+            if (state.ui.areaId === area.id) {
+              state.ui.areaId = null;
             }
-          });
-          state.views.forEach((view) => {
-            if (view.filters && view.filters.areaId === area.id) {
-              view.filters.areaId = null;
-            }
-          });
-          if (state.ui.areaId === area.id) {
-            state.ui.areaId = null;
-          }
-          saveState();
-          renderAll();
-          return true;
+            saveState();
+            renderAll();
+          }, { confirmLabel: "Excluir" });
+          return false;
         }
       : null
   });
@@ -1975,29 +1984,28 @@ function openTypeModal(type) {
     },
     onDelete: type
       ? () => {
-          if (!confirm("Excluir tipo?")) {
-            return false;
-          }
-          state.types = state.types.filter((entry) => entry.id !== type.id);
-          state.items.forEach((item) => {
-            if (item.typeId === type.id) {
-              item.typeId = null;
+          confirmWithModal("Excluir tipo?", () => {
+            state.types = state.types.filter((entry) => entry.id !== type.id);
+            state.items.forEach((item) => {
+              if (item.typeId === type.id) {
+                item.typeId = null;
+              }
+            });
+            state.views.forEach((view) => {
+              if (view.filters && view.filters.typeId === type.id) {
+                view.filters.typeId = null;
+              }
+            });
+            if (state.ui.typeId === type.id) {
+              state.ui.typeId = null;
             }
-          });
-          state.views.forEach((view) => {
-            if (view.filters && view.filters.typeId === type.id) {
-              view.filters.typeId = null;
+            if (state.ui.quickTypeId === type.id) {
+              state.ui.quickTypeId = null;
             }
-          });
-          if (state.ui.typeId === type.id) {
-            state.ui.typeId = null;
-          }
-          if (state.ui.quickTypeId === type.id) {
-            state.ui.quickTypeId = null;
-          }
-          saveState();
-          renderAll();
-          return true;
+            saveState();
+            renderAll();
+          }, { confirmLabel: "Excluir" });
+          return false;
         }
       : null
   });
@@ -2139,16 +2147,15 @@ function openViewModal(view) {
     },
     onDelete: view
       ? () => {
-          if (!confirm("Excluir visão?")) {
-            return false;
-          }
-          state.views = state.views.filter((entry) => entry.id !== view.id);
-          if (state.ui.viewId === view.id) {
-            state.ui.viewId = null;
-          }
-          saveState();
-          renderAll();
-          return true;
+          confirmWithModal("Excluir visão?", () => {
+            state.views = state.views.filter((entry) => entry.id !== view.id);
+            if (state.ui.viewId === view.id) {
+              state.ui.viewId = null;
+            }
+            saveState();
+            renderAll();
+          }, { confirmLabel: "Excluir" });
+          return false;
         }
       : null
   });
@@ -2398,13 +2405,12 @@ function openSettingsModal() {
   resetButton.className = "ghost-btn danger";
   resetButton.textContent = "Limpar tudo";
   resetButton.addEventListener("click", () => {
-    if (!confirm("Limpar todos os dados?")) {
-      return;
-    }
-    state = normalizeSelection(defaultState());
-    saveState();
-    renderAll();
-    closeModal();
+    confirmWithModal("Limpar todos os dados?", () => {
+      state = normalizeSelection(defaultState());
+      saveState();
+      renderAll();
+      closeModal();
+    }, { confirmLabel: "Limpar" });
   });
 
   const actionRow = document.createElement("div");
@@ -2418,7 +2424,7 @@ function openSettingsModal() {
   urlInput.placeholder = "https://sua-api.com";
   urlInput.value = remote.url || "";
 
-  const autoToggle = createToggleLine("Auto sync", remote.autoSync);
+  const autoToggle = createToggleLine("Sincronização automática", remote.autoSync);
 
   const authStatus = document.createElement("div");
   authStatus.className = "list-meta";
@@ -2601,6 +2607,28 @@ function focusModal() {
   if (target) {
     target.focus();
   }
+}
+
+// Abre um modal de confirmação acessível. `onConfirm` é executado quando
+// o usuário confirma. Retorna sem bloquear (modal lida com o fluxo).
+function confirmWithModal(message, onConfirm, options = {}) {
+  const desc = document.createElement("div");
+  desc.textContent = message;
+  openModal({
+    eyebrow: "Confirmar",
+    title: message,
+    body: [desc],
+    saveLabel: options.confirmLabel || "Confirmar",
+    onSave: () => {
+      try {
+        onConfirm();
+      } catch (e) {
+        console.error(e);
+      }
+      return true;
+    },
+    onDelete: null
+  });
 }
 
 function trapTabKey(event) {
