@@ -1,90 +1,91 @@
-﻿"use strict";
+"use strict";
 
-const STORAGE_KEY = "meu-node-rebuild-v1";
-const REMOTE_KEY = "meu-node-remote-v1";
-const DEFAULT_API_URL = "https://meu-node.onrender.com";
-const DEFAULT_API_KEY = "sua-chave";
+const STORAGE_KEY = "meu-node-v2";
+const SAVE_DEBOUNCE_MS = 250;
 
 const STATUS_ORDER = ["todo", "doing", "done"];
 const STATUS_LABELS = {
   todo: "A fazer",
-  doing: "Em progresso",
+  doing: "Fazendo",
   done: "Feito"
 };
 
-const FLOW_VIEWS = [
-  { id: "inbox", label: "Inbox", icon: "IN" },
-  { id: "today", label: "Hoje", icon: "H" },
-  { id: "next7", label: "Próximos 7 dias", icon: "7" },
-  { id: "overdue", label: "Atrasados", icon: "!" },
-  { id: "nodue", label: "Sem prazo", icon: "S" },
-  { id: "doing", label: "Em progresso", icon: ">" }
+const PRIORITY_LABELS = {
+  low: "Baixa",
+  med: "Media",
+  high: "Alta"
+};
+
+const BLOCK_TYPES = [
+  { value: "title", label: "Titulo" },
+  { value: "text", label: "Texto" },
+  { value: "heading", label: "Heading" },
+  { value: "list", label: "Lista" },
+  { value: "checklist", label: "Checklist" },
+  { value: "table", label: "Tabela" },
+  { value: "quote", label: "Quote" },
+  { value: "divider", label: "Divisor" },
+  { value: "embed", label: "Embed" }
 ];
+
+const HOURS = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00"];
+const CALENDAR_HOURS = [
+  "07:00",
+  "08:00",
+  "09:00",
+  "10:00",
+  "11:00",
+  "12:00",
+  "13:00",
+  "14:00",
+  "15:00",
+  "16:00",
+  "17:00",
+  "18:00"
+];
+
+const ROUTE_META = {
+  today: { title: "Hoje", eyebrow: "Executar" },
+  inbox: { title: "Inbox", eyebrow: "Capturar" },
+  week: { title: "Semana", eyebrow: "Planejar" },
+  projects: { title: "Projetos", eyebrow: "Visao macro" },
+  project: { title: "Projeto", eyebrow: "Detalhe" },
+  notes: { title: "Notas", eyebrow: "Conhecimento" },
+  note: { title: "Nota", eyebrow: "Detalhe" },
+  calendar: { title: "Calendario", eyebrow: "Agenda" },
+  areas: { title: "Areas", eyebrow: "Estrutura" },
+  area: { title: "Area", eyebrow: "Detalhe" },
+  archive: { title: "Arquivo", eyebrow: "Historico" }
+};
 
 const el = {
   appRoot: document.getElementById("appRoot"),
   globalSearch: document.getElementById("globalSearch"),
-  quickInput: document.getElementById("quickInput"),
-  quickType: document.getElementById("quickType"),
-  quickAdd: document.getElementById("quickAdd"),
-  newItem: document.getElementById("newItem"),
-  newType: document.getElementById("newType"),
-  newView: document.getElementById("newView"),
+  searchClear: document.getElementById("searchClear"),
+  createBtn: document.getElementById("createBtn"),
+  commandBtn: document.getElementById("commandBtn"),
+  avatarToggle: document.getElementById("avatarToggle"),
+  avatarMenu: document.getElementById("avatarMenu"),
   openSettings: document.getElementById("openSettings"),
+  exportData: document.getElementById("exportData"),
+  importData: document.getElementById("importData"),
   moreToggle: document.getElementById("moreToggle"),
   moreMenu: document.getElementById("moreMenu"),
-  addArea: document.getElementById("addArea"),
-  addView: document.getElementById("addView"),
-  addType: document.getElementById("addType"),
-  areasList: document.getElementById("areasList"),
-  viewsList: document.getElementById("viewsList"),
-  typesList: document.getElementById("typesList"),
-  flowList: document.getElementById("flowList"),
-  mainTitle: document.getElementById("mainTitle"),
-  activeFilters: document.getElementById("activeFilters"),
-  mainActionsExtra: document.getElementById("mainActionsExtra"),
-  quickToggle: document.getElementById("quickToggle"),
-  quickPanel: document.getElementById("quickPanel"),
-  syncStatus: document.getElementById("syncStatus"),
-  selectionBar: document.getElementById("selectionBar"),
-  layoutSelect: document.getElementById("layoutSelect"),
-  sortSelect: document.getElementById("sortSelect"),
-  emptyState: document.getElementById("emptyState"),
-  emptyNewType: document.getElementById("emptyNewType"),
-  emptyNewArea: document.getElementById("emptyNewArea"),
-  triagePanel: document.getElementById("triagePanel"),
-  itemsList: document.getElementById("itemsList"),
-  itemsBoard: document.getElementById("itemsBoard"),
-  calendarView: document.getElementById("calendarView"),
+  settingsShortcut: document.getElementById("settingsShortcut"),
+  countToday: document.getElementById("countToday"),
+  countInbox: document.getElementById("countInbox"),
+  countWeek: document.getElementById("countWeek"),
+  countProjects: document.getElementById("countProjects"),
+  countNotes: document.getElementById("countNotes"),
+  pageEyebrow: document.getElementById("pageEyebrow"),
+  pageTitle: document.getElementById("pageTitle"),
+  pageActions: document.getElementById("pageActions"),
+  viewRoot: document.getElementById("viewRoot"),
   detailsPanel: document.getElementById("detailsPanel"),
-  detailsBackdrop: document.getElementById("detailsBackdrop"),
-  detailsEmpty: document.getElementById("detailsEmpty"),
-  detailsForm: document.getElementById("detailsForm"),
-  detailsQuickActions: document.getElementById("detailsQuickActions"),
-  advancedToggle: document.getElementById("advancedToggle"),
-  advancedSection: document.getElementById("advancedSection"),
-  returnInbox: document.getElementById("returnInbox"),
+  detailsTitle: document.getElementById("detailsTitle"),
+  detailsBody: document.getElementById("detailsBody"),
   detailsClose: document.getElementById("detailsClose"),
-  deleteItem: document.getElementById("deleteItem"),
-  itemTitle: document.getElementById("itemTitle"),
-  itemType: document.getElementById("itemType"),
-  itemArea: document.getElementById("itemArea"),
-  statusRow: document.getElementById("statusRow"),
-  itemStatus: document.getElementById("itemStatus"),
-  itemDue: document.getElementById("itemDue"),
-  itemTags: document.getElementById("itemTags"),
-  progressRow: document.getElementById("progressRow"),
-  itemProgress: document.getElementById("itemProgress"),
-  itemProgressValue: document.getElementById("itemProgressValue"),
-  checklistRow: document.getElementById("checklistRow"),
-  addChecklist: document.getElementById("addChecklist"),
-  checklistList: document.getElementById("checklistList"),
-  customFields: document.getElementById("customFields"),
-  itemRecurrence: document.getElementById("itemRecurrence"),
-  itemRecurrenceInterval: document.getElementById("itemRecurrenceInterval"),
-  recurrenceIntervalRow: document.getElementById("recurrenceIntervalRow"),
-  recurrenceSource: document.getElementById("recurrenceSource"),
-  itemNotes: document.getElementById("itemNotes"),
+  detailsBackdrop: document.getElementById("detailsBackdrop"),
   modalBackdrop: document.getElementById("modalBackdrop"),
   modalEyebrow: document.getElementById("modalEyebrow"),
   modalTitle: document.getElementById("modalTitle"),
@@ -105,71 +106,78 @@ const modalState = {
   previousFocus: null
 };
 
-let state = normalizeSelection(loadState());
-let remote = normalizeRemote(loadRemoteConfig());
-const sync = { timer: null, busy: false, pending: false, lastPushedHash: "" };
-const commandState = { open: false, index: 0, filtered: [], previousFocus: null };
-let openMenu = null;
-const SAVE_DEBOUNCE_MS = 250;
+const commandState = {
+  open: false,
+  index: 0,
+  filtered: [],
+  previousFocus: null
+};
+
+let state = normalizeState(loadState());
 let saveTimer = null;
+let openMenu = null;
 
 function init() {
   bindEvents();
-  applyDefaultRemoteConfig();
-  // Não inicializar sincronização automaticamente por segurança.
-  // remote defaults are loaded from localStorage via loadRemoteConfig().
+  applyRouteFromLocation();
   renderAll();
-  // Apenas puxar estado se o usuário explicitamente configurou autoSync e URL.
-  if (remote.url && remote.autoSync) {
-    pullState({ queuePush: true, pushOnEmpty: true });
-  }
 }
 
+init();
+
 function bindEvents() {
-  el.globalSearch.addEventListener("input", () => {
-    state.ui.search = el.globalSearch.value;
-    saveStateDebounced();
-    renderMain();
-  });
-
-  el.quickAdd.addEventListener("click", handleQuickAdd);
-  el.quickInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      handleQuickAdd();
-    }
-  });
-  el.quickType.addEventListener("change", () => {
-    state.ui.quickTypeId = el.quickType.value || null;
-    saveState();
-  });
-
-  if (el.quickToggle) {
-    el.quickToggle.addEventListener("click", () => {
-      state.ui.quickOpen = !state.ui.quickOpen;
-      saveState();
-      renderQuickPanel();
-      if (state.ui.quickOpen && el.quickInput) {
-        el.quickInput.focus();
-      }
+  if (el.globalSearch) {
+    el.globalSearch.addEventListener("input", () => {
+      state.ui.search = el.globalSearch.value;
+      saveStateDebounced();
+      renderAll();
     });
   }
 
-  el.newItem.addEventListener("click", () => openNewItemModal());
-  el.newType.addEventListener("click", () => {
-    openTypeModal();
-    closeMoreMenu();
-  });
-  el.newView.addEventListener("click", () => {
-    openViewModal();
-    closeMoreMenu();
-  });
-  el.openSettings.addEventListener("click", () => {
-    openSettingsModal();
-    closeMoreMenu();
-  });
+  if (el.searchClear) {
+    el.searchClear.addEventListener("click", () => {
+      state.ui.search = "";
+      if (el.globalSearch) {
+        el.globalSearch.value = "";
+      }
+      saveState();
+      renderAll();
+    });
+  }
 
-  if (el.moreToggle && el.moreMenu) {
+  if (el.createBtn) {
+    el.createBtn.addEventListener("click", openCreateChooser);
+  }
+  if (el.commandBtn) {
+    el.commandBtn.addEventListener("click", openCommandPalette);
+  }
+
+  if (el.avatarToggle) {
+    el.avatarToggle.addEventListener("click", () => toggleMenu(el.avatarMenu));
+  }
+
+  if (el.openSettings) {
+    el.openSettings.addEventListener("click", () => {
+      closeAllMenus();
+      openSettingsModal();
+    });
+  }
+
+  if (el.exportData) {
+    el.exportData.addEventListener("click", () => {
+      closeAllMenus();
+      openExportModal();
+    });
+  }
+
+  if (el.importData) {
+    el.importData.addEventListener("click", () => {
+      closeAllMenus();
+      openImportModal();
+    });
+  }
+
+  if (el.moreToggle) {
     el.moreToggle.addEventListener("click", () => {
       toggleMenu(el.moreMenu);
       el.moreToggle.setAttribute(
@@ -179,2202 +187,3504 @@ function bindEvents() {
     });
   }
 
-  el.addArea.addEventListener("click", () => openAreaModal());
-  el.addView.addEventListener("click", () => openViewModal());
-  el.addType.addEventListener("click", () => openTypeModal());
-
-  el.emptyNewType.addEventListener("click", () => openTypeModal());
-  el.emptyNewArea.addEventListener("click", () => openAreaModal());
-
-  el.layoutSelect.addEventListener("change", () => {
-    setLayout(el.layoutSelect.value);
-  });
-
-  el.sortSelect.addEventListener("change", () => {
-    state.ui.sort = el.sortSelect.value;
-    saveState();
-    renderMain();
-  });
-
-  el.itemTitle.addEventListener("input", () => {
-    const item = getSelectedItem();
-    if (!item) {
-      return;
-    }
-    item.title = el.itemTitle.value;
-    touchItem(item);
-    saveStateDebounced();
-    renderMain();
-  });
-
-  el.itemType.addEventListener("change", () => {
-    const item = getSelectedItem();
-    if (!item) {
-      return;
-    }
-    item.typeId = el.itemType.value || null;
-    autoTriageItem(item);
-    touchItem(item);
-    saveState();
-    renderSidebar();
-    renderMain();
-    renderDetails();
-  });
-
-  el.itemArea.addEventListener("change", () => {
-    const item = getSelectedItem();
-    if (!item) {
-      return;
-    }
-    item.areaId = el.itemArea.value || null;
-    autoTriageItem(item);
-    touchItem(item);
-    saveState();
-    renderSidebar();
-    renderMain();
-  });
-
-  el.itemStatus.addEventListener("change", () => {
-    const item = getSelectedItem();
-    if (!item) {
-      return;
-    }
-    updateItemStatus(item, el.itemStatus.value);
-  });
-
-  el.itemDue.addEventListener("change", () => {
-    const item = getSelectedItem();
-    if (!item) {
-      return;
-    }
-    item.due = el.itemDue.value;
-    touchItem(item);
-    saveState();
-    renderSidebar();
-    renderMain();
-  });
-
-  el.itemTags.addEventListener("change", () => {
-    const item = getSelectedItem();
-    if (!item) {
-      return;
-    }
-    item.tags = parseList(el.itemTags.value);
-    touchItem(item);
-    saveState();
-    renderSidebar();
-    renderMain();
-  });
-
-  el.itemNotes.addEventListener("input", () => {
-    const item = getSelectedItem();
-    if (!item) {
-      return;
-    }
-    item.notes = el.itemNotes.value;
-    touchItem(item);
-    saveStateDebounced();
-  });
-
-  if (el.itemRecurrence) {
-    el.itemRecurrence.addEventListener("change", () => {
-      const item = getSelectedItem();
-      if (!item) {
-        return;
-      }
-      const value = el.itemRecurrence.value;
-      if (!value) {
-        item.recurrence = null;
-      } else if (value === "interval") {
-        const interval = Number(el.itemRecurrenceInterval.value) || 1;
-        item.recurrence = { freq: "interval", intervalDays: Math.max(1, interval) };
-      } else {
-        item.recurrence = { freq: value };
-      }
-      touchItem(item);
-      saveState();
-      renderMain();
-      renderDetails();
+  if (el.settingsShortcut) {
+    el.settingsShortcut.addEventListener("click", () => {
+      closeAllMenus();
+      openSettingsModal();
     });
   }
 
-  if (el.itemRecurrenceInterval) {
-    el.itemRecurrenceInterval.addEventListener("change", () => {
-      const item = getSelectedItem();
-      if (!item || !item.recurrence || item.recurrence.freq !== "interval") {
-        return;
+  document.querySelectorAll("[data-route]").forEach((node) => {
+    node.addEventListener("click", () => {
+      const route = node.dataset.route;
+      if (route) {
+        navigate(route);
       }
-      const interval = Math.max(1, Number(el.itemRecurrenceInterval.value) || 1);
-      item.recurrence.intervalDays = interval;
-      touchItem(item);
-      saveState();
-      renderMain();
     });
-  }
-
-  el.itemProgress.addEventListener("input", () => {
-    const item = getSelectedItem();
-    if (!item) {
-      return;
-    }
-    item.progress = clamp(Number(el.itemProgress.value), 0, 100);
-    el.itemProgressValue.textContent = `${item.progress}%`;
-    touchItem(item);
-    saveStateDebounced();
-    renderMain();
-  });
-
-  el.addChecklist.addEventListener("click", () => {
-    const item = getSelectedItem();
-    if (!item) {
-      return;
-    }
-    if (!Array.isArray(item.checklist)) {
-      item.checklist = [];
-    }
-    item.checklist.push({ id: uid("check"), text: "", done: false });
-    touchItem(item);
-    saveState();
-    renderDetails();
-  });
-
-  el.deleteItem.addEventListener("click", () => {
-    const item = getSelectedItem();
-    if (!item) {
-      return;
-    }
-    confirmWithModal("Excluir item?", () => {
-      recordDeletion("items", item.id);
-      state.items = state.items.filter((entry) => entry.id !== item.id);
-      state.selectedItemId = null;
-      saveState();
-      renderAll();
-    }, { confirmLabel: "Excluir" });
   });
 
   if (el.detailsClose) {
-    el.detailsClose.addEventListener("click", closeDetails);
+    el.detailsClose.addEventListener("click", clearSelection);
   }
   if (el.detailsBackdrop) {
-    el.detailsBackdrop.addEventListener("click", closeDetails);
+    el.detailsBackdrop.addEventListener("click", clearSelection);
   }
 
-  el.modalClose.addEventListener("click", closeModal);
-  el.modalCancel.addEventListener("click", closeModal);
-  el.modalSave.addEventListener("click", handleModalSave);
-  el.modalDelete.addEventListener("click", handleModalDelete);
-  el.modalBackdrop.addEventListener("click", (event) => {
-    if (event.target === el.modalBackdrop) {
-      closeModal();
-    }
-  });
+  if (el.modalClose) {
+    el.modalClose.addEventListener("click", closeModal);
+  }
+  if (el.modalCancel) {
+    el.modalCancel.addEventListener("click", closeModal);
+  }
+  if (el.modalSave) {
+    el.modalSave.addEventListener("click", handleModalSave);
+  }
+  if (el.modalDelete) {
+    el.modalDelete.addEventListener("click", handleModalDelete);
+  }
+  if (el.modalBackdrop) {
+    el.modalBackdrop.addEventListener("click", (event) => {
+      if (event.target === el.modalBackdrop) {
+        closeModal();
+      }
+    });
+  }
 
-  document.addEventListener("keydown", handleModalKeydown);
   document.addEventListener("keydown", handleGlobalShortcuts);
   document.addEventListener("click", handleGlobalClick);
-  window.addEventListener("beforeunload", flushPendingSave);
-
-  document.querySelectorAll(".toggle").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      toggleSection(btn.dataset.toggle);
-    });
-  });
-
-  if (el.advancedToggle) {
-    el.advancedToggle.addEventListener("click", () => toggleAdvancedSection());
-  }
-
-  if (el.returnInbox) {
-    el.returnInbox.addEventListener("click", () => {
-      const item = getSelectedItem();
-      if (!item) {
-        return;
-      }
-      item.inbox = true;
-      touchItem(item);
-      saveState();
-      showToast("Item movido para Inbox.");
-      renderSidebar();
-      renderMain();
-      renderDetails();
-    });
-  }
-}
-function renderAll() {
-  state = normalizeSelection(state);
-  el.globalSearch.value = state.ui.search || "";
-  renderQuick();
-  renderSidebar();
-  renderMain();
-  renderDetails();
+  window.addEventListener("popstate", handlePopState);
 }
 
-function renderQuick() {
-  el.quickType.innerHTML = "";
-  if (state.types.length === 0) {
-    const option = document.createElement("option");
-    option.textContent = "Sem tipos";
-    option.value = "";
-    el.quickType.append(option);
-    el.quickInput.disabled = true;
-    el.quickType.disabled = true;
-    el.quickAdd.disabled = true;
+function handleGlobalShortcuts(event) {
+  if (commandState.open) {
+    handleCommandPaletteKeydown(event);
     return;
   }
 
-  const emptyOption = document.createElement("option");
-  emptyOption.textContent = "Sem tipo";
-  emptyOption.value = "";
-  el.quickType.append(emptyOption);
-
-  state.types.forEach((type) => {
-    const option = document.createElement("option");
-    option.value = type.id;
-    option.textContent = type.name;
-    el.quickType.append(option);
-  });
-
-  el.quickInput.disabled = false;
-  el.quickType.disabled = false;
-  el.quickAdd.disabled = false;
-
-  el.quickType.value = state.ui.quickTypeId || "";
-}
-
-function renderQuickPanel() {
-  if (!el.quickPanel || !el.quickToggle) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    openCommandPalette();
     return;
   }
-  const isOpen = Boolean(state.ui.quickOpen);
-  setHidden(el.quickPanel, !isOpen);
-  el.quickToggle.setAttribute("aria-expanded", String(isOpen));
+
+  if (isModalOpen()) {
+    if (event.key === "Escape") {
+      closeModal();
+    }
+    if (event.key === "Tab") {
+      trapTabKey(event);
+    }
+    return;
+  }
+
+  handleInboxShortcuts(event);
 }
 
-function buildCountsMap(items, key) {
-  const counts = new Map();
-  items.forEach((item) => {
-    const value = item ? item[key] : null;
-    if (!value) {
+function handleGlobalClick(event) {
+  if (openMenu && !openMenu.contains(event.target)) {
+    openMenu.classList.add("hidden");
+    openMenu = null;
+    if (el.moreToggle) {
+      el.moreToggle.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  if (commandState.open && el.commandPalette) {
+    const card = el.commandPalette.querySelector(".command-card");
+    if (card && !card.contains(event.target)) {
+      closeCommandPalette();
+    }
+  }
+}
+
+function handlePopState() {
+  state.ui.route = normalizePath(window.location.pathname);
+  saveState();
+  renderAll();
+}
+
+function toggleMenu(menu) {
+  if (!menu) {
+    return;
+  }
+  const isHidden = menu.classList.contains("hidden");
+  closeAllMenus();
+  if (isHidden) {
+    menu.classList.remove("hidden");
+    openMenu = menu;
+  }
+}
+
+function closeAllMenus() {
+  if (el.avatarMenu) {
+    el.avatarMenu.classList.add("hidden");
+  }
+  if (el.moreMenu) {
+    el.moreMenu.classList.add("hidden");
+  }
+  openMenu = null;
+  if (el.moreToggle) {
+    el.moreToggle.setAttribute("aria-expanded", "false");
+  }
+}
+
+function applyRouteFromLocation() {
+  const path = normalizePath(window.location.pathname);
+  const route = parseRoute(path);
+  if (!route) {
+    navigate("/today", { replace: true });
+    return;
+  }
+  state.ui.route = path;
+  saveState();
+}
+
+function navigate(path, options = {}) {
+  const normalized = normalizePath(path);
+  const route = parseRoute(normalized);
+  if (!route) {
+    return;
+  }
+  state.ui.route = normalized;
+  if (options.replace) {
+    history.replaceState({}, "", normalized);
+  } else {
+    history.pushState({}, "", normalized);
+  }
+  saveState();
+  renderAll();
+}
+
+function normalizePath(path) {
+  if (!path || path === "/") {
+    return "/today";
+  }
+  let cleaned = path.trim();
+  if (!cleaned.startsWith("/")) {
+    cleaned = `/${cleaned}`;
+  }
+  cleaned = cleaned.replace(/\/+$/, "");
+  return cleaned || "/today";
+}
+
+function parseRoute(path) {
+  const cleaned = normalizePath(path);
+  const parts = cleaned.split("/").filter(Boolean);
+  if (!parts.length || parts[0] === "today") {
+    return { name: "today" };
+  }
+  if (parts[0] === "inbox") {
+    return { name: "inbox" };
+  }
+  if (parts[0] === "week") {
+    return { name: "week" };
+  }
+  if (parts[0] === "projects") {
+    if (parts[1]) {
+      return { name: "project", id: parts[1] };
+    }
+    return { name: "projects" };
+  }
+  if (parts[0] === "notes") {
+    if (parts[1]) {
+      return { name: "note", id: parts[1] };
+    }
+    return { name: "notes" };
+  }
+  if (parts[0] === "calendar") {
+    return { name: "calendar" };
+  }
+  if (parts[0] === "areas") {
+    if (parts[1]) {
+      return { name: "area", id: parts[1] };
+    }
+    return { name: "areas" };
+  }
+  if (parts[0] === "archive") {
+    return { name: "archive" };
+  }
+  return null;
+}
+
+function defaultState() {
+  return {
+    tasks: [],
+    events: [],
+    notes: [],
+    projects: [],
+    areas: [],
+    inbox: [],
+    settings: {
+      weekStartsMonday: true,
+      timeFormat: "24h",
+      defaultEventDuration: 60
+    },
+    meta: {
+      lastReviewAt: null
+    },
+    ui: {
+      route: "/today",
+      search: "",
+      selected: { kind: null, id: null },
+      weekTab: "plan",
+      weekOffset: 0,
+      calendarView: "week",
+      calendarWeekOffset: 0,
+      calendarMonthOffset: 0,
+      projectFilter: "active",
+      notesAreaId: null,
+      notesNoteId: null,
+      inboxSelection: [],
+      inboxActiveId: null,
+      overdueCollapsed: true
+    }
+  };
+}
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    return defaultState();
+  }
+  try {
+    return normalizeState(JSON.parse(raw));
+  } catch (error) {
+    return defaultState();
+  }
+}
+
+function normalizeState(data) {
+  const base = defaultState();
+  if (!data || typeof data !== "object") {
+    return base;
+  }
+  const ui = {
+    ...base.ui,
+    ...(data.ui || {})
+  };
+  const settings = {
+    ...base.settings,
+    ...(data.settings || {})
+  };
+  return {
+    tasks: Array.isArray(data.tasks) ? data.tasks.map(normalizeTask).filter(Boolean) : [],
+    events: Array.isArray(data.events) ? data.events.map(normalizeEvent).filter(Boolean) : [],
+    notes: Array.isArray(data.notes) ? data.notes.map(normalizeNote).filter(Boolean) : [],
+    projects: Array.isArray(data.projects) ? data.projects.map(normalizeProject).filter(Boolean) : [],
+    areas: Array.isArray(data.areas) ? data.areas.map(normalizeArea).filter(Boolean) : [],
+    inbox: Array.isArray(data.inbox) ? data.inbox.map(normalizeInboxItem).filter(Boolean) : [],
+    settings,
+    meta: {
+      lastReviewAt: data.meta && data.meta.lastReviewAt ? data.meta.lastReviewAt : null
+    },
+    ui
+  };
+}
+
+function saveState(options = {}) {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (options.render !== false) {
+    renderSidebar();
+  }
+}
+
+function saveStateDebounced(options = {}) {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+  }
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    saveState(options);
+  }, SAVE_DEBOUNCE_MS);
+}
+
+function normalizeUpdatedAt(value) {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Number.isFinite(value)) {
+    return new Date(value).toISOString();
+  }
+  return null;
+}
+
+function normalizeTask(task) {
+  if (!task || typeof task !== "object") {
+    return null;
+  }
+  const normalized = { ...task };
+  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("task");
+  normalized.title = typeof normalized.title === "string" ? normalized.title : "Nova tarefa";
+  normalized.status = STATUS_ORDER.includes(normalized.status) ? normalized.status : "todo";
+  normalized.priority = ["low", "med", "high"].includes(normalized.priority)
+    ? normalized.priority
+    : "med";
+  normalized.dueDate = typeof normalized.dueDate === "string" ? normalized.dueDate : "";
+  normalized.dueTime = typeof normalized.dueTime === "string" ? normalized.dueTime : "";
+  normalized.projectId = typeof normalized.projectId === "string" ? normalized.projectId : null;
+  normalized.areaId = typeof normalized.areaId === "string" ? normalized.areaId : null;
+  normalized.notes = typeof normalized.notes === "string" ? normalized.notes : "";
+  normalized.checklist = Array.isArray(normalized.checklist) ? normalized.checklist : [];
+  normalized.attachments = Array.isArray(normalized.attachments) ? normalized.attachments : [];
+  normalized.linkedNoteId =
+    typeof normalized.linkedNoteId === "string" ? normalized.linkedNoteId : null;
+  normalized.sourceNoteId =
+    typeof normalized.sourceNoteId === "string" ? normalized.sourceNoteId : null;
+  normalized.focus = Boolean(normalized.focus);
+  normalized.archived = Boolean(normalized.archived);
+  normalized.timeBlock =
+    normalized.timeBlock && typeof normalized.timeBlock === "object"
+      ? normalizeTimeBlock(normalized.timeBlock)
+      : null;
+  normalized.createdAt =
+    normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
+  normalized.updatedAt =
+    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
+  return normalized;
+}
+
+function normalizeEvent(event) {
+  if (!event || typeof event !== "object") {
+    return null;
+  }
+  const normalized = { ...event };
+  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("event");
+  normalized.title = typeof normalized.title === "string" ? normalized.title : "Novo evento";
+  normalized.date = typeof normalized.date === "string" ? normalized.date : formatDate(new Date());
+  normalized.start = typeof normalized.start === "string" ? normalized.start : "09:00";
+  normalized.duration = Number.isFinite(normalized.duration)
+    ? Math.max(15, normalized.duration)
+    : 60;
+  normalized.projectId = typeof normalized.projectId === "string" ? normalized.projectId : null;
+  normalized.areaId = typeof normalized.areaId === "string" ? normalized.areaId : null;
+  normalized.location = typeof normalized.location === "string" ? normalized.location : "";
+  normalized.notes = typeof normalized.notes === "string" ? normalized.notes : "";
+  normalized.recurrence = ["none", "daily", "weekly", "monthly"].includes(normalized.recurrence)
+    ? normalized.recurrence
+    : "none";
+  normalized.archived = Boolean(normalized.archived);
+  normalized.createdAt =
+    normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
+  normalized.updatedAt =
+    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
+  return normalized;
+}
+
+function normalizeNote(note) {
+  if (!note || typeof note !== "object") {
+    return null;
+  }
+  const normalized = { ...note };
+  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("note");
+  normalized.title = typeof normalized.title === "string" ? normalized.title : "Nova nota";
+  normalized.areaId = typeof normalized.areaId === "string" ? normalized.areaId : null;
+  normalized.projectId = typeof normalized.projectId === "string" ? normalized.projectId : null;
+  normalized.blocks = Array.isArray(normalized.blocks)
+    ? normalized.blocks.map(normalizeBlock).filter(Boolean)
+    : [];
+  normalized.archived = Boolean(normalized.archived);
+  normalized.createdAt =
+    normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
+  normalized.updatedAt =
+    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
+  return normalized;
+}
+
+function normalizeProject(project) {
+  if (!project || typeof project !== "object") {
+    return null;
+  }
+  const normalized = { ...project };
+  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("project");
+  normalized.name = typeof normalized.name === "string" ? normalized.name : "Novo projeto";
+  normalized.objective = typeof normalized.objective === "string" ? normalized.objective : "";
+  normalized.areaId = typeof normalized.areaId === "string" ? normalized.areaId : null;
+  normalized.status = ["active", "paused", "done"].includes(normalized.status)
+    ? normalized.status
+    : "active";
+  normalized.notes = typeof normalized.notes === "string" ? normalized.notes : "";
+  normalized.milestones = Array.isArray(normalized.milestones) ? normalized.milestones : [];
+  normalized.createdAt =
+    normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
+  normalized.updatedAt =
+    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
+  return normalized;
+}
+
+function normalizeArea(area) {
+  if (!area || typeof area !== "object") {
+    return null;
+  }
+  const normalized = { ...area };
+  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("area");
+  normalized.name = typeof normalized.name === "string" ? normalized.name : "Nova area";
+  normalized.objective = typeof normalized.objective === "string" ? normalized.objective : "";
+  normalized.createdAt =
+    normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
+  normalized.updatedAt =
+    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
+  return normalized;
+}
+
+function normalizeInboxItem(item) {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+  const normalized = { ...item };
+  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("cap");
+  normalized.title = typeof normalized.title === "string" ? normalized.title : "Captura";
+  normalized.kind = ["task", "note", "event"].includes(normalized.kind)
+    ? normalized.kind
+    : "task";
+  normalized.createdAt =
+    normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
+  return normalized;
+}
+
+function normalizeTimeBlock(block) {
+  if (!block || typeof block !== "object") {
+    return null;
+  }
+  return {
+    date: typeof block.date === "string" ? block.date : formatDate(new Date()),
+    start: typeof block.start === "string" ? block.start : "09:00",
+    duration: Number.isFinite(block.duration) ? Math.max(15, block.duration) : 60
+  };
+}
+
+function normalizeBlock(block) {
+  if (!block || typeof block !== "object") {
+    return null;
+  }
+  const normalized = { ...block };
+  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("block");
+  normalized.type = BLOCK_TYPES.find((type) => type.value === normalized.type)
+    ? normalized.type
+    : "text";
+  if (["text", "heading", "quote", "title"].includes(normalized.type)) {
+    normalized.text = typeof normalized.text === "string" ? normalized.text : "";
+  }
+  if (normalized.type === "list") {
+    normalized.items = Array.isArray(normalized.items) ? normalized.items : [];
+  }
+  if (normalized.type === "checklist") {
+    normalized.items = Array.isArray(normalized.items) ? normalized.items : [];
+  }
+  if (normalized.type === "table") {
+    normalized.rows = Array.isArray(normalized.rows) ? normalized.rows : [];
+  }
+  if (normalized.type === "embed") {
+    normalized.url = typeof normalized.url === "string" ? normalized.url : "";
+  }
+  return normalized;
+}
+
+function uid(prefix) {
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
+}
+
+function formatDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function formatTimeLabel(time) {
+  return time || "--:--";
+}
+
+function parseDate(value) {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function addDays(date, days) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function addMonths(date, months) {
+  const result = new Date(date);
+  result.setMonth(result.getMonth() + months);
+  return result;
+}
+
+function dateOnly(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function sameDay(a, b) {
+  return (
+    a &&
+    b &&
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function timeToMinutes(time) {
+  if (!time || typeof time !== "string") {
+    return 0;
+  }
+  const parts = time.split(":").map(Number);
+  if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) {
+    return 0;
+  }
+  return parts[0] * 60 + parts[1];
+}
+
+function formatDayLabel(date) {
+  return date.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" });
+}
+
+function getWeekStart(date, startsMonday) {
+  const day = date.getDay();
+  const diff = startsMonday ? (day === 0 ? -6 : 1 - day) : -day;
+  return addDays(dateOnly(date), diff);
+}
+
+function getWeekDays(offset = 0) {
+  const base = addDays(new Date(), offset * 7);
+  const weekStart = getWeekStart(base, state.settings.weekStartsMonday);
+  const days = [];
+  for (let i = 0; i < 7; i += 1) {
+    const day = addDays(weekStart, i);
+    days.push({
+      date: formatDate(day),
+      label: formatDayLabel(day),
+      isToday: sameDay(day, new Date())
+    });
+  }
+  return days;
+}
+
+function createTask(data = {}) {
+  return normalizeTask({
+    id: uid("task"),
+    title: data.title || "Nova tarefa",
+    status: data.status || "todo",
+    priority: data.priority || "med",
+    dueDate: data.dueDate || "",
+    dueTime: data.dueTime || "",
+    projectId: data.projectId || null,
+    areaId: data.areaId || null,
+    notes: data.notes || "",
+    checklist: data.checklist || [],
+    attachments: data.attachments || [],
+    linkedNoteId: data.linkedNoteId || null,
+    sourceNoteId: data.sourceNoteId || null,
+    focus: Boolean(data.focus),
+    archived: Boolean(data.archived),
+    timeBlock: data.timeBlock || null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+}
+
+function createEvent(data = {}) {
+  return normalizeEvent({
+    id: uid("event"),
+    title: data.title || "Novo evento",
+    date: data.date || formatDate(new Date()),
+    start: data.start || "09:00",
+    duration: Number.isFinite(data.duration) ? data.duration : state.settings.defaultEventDuration,
+    projectId: data.projectId || null,
+    areaId: data.areaId || null,
+    location: data.location || "",
+    notes: data.notes || "",
+    recurrence: data.recurrence || "none",
+    archived: Boolean(data.archived),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+}
+
+function createNote(data = {}) {
+  return normalizeNote({
+    id: uid("note"),
+    title: data.title || "Nova nota",
+    areaId: data.areaId || null,
+    projectId: data.projectId || null,
+    blocks: Array.isArray(data.blocks) ? data.blocks : [],
+    archived: Boolean(data.archived),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+}
+
+function createProject(data = {}) {
+  return normalizeProject({
+    id: uid("project"),
+    name: data.name || "Novo projeto",
+    objective: data.objective || "",
+    areaId: data.areaId || null,
+    status: data.status || "active",
+    notes: data.notes || "",
+    milestones: Array.isArray(data.milestones) ? data.milestones : [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+}
+
+function createArea(data = {}) {
+  return normalizeArea({
+    id: uid("area"),
+    name: data.name || "Nova area",
+    objective: data.objective || "",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+}
+
+function createInboxItem(title) {
+  return normalizeInboxItem({
+    id: uid("cap"),
+    title: title || "Captura",
+    kind: suggestInboxKind(title),
+    createdAt: new Date().toISOString()
+  });
+}
+
+function touch(item) {
+  if (item) {
+    item.updatedAt = new Date().toISOString();
+  }
+}
+
+function suggestInboxKind(text) {
+  const value = (text || "").toLowerCase();
+  if (value.includes("reuniao") || value.includes("call") || value.includes("evento")) {
+    return "event";
+  }
+  if (value.includes("nota") || value.includes("ideia")) {
+    return "note";
+  }
+  return "task";
+}
+
+function matchesQuery(value, query) {
+  if (!query) {
+    return true;
+  }
+  if (!value) {
+    return false;
+  }
+  return value.toLowerCase().includes(query.toLowerCase());
+}
+
+function getBlockText(block) {
+  if (!block) {
+    return "";
+  }
+  if (block.type === "list") {
+    return (block.items || []).join(" ");
+  }
+  if (block.type === "checklist") {
+    return (block.items || []).map((item) => item.text).join(" ");
+  }
+  if (block.type === "table") {
+    return (block.rows || []).map((row) => row.join(" ")).join(" ");
+  }
+  if (block.type === "embed") {
+    return block.url || "";
+  }
+  return block.text || "";
+}
+
+function getTask(id) {
+  return state.tasks.find((task) => task.id === id) || null;
+}
+
+function getEvent(id) {
+  return state.events.find((event) => event.id === id) || null;
+}
+
+function getNote(id) {
+  return state.notes.find((note) => note.id === id) || null;
+}
+
+function getProject(id) {
+  return state.projects.find((project) => project.id === id) || null;
+}
+
+function getArea(id) {
+  return state.areas.find((area) => area.id === id) || null;
+}
+
+function getSelectedItem() {
+  const selection = state.ui.selected || {};
+  if (selection.kind === "task") {
+    return { kind: "task", item: getTask(selection.id) };
+  }
+  if (selection.kind === "event") {
+    return { kind: "event", item: getEvent(selection.id) };
+  }
+  if (selection.kind === "note") {
+    return { kind: "note", item: getNote(selection.id) };
+  }
+  return { kind: null, item: null };
+}
+
+function getTodayKey() {
+  return formatDate(new Date());
+}
+
+function getOverdueTasks() {
+  const today = dateOnly(new Date());
+  return state.tasks.filter((task) => {
+    if (task.archived || task.status === "done") {
+      return false;
+    }
+    const due = parseDate(task.dueDate);
+    return due && due < today;
+  });
+}
+
+function getTodayTasks() {
+  const today = getTodayKey();
+  return state.tasks.filter((task) => {
+    if (task.archived || task.status === "done") {
+      return false;
+    }
+    return task.dueDate === today;
+  });
+}
+
+function getNextDaysTasks(days = 7) {
+  const today = dateOnly(new Date());
+  const end = addDays(today, days);
+  return state.tasks.filter((task) => {
+    if (task.archived || task.status === "done" || !task.dueDate) {
+      return false;
+    }
+    const due = parseDate(task.dueDate);
+    return due && due >= today && due <= end;
+  });
+}
+
+function getAgendaItems(dateKey) {
+  const items = [];
+  state.events.forEach((event) => {
+    if (!event.archived && event.date === dateKey) {
+      items.push({
+        kind: "event",
+        id: event.id,
+        title: event.title,
+        start: event.start,
+        duration: event.duration
+      });
+    }
+  });
+  state.tasks.forEach((task) => {
+    if (task.archived || task.status === "done" || !task.timeBlock) {
       return;
     }
-    counts.set(value, (counts.get(value) || 0) + 1);
+    if (task.timeBlock.date === dateKey) {
+      items.push({
+        kind: "task",
+        id: task.id,
+        title: task.title,
+        start: task.timeBlock.start,
+        duration: task.timeBlock.duration
+      });
+    }
   });
-  return counts;
+  items.sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+  return items;
+}
+
+function countFocusTasks() {
+  return state.tasks.filter((task) => task.focus && !task.archived && task.status !== "done").length;
+}
+
+function isFirstRun() {
+  return (
+    state.tasks.length === 0 &&
+    state.events.length === 0 &&
+    state.notes.length === 0 &&
+    state.projects.length === 0 &&
+    state.inbox.length === 0
+  );
+}
+
+function renderAll() {
+  renderTopbar();
+  renderSidebar();
+  renderPageHeader();
+  renderMain();
+  renderDetailsPanel();
+}
+
+function renderTopbar() {
+  if (el.globalSearch) {
+    el.globalSearch.value = state.ui.search || "";
+  }
+  if (el.searchClear) {
+    el.searchClear.classList.toggle("hidden", !state.ui.search);
+  }
 }
 
 function renderSidebar() {
-  renderFlowList();
-  renderAreas();
-  renderViews();
-  renderTypes();
-  updateToggleButtons();
+  const route = parseRoute(state.ui.route);
+  document.querySelectorAll("[data-route]").forEach((node) => {
+    const routePath = node.dataset.route || "";
+    const isActive =
+      route &&
+      (routePath === state.ui.route || state.ui.route.startsWith(`${routePath}/`));
+    node.classList.toggle("active", isActive);
+  });
+
+  setCount(el.countInbox, state.inbox.length);
+  setCount(el.countToday, getTodayTasks().length + getAgendaItems(getTodayKey()).length);
+  setCount(el.countWeek, getNextDaysTasks(7).length);
+  setCount(el.countProjects, state.projects.filter((project) => project.status === "active").length);
+  setCount(el.countNotes, state.notes.length);
 }
 
-function renderFlowList() {
-  if (!el.flowList) {
+function renderPageHeader() {
+  const route = parseRoute(state.ui.route);
+  const meta = route ? ROUTE_META[route.name] : ROUTE_META.today;
+  if (el.pageEyebrow) {
+    el.pageEyebrow.textContent = meta.eyebrow;
+  }
+  if (el.pageTitle) {
+    el.pageTitle.textContent = meta.title;
+  }
+  if (el.pageActions) {
+    el.pageActions.innerHTML = "";
+    renderPageActions(route, el.pageActions);
+  }
+}
+
+function renderMain() {
+  const route = parseRoute(state.ui.route);
+  if (!route) {
+    navigate("/today", { replace: true });
     return;
   }
-  el.flowList.innerHTML = "";
-  const counts = getFlowCounts();
-  FLOW_VIEWS.forEach((flow) => {
-    const node = createListItem({
-      name: flow.label,
-      count: counts[flow.id] || 0,
-      active: state.ui.specialView === flow.id,
-      onSelect: () => setSpecialView(flow.id),
-      icon: flow.icon,
-      extraClass: "flow-item"
-    });
-    el.flowList.append(node);
-  });
+  el.viewRoot.innerHTML = "";
+  if (route.name === "today") {
+    renderTodayView(el.viewRoot);
+  } else if (route.name === "inbox") {
+    renderInboxView(el.viewRoot);
+  } else if (route.name === "week") {
+    renderWeekView(el.viewRoot);
+  } else if (route.name === "projects") {
+    renderProjectsView(el.viewRoot);
+  } else if (route.name === "project") {
+    renderProjectDetail(el.viewRoot, route.id);
+  } else if (route.name === "notes") {
+    renderNotesView(el.viewRoot);
+  } else if (route.name === "note") {
+    renderNotesView(el.viewRoot, route.id);
+  } else if (route.name === "calendar") {
+    renderCalendarView(el.viewRoot);
+  } else if (route.name === "areas") {
+    renderAreasView(el.viewRoot);
+  } else if (route.name === "area") {
+    renderAreaDetail(el.viewRoot, route.id);
+  } else if (route.name === "archive") {
+    renderArchiveView(el.viewRoot);
+  }
 }
 
-function renderAreas() {
-  el.areasList.innerHTML = "";
-  const counts = buildCountsMap(state.items, "areaId");
-  const allItem = createListItem({
-    name: "Todas as áreas",
-    count: state.items.length,
-    active: !state.ui.areaId,
-    onSelect: () => setAreaFilter(null)
-  });
-  el.areasList.append(allItem);
-
-  state.areas.forEach((area) => {
-    const count = counts.get(area.id) || 0;
-    const node = createListItem({
-      name: area.name,
-      count,
-      active: state.ui.areaId === area.id,
-      onSelect: () => setAreaFilter(area.id),
-      onEdit: () => openAreaModal(area)
-    });
-    el.areasList.append(node);
-  });
-
-  setHidden(el.areasList, state.ui.collapsed.areas);
+function renderPageActions(route, container) {
+  if (!route) {
+    return;
+  }
+  if (route.name === "today") {
+    container.append(
+      createButton("Nova tarefa", "ghost-btn", () => openTaskModal({ dueDate: getTodayKey() }))
+    );
+  }
+  if (route.name === "inbox") {
+    container.append(
+      createButton("Capturar", "ghost-btn", () => {
+        const input = document.querySelector(".capture-input");
+        if (input) {
+          input.focus();
+        }
+      })
+    );
+  }
+  if (route.name === "week") {
+    container.append(
+      createButton("Semana -", "ghost-btn", () => shiftWeek(-1)),
+      createButton("Semana +", "ghost-btn", () => shiftWeek(1))
+    );
+  }
+  if (route.name === "projects") {
+    container.append(createButton("Criar projeto", "primary-btn", openProjectModal));
+  }
+  if (route.name === "project") {
+    container.append(
+      createButton("Nova tarefa", "ghost-btn", () => openTaskModal({ projectId: route.id }))
+    );
+  }
+  if (route.name === "notes" || route.name === "note") {
+    container.append(createButton("Nova nota", "primary-btn", () => openNoteModal({})));
+  }
+  if (route.name === "calendar") {
+    container.append(
+      createButton("Semana -", "ghost-btn", () => shiftCalendarWeek(-1)),
+      createButton("Semana +", "ghost-btn", () => shiftCalendarWeek(1)),
+      createButton("Mes -", "ghost-btn", () => shiftCalendarMonth(-1)),
+      createButton("Mes +", "ghost-btn", () => shiftCalendarMonth(1)),
+      createButton("Novo evento", "primary-btn", () => openEventModal({}))
+    );
+  }
+  if (route.name === "areas") {
+    container.append(createButton("Nova area", "primary-btn", openAreaModal));
+  }
 }
 
-function renderViews() {
-  el.viewsList.innerHTML = "";
-  const allItem = createListItem({
-    name: "Todas as visões",
-    count: state.items.length,
-    active: !state.ui.viewId,
-    onSelect: () => setView(null)
-  });
-  el.viewsList.append(allItem);
+function renderTodayView(root) {
+  const wrap = createElement("div", "today-grid");
+  const query = (state.ui.search || "").trim().toLowerCase();
 
-  state.views.forEach((view) => {
-    const count = getItemsForView(view).length;
-    const node = createListItem({
-      name: view.name,
-      count,
-      active: state.ui.viewId === view.id,
-      onSelect: () => setView(view.id),
-      onEdit: () => openViewModal(view)
+  if (isFirstRun() && !query) {
+    const empty = createElement("div", "empty");
+    empty.innerHTML = "<h3>Primeiro uso</h3><p>Exemplos rapidos para voce comecar.</p>";
+    const examples = createElement("div", "focus-grid");
+    ["Planejar a semana", "Revisar projetos", "Escrever nota de reuniao"].forEach((text) => {
+      const card = createElement("div", "card");
+      card.append(createElement("div", "card-title", text));
+      card.append(createElement("div", "card-meta", "Exemplo"));
+      examples.append(card);
     });
-    el.viewsList.append(node);
-  });
+    const action = createButton("Criar primeira tarefa", "primary-btn", () =>
+      openTaskModal({ dueDate: getTodayKey() })
+    );
+    empty.append(examples, action);
+    wrap.append(empty);
+    root.append(wrap);
+    return;
+  }
 
-  setHidden(el.viewsList, state.ui.collapsed.views);
+  const focusSection = createSection("Foco do dia", "Ate 3 itens");
+  const focusTasks = state.tasks.filter(
+    (task) =>
+      !task.archived &&
+      task.status !== "done" &&
+      task.focus &&
+      matchesTaskSearch(task, query)
+  );
+  if (!focusTasks.length) {
+    focusSection.body.append(createElement("div", "list-meta", "Sem foco definido."));
+  } else {
+    const grid = createElement("div", "focus-grid stagger");
+    focusTasks.slice(0, 3).forEach((task, index) => {
+      const card = createTaskCard(task, { compact: true });
+      card.style.setProperty("--delay", `${index * 40}ms`);
+      grid.append(card);
+    });
+    focusSection.body.append(grid);
+  }
+  wrap.append(focusSection.section);
+
+  const agendaSection = createSection("Agenda de hoje", "Arraste tarefas para time-block");
+  const timeline = createElement("div", "timeline");
+  const agendaItems = getAgendaItems(getTodayKey()).filter((item) =>
+    matchesQuery(item.title, query)
+  );
+  HOURS.forEach((time) => {
+    const slot = createElement("div", "timeline-slot");
+    const label = createElement("div", "timeline-time", time);
+    slot.append(label);
+    const slotItems = agendaItems.filter((item) => item.start === time);
+    slotItems.forEach((item) => {
+      const chip = createElement("div", "calendar-item", item.title);
+      chip.draggable = true;
+      chip.addEventListener("dragstart", (event) => setDragData(event, item.kind, item.id));
+      chip.addEventListener("click", () => selectItem(item.kind, item.id));
+      slot.append(chip);
+    });
+    attachDropHandlers(slot, { date: getTodayKey(), time });
+    slot.addEventListener("click", () => openEventModal({ date: getTodayKey(), start: time }));
+    timeline.append(slot);
+  });
+  agendaSection.body.append(timeline);
+  wrap.append(agendaSection.section);
+
+  const tasksSection = createSection("Tarefas de hoje", "Concluir em 1 clique");
+  const overdue = getOverdueTasks().filter((task) => matchesTaskSearch(task, query));
+  if (overdue.length) {
+    const overdueWrap = createElement("div", "section");
+    const header = createElement("div", "section-header");
+    const title = createElement("div", "section-title", `Atrasadas (${overdue.length})`);
+    const toggle = createButton(
+      state.ui.overdueCollapsed ? "Mostrar" : "Ocultar",
+      "ghost-btn",
+      () => {
+        state.ui.overdueCollapsed = !state.ui.overdueCollapsed;
+        saveState();
+        renderMain();
+      }
+    );
+    header.append(title, toggle);
+    overdueWrap.append(header);
+    if (!state.ui.overdueCollapsed) {
+      overdue.forEach((task) => overdueWrap.append(createTaskRow(task)));
+    }
+    tasksSection.body.append(overdueWrap);
+  }
+
+  const todayTasks = getTodayTasks().filter((task) => matchesTaskSearch(task, query));
+  if (!todayTasks.length) {
+    tasksSection.body.append(createElement("div", "list-meta", "Nenhuma tarefa para hoje."));
+  } else {
+    todayTasks.forEach((task) => tasksSection.body.append(createTaskRow(task)));
+  }
+  wrap.append(tasksSection.section);
+
+  const nextSection = createSection("Proximos 7 dias", "Mini lista");
+  const nextTasks = getNextDaysTasks(7)
+    .filter((task) => task.dueDate !== getTodayKey())
+    .filter((task) => matchesTaskSearch(task, query))
+    .slice(0, 7);
+  if (!nextTasks.length) {
+    nextSection.body.append(createElement("div", "list-meta", "Sem tarefas futuras."));
+  } else {
+    nextTasks.forEach((task) => nextSection.body.append(createTaskRow(task, { compact: true })));
+  }
+  wrap.append(nextSection.section);
+
+  root.append(wrap);
 }
 
-function renderTypes() {
-  el.typesList.innerHTML = "";
-  const counts = buildCountsMap(state.items, "typeId");
-  const allItem = createListItem({
-    name: "Todos os tipos",
-    count: state.items.length,
-    active: !state.ui.typeId,
-    onSelect: () => setTypeFilter(null)
-  });
-  el.typesList.append(allItem);
-
-  state.types.forEach((type) => {
-    const count = counts.get(type.id) || 0;
-    const node = createListItem({
-      name: type.name,
-      count,
-      active: state.ui.typeId === type.id,
-      onSelect: () => setTypeFilter(type.id),
-      onEdit: () => openTypeModal(type)
-    });
-    el.typesList.append(node);
-  });
-
-  setHidden(el.typesList, state.ui.collapsed.types);
-}
-
-function updateToggleButtons() {
-  document.querySelectorAll(".toggle").forEach((btn) => {
-    const key = btn.dataset.toggle;
-    btn.textContent = state.ui.collapsed[key] ? "+" : "-";
-    try {
-      // aria-expanded should reflect whether the section is open
-      const expanded = !Boolean(state.ui.collapsed[key]);
-      btn.setAttribute("aria-expanded", String(expanded));
-    } catch (e) {
-      // ignore
+function renderInboxView(root) {
+  state.ui.inboxSelection = state.ui.inboxSelection.filter((id) =>
+    state.inbox.some((item) => item.id === id)
+  );
+  const capture = document.createElement("input");
+  capture.className = "capture-input";
+  capture.placeholder = "Digite e Enter para capturar...";
+  capture.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const value = capture.value.trim();
+      if (!value) {
+        return;
+      }
+      state.inbox.unshift(createInboxItem(value));
+      capture.value = "";
+      saveState();
+      renderMain();
     }
   });
-}
-function renderMain() {
-  const items = getFilteredItems();
-  const layout = getCurrentLayout();
 
-  el.mainTitle.textContent = buildMainTitle();
-  el.layoutSelect.value = layout;
-  el.sortSelect.value = state.ui.sort;
-  renderActiveFiltersBar();
-  renderMainHeaderActions();
-  renderQuickPanel();
-  syncSelection(items);
-  renderSelectionBar();
+  root.append(capture);
 
-  updateEmptyState(items);
-
-  if (state.ui.specialView === "inbox" && state.ui.triageMode) {
-    setHidden(el.emptyState, true);
-    setHidden(el.triagePanel, false);
-    setHidden(el.itemsBoard, true);
-    setHidden(el.itemsList, true);
-    setHidden(el.calendarView, true);
-    renderTriagePanel(items);
-    return;
-  }
-
-  setHidden(el.triagePanel, true);
-
-  if (layout === "board") {
-    setHidden(el.itemsBoard, false);
-    setHidden(el.itemsList, true);
-    setHidden(el.calendarView, true);
-    renderBoard(items);
-  } else if (layout === "calendar") {
-    setHidden(el.itemsBoard, true);
-    setHidden(el.itemsList, true);
-    setHidden(el.calendarView, false);
-    renderCalendar(items);
-  } else {
-    setHidden(el.itemsBoard, true);
-    setHidden(el.itemsList, false);
-    setHidden(el.calendarView, true);
-    renderList(items);
-  }
-}
-
-function renderActiveFiltersBar() {
-  if (!el.activeFilters) {
-    return;
-  }
-
-  const view = getCurrentView();
-  const area = state.ui.areaId ? getArea(state.ui.areaId) : null;
-  const type = state.ui.typeId ? getType(state.ui.typeId) : null;
-  const search = (state.ui.search || "").trim();
-  const hasFilters = Boolean(view || area || type || search || state.ui.specialView);
-
-  el.activeFilters.innerHTML = "";
-  setHidden(el.activeFilters, !hasFilters);
-  if (!hasFilters) {
-    return;
-  }
-
-  if (view) {
-    el.activeFilters.append(
-      createFilterChip(buildViewFilterLabel(view), () => setView(null))
+  if (state.ui.inboxSelection.length) {
+    const bulk = createElement("div", "bulk-bar");
+    bulk.append(
+      createElement("div", "card-title", `${state.ui.inboxSelection.length} selecionados`)
     );
-  }
-  if (state.ui.specialView) {
-    el.activeFilters.append(
-      createFilterChip(`Fluxo: ${getSpecialViewLabel(state.ui.specialView)}`, () =>
-        setSpecialView(null)
+    bulk.append(
+      createButton("Processar em lote", "ghost-btn", () =>
+        openBulkProcessModal(state.ui.inboxSelection)
       )
     );
+    bulk.append(
+      createButton("Arquivar", "ghost-btn", () =>
+        bulkArchiveInbox(state.ui.inboxSelection)
+      )
+    );
+    bulk.append(
+      createButton("Deletar", "ghost-btn danger", () =>
+        bulkDeleteInbox(state.ui.inboxSelection)
+      )
+    );
+    root.append(bulk);
   }
-  if (area) {
-    el.activeFilters.append(createFilterChip(`Área: ${area.name}`, () => setAreaFilter(null)));
+
+  const list = createElement("div", "inbox-list");
+  if (!state.inbox.length) {
+    list.append(createElement("div", "empty", "Inbox vazia."));
+  } else {
+    state.inbox
+      .filter((item) => matchesQuery(item.title, state.ui.search))
+      .forEach((item) => list.append(createInboxRow(item)));
   }
-  if (type) {
-    el.activeFilters.append(createFilterChip(`Tipo: ${type.name}`, () => setTypeFilter(null)));
+  root.append(list);
+}
+
+function renderWeekView(root) {
+  const tabs = createElement("div", "week-tabs");
+  const planBtn = createButton("Planejar", "tab-btn", () => setWeekTab("plan"));
+  const reviewBtn = createButton("Revisar", "tab-btn", () => setWeekTab("review"));
+  planBtn.classList.toggle("active", state.ui.weekTab === "plan");
+  reviewBtn.classList.toggle("active", state.ui.weekTab === "review");
+  tabs.append(planBtn, reviewBtn);
+  root.append(tabs);
+
+  if (state.ui.weekTab === "review") {
+    renderWeekReview(root);
+  } else {
+    renderWeekPlan(root);
   }
-  if (search) {
-    el.activeFilters.append(
-      createFilterChip(`Busca: ${search}`, () => {
-        state.ui.search = "";
-        el.globalSearch.value = "";
+}
+
+function renderWeekPlan(root) {
+  const layout = createElement("div", "week-layout");
+  const grid = createElement("div", "week-grid");
+  const days = getWeekDays(state.ui.weekOffset);
+  const query = (state.ui.search || "").trim().toLowerCase();
+
+  days.forEach((day) => {
+    const column = createElement("div", "week-day");
+    const header = createElement("div", "week-header", day.label);
+    if (day.isToday) {
+      header.classList.add("pill");
+    }
+    column.append(header);
+    attachDropHandlers(column, { date: day.date, time: null });
+
+    const dayTasks = state.tasks.filter((task) => {
+      if (task.archived || task.status === "done") {
+        return false;
+      }
+      return task.dueDate === day.date && !task.timeBlock && matchesTaskSearch(task, query);
+    });
+    dayTasks.forEach((task) => {
+      column.append(createTaskRow(task, { compact: true }));
+    });
+
+    HOURS.forEach((time) => {
+      const slot = createElement("div", "week-slot");
+      const label = createElement("div", "list-meta", time);
+      slot.append(label);
+      const slotItems = getScheduledItems(day.date, time).filter((item) =>
+        matchesQuery(item.title, query)
+      );
+      slotItems.forEach((item) => {
+        const chip = createElement("div", "calendar-item", item.title);
+        chip.draggable = true;
+        chip.addEventListener("dragstart", (event) => setDragData(event, item.kind, item.id));
+        chip.addEventListener("click", () => selectItem(item.kind, item.id));
+        slot.append(chip);
+      });
+      attachDropHandlers(slot, { date: day.date, time });
+      column.append(slot);
+    });
+    grid.append(column);
+  });
+
+  layout.append(grid);
+
+  const side = createElement("div", "week-tasks");
+  const weekTasks = state.tasks.filter((task) => {
+    if (task.archived || task.status === "done") {
+      return false;
+    }
+    return (
+      (!task.dueDate || !days.find((day) => day.date === task.dueDate)) &&
+      matchesTaskSearch(task, query)
+    );
+  });
+
+  if (!weekTasks.length) {
+    side.append(createElement("div", "empty", "Sem tarefas para planejar."));
+  } else {
+    weekTasks.forEach((task) => side.append(createTaskRow(task)));
+  }
+
+  layout.append(side);
+  root.append(layout);
+}
+
+function renderWeekReview(root) {
+  const sections = [
+    { title: "Inbox pendente", items: state.inbox, type: "inbox" },
+    { title: "Atrasadas", items: getOverdueTasks(), type: "task" },
+    { title: "Proximas 14 dias", items: getNextDaysTasks(14), type: "task" },
+    {
+      title: "Sem projeto/area",
+      items: state.tasks.filter(
+        (task) =>
+          !task.archived &&
+          task.status !== "done" &&
+          !task.projectId &&
+          !task.areaId
+      ),
+      type: "task"
+    }
+  ];
+
+  sections.forEach((section) => {
+    const block = createSection(section.title, "");
+    if (!section.items.length) {
+      block.body.append(createElement("div", "list-meta", "Nada aqui."));
+    } else {
+      section.items.forEach((item) => {
+        if (section.type === "task") {
+          block.body.append(createTaskRow(item, { compact: true }));
+        } else if (section.type === "inbox") {
+          block.body.append(createInboxRow(item, { compact: true }));
+        }
+      });
+    }
+    root.append(block.section);
+  });
+
+  const closeBtn = createButton("Fechar semana", "primary-btn", () => {
+    state.meta.lastReviewAt = new Date().toISOString();
+    saveState();
+    showToast("Revisao registrada.");
+  });
+  root.append(closeBtn);
+}
+
+function renderProjectsView(root) {
+  const filters = createElement("div", "week-tabs");
+  ["active", "paused", "done"].forEach((status) => {
+    const label = status === "active" ? "Ativos" : status === "paused" ? "Pausados" : "Concluidos";
+    const btn = createButton(label, "tab-btn", () => setProjectFilter(status));
+    btn.classList.toggle("active", state.ui.projectFilter === status);
+    filters.append(btn);
+  });
+  root.append(filters);
+
+  const list = createElement("div", "projects-grid");
+  const query = (state.ui.search || "").trim().toLowerCase();
+  const projects = state.projects.filter(
+    (project) =>
+      project.status === state.ui.projectFilter &&
+      matchesQuery(`${project.name} ${project.objective}`, query)
+  );
+  if (!projects.length) {
+    list.append(createElement("div", "empty", "Sem projetos neste filtro."));
+  } else {
+    projects.forEach((project) => list.append(createProjectCard(project)));
+  }
+  root.append(list);
+}
+
+function renderProjectDetail(root, projectId) {
+  const project = getProject(projectId);
+  if (!project) {
+    root.append(createElement("div", "empty", "Projeto nao encontrado."));
+    return;
+  }
+
+  const summary = createSection("Resumo", "");
+  const nameInput = document.createElement("input");
+  nameInput.value = project.name;
+  nameInput.addEventListener("input", () => {
+    project.name = nameInput.value;
+    touch(project);
+    saveStateDebounced();
+    renderSidebar();
+  });
+  const objectiveInput = document.createElement("textarea");
+  objectiveInput.rows = 3;
+  objectiveInput.value = project.objective || "";
+  objectiveInput.addEventListener("input", () => {
+    project.objective = objectiveInput.value;
+    touch(project);
+    saveStateDebounced();
+  });
+  const statusSelect = createSelect(
+    [
+      { value: "active", label: "Ativo" },
+      { value: "paused", label: "Pausado" },
+      { value: "done", label: "Concluido" }
+    ],
+    project.status
+  );
+  statusSelect.addEventListener("change", () => {
+    project.status = statusSelect.value;
+    touch(project);
+    saveState();
+    renderSidebar();
+  });
+  const areaSelect = createAreaSelect(project.areaId);
+  areaSelect.addEventListener("change", () => {
+    project.areaId = areaSelect.value || null;
+    touch(project);
+    saveState();
+  });
+  summary.body.append(
+    buildField("Nome", nameInput),
+    buildField("Objetivo", objectiveInput),
+    buildField("Status", statusSelect),
+    buildField("Area", areaSelect)
+  );
+  root.append(summary.section);
+
+  const nextStep = createSection("Proximo passo", "");
+  const nextTask = state.tasks.find(
+    (task) => task.projectId === project.id && task.status !== "done" && !task.archived
+  );
+  if (nextTask) {
+    nextStep.body.append(createTaskRow(nextTask));
+  } else {
+    nextStep.body.append(createElement("div", "list-meta", "Defina o proximo passo."));
+  }
+  root.append(nextStep.section);
+
+  const tasksSection = createSection("Tarefas do projeto", "");
+  const quickInput = document.createElement("input");
+  quickInput.placeholder = "Adicionar tarefa ao projeto e Enter";
+  quickInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const value = quickInput.value.trim();
+      if (!value) {
+        return;
+      }
+      state.tasks.unshift(createTask({ title: value, projectId: project.id }));
+      quickInput.value = "";
+      saveState();
+      renderMain();
+    }
+  });
+  tasksSection.body.append(buildField("Nova tarefa", quickInput));
+  STATUS_ORDER.forEach((status) => {
+    const group = createElement("div", "section");
+    const header = createElement("div", "section-header");
+    header.append(
+      createElement("div", "section-title", STATUS_LABELS[status]),
+      createElement("div", "list-meta", "")
+    );
+    group.append(header);
+    const tasks = state.tasks.filter(
+      (task) =>
+        task.projectId === project.id &&
+        !task.archived &&
+        task.status === status
+    );
+    if (!tasks.length) {
+      group.append(createElement("div", "list-meta", "Sem tarefas."));
+    } else {
+      tasks.forEach((task) => group.append(createTaskRow(task)));
+    }
+    tasksSection.body.append(group);
+  });
+  root.append(tasksSection.section);
+
+  const notesSection = createSection("Notas do projeto", "");
+  const notesArea = document.createElement("textarea");
+  notesArea.rows = 4;
+  notesArea.value = project.notes || "";
+  notesArea.addEventListener("input", () => {
+    project.notes = notesArea.value;
+    touch(project);
+    saveStateDebounced();
+  });
+  notesSection.body.append(notesArea);
+  root.append(notesSection.section);
+
+  const milestonesSection = createSection("Marcos", "");
+  if (!Array.isArray(project.milestones) || !project.milestones.length) {
+    milestonesSection.body.append(createElement("div", "list-meta", "Sem marcos."));
+  } else {
+    project.milestones.forEach((milestone) => {
+      milestonesSection.body.append(createMilestoneRow(project, milestone));
+    });
+  }
+  const addMilestone = createButton("Adicionar marco", "ghost-btn", () => {
+    project.milestones.push({
+      id: uid("milestone"),
+      title: "Novo marco",
+      dueDate: "",
+      done: false
+    });
+    touch(project);
+    saveState();
+    renderMain();
+  });
+  milestonesSection.body.append(addMilestone);
+  root.append(milestonesSection.section);
+}
+
+function renderNotesView(root, noteId) {
+  if (noteId) {
+    state.ui.notesNoteId = noteId;
+  }
+  const layout = createElement("div", "notes-layout");
+  const tree = createElement("div", "notes-tree");
+
+  const addNoteBtn = createButton("Nova nota", "ghost-btn", () => openNoteModal({}));
+  tree.append(addNoteBtn);
+
+  const grouped = groupNotesByArea();
+  Object.keys(grouped).forEach((areaId) => {
+    const area = areaId ? getArea(areaId) : null;
+    const label = area ? area.name : "Sem area";
+    const header = createElement("div", "section-title", label);
+    tree.append(header);
+    grouped[areaId].forEach((note) => {
+      const item = createElement("div", "note-item", note.title);
+      item.classList.toggle("active", note.id === state.ui.notesNoteId);
+      item.addEventListener("click", () => navigate(`/notes/${note.id}`));
+      tree.append(item);
+    });
+  });
+
+  layout.append(tree);
+
+  const editor = createElement("div", "notes-editor");
+  const note = state.ui.notesNoteId ? getNote(state.ui.notesNoteId) : null;
+  if (!note) {
+    const empty = createElement("div", "empty");
+    empty.innerHTML = "<h3>Escolha uma nota</h3><p>Ou crie uma nova com um template.</p>";
+    const templates = createElement("div", "card-actions");
+    templates.append(
+      createButton("Reuniao", "ghost-btn", () => openNoteModal({ template: "meeting" })),
+      createButton("Diario", "ghost-btn", () => openNoteModal({ template: "diary" })),
+      createButton("Estudo", "ghost-btn", () => openNoteModal({ template: "study" })),
+      createButton("Planejamento mensal", "ghost-btn", () =>
+        openNoteModal({ template: "monthly" })
+      )
+    );
+    empty.append(templates);
+    editor.append(empty);
+  } else {
+    state.ui.selected = { kind: "note", id: note.id };
+    const titleInput = document.createElement("input");
+    titleInput.value = note.title;
+    titleInput.addEventListener("input", () => {
+      note.title = titleInput.value;
+      touch(note);
+      saveStateDebounced();
+      renderSidebar();
+      renderMain();
+    });
+    editor.append(buildField("Titulo", titleInput));
+
+    const blockList = createElement("div", "stagger");
+    note.blocks.forEach((block, index) => {
+      const blockEl = createBlockEditor(note, block, index);
+      blockEl.style.setProperty("--delay", `${index * 30}ms`);
+      blockList.append(blockEl);
+    });
+    editor.append(blockList);
+
+    const addBlock = createButton("Adicionar bloco", "ghost-btn", () => {
+      note.blocks.push({ id: uid("block"), type: "text", text: "" });
+      touch(note);
+      saveState();
+      renderMain();
+    });
+    editor.append(addBlock);
+  }
+
+  layout.append(editor);
+  root.append(layout);
+}
+
+function renderCalendarView(root) {
+  const shell = createElement("div", "calendar-shell");
+  const toggle = createElement("div", "calendar-toggle");
+  const weekBtn = createButton("Semana", "tab-btn", () => setCalendarView("week"));
+  const monthBtn = createButton("Mes", "tab-btn", () => setCalendarView("month"));
+  weekBtn.classList.toggle("active", state.ui.calendarView === "week");
+  monthBtn.classList.toggle("active", state.ui.calendarView === "month");
+  toggle.append(weekBtn, monthBtn);
+  shell.append(toggle);
+
+  if (state.ui.calendarView === "month") {
+    shell.append(renderCalendarMonth());
+  } else {
+    shell.append(renderCalendarWeek());
+  }
+  root.append(shell);
+}
+
+function renderAreasView(root) {
+  const list = createElement("div", "areas-grid");
+  const query = (state.ui.search || "").trim().toLowerCase();
+  const areas = state.areas.filter((area) => matchesQuery(`${area.name} ${area.objective}`, query));
+  if (!areas.length) {
+    list.append(createElement("div", "empty", "Nenhuma area criada."));
+  } else {
+    areas.forEach((area) => list.append(createAreaCard(area)));
+  }
+  root.append(list);
+}
+
+function renderAreaDetail(root, areaId) {
+  const area = getArea(areaId);
+  if (!area) {
+    root.append(createElement("div", "empty", "Area nao encontrada."));
+    return;
+  }
+
+  const header = createSection("Resumo da area", "");
+  const nameInput = document.createElement("input");
+  nameInput.value = area.name;
+  nameInput.addEventListener("input", () => {
+    area.name = nameInput.value;
+    touch(area);
+    saveStateDebounced();
+    renderSidebar();
+  });
+  const objectiveInput = document.createElement("textarea");
+  objectiveInput.rows = 3;
+  objectiveInput.value = area.objective || "";
+  objectiveInput.addEventListener("input", () => {
+    area.objective = objectiveInput.value;
+    touch(area);
+    saveStateDebounced();
+  });
+  header.body.append(buildField("Nome", nameInput), buildField("Objetivo", objectiveInput));
+  root.append(header.section);
+
+  const projects = state.projects.filter((project) => project.areaId === area.id);
+  const tasks = state.tasks.filter(
+    (task) =>
+      task.areaId === area.id && !task.projectId && !task.archived && task.status !== "done"
+  );
+  const notes = state.notes.filter((note) => note.areaId === area.id && !note.archived);
+
+  const projectsSection = createSection("Projetos da area", "");
+  if (!projects.length) {
+    projectsSection.body.append(createElement("div", "list-meta", "Sem projetos."));
+  } else {
+    projects.forEach((project) => projectsSection.body.append(createProjectCard(project)));
+  }
+  root.append(projectsSection.section);
+
+  const tasksSection = createSection("Tarefas sem projeto", "");
+  if (!tasks.length) {
+    tasksSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+  } else {
+    tasks.forEach((task) => tasksSection.body.append(createTaskRow(task)));
+  }
+  root.append(tasksSection.section);
+
+  const notesSection = createSection("Notas da area", "");
+  if (!notes.length) {
+    notesSection.body.append(createElement("div", "list-meta", "Sem notas."));
+  } else {
+    notes.forEach((note) => notesSection.body.append(createNoteCard(note)));
+  }
+  root.append(notesSection.section);
+}
+
+function renderArchiveView(root) {
+  const archivedTasks = state.tasks.filter((task) => task.archived);
+  const archivedEvents = state.events.filter((event) => event.archived);
+  const archivedNotes = state.notes.filter((note) => note.archived);
+
+  const taskSection = createSection("Tarefas arquivadas", "");
+  if (!archivedTasks.length) {
+    taskSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+  } else {
+    archivedTasks.forEach((task) => taskSection.body.append(createTaskRow(task)));
+  }
+  root.append(taskSection.section);
+
+  const eventSection = createSection("Eventos arquivados", "");
+  if (!archivedEvents.length) {
+    eventSection.body.append(createElement("div", "list-meta", "Sem eventos."));
+  } else {
+    archivedEvents.forEach((event) => eventSection.body.append(createEventRow(event)));
+  }
+  root.append(eventSection.section);
+
+  const noteSection = createSection("Notas arquivadas", "");
+  if (!archivedNotes.length) {
+    noteSection.body.append(createElement("div", "list-meta", "Sem notas."));
+  } else {
+    archivedNotes.forEach((note) => noteSection.body.append(createNoteCard(note)));
+  }
+  root.append(noteSection.section);
+}
+
+function renderDetailsPanel() {
+  const selection = getSelectedItem();
+  el.detailsBody.innerHTML = "";
+
+  if (!selection.item) {
+    el.detailsTitle.textContent = "Nada selecionado";
+    setDetailsOpen(false);
+    const empty = createElement("div", "empty");
+    empty.innerHTML = "<h3>Selecione um item</h3><p>Detalhes aparecem aqui.</p>";
+    el.detailsBody.append(empty);
+    appendQuickCapturePanel();
+    return;
+  }
+
+  setDetailsOpen(true);
+
+  if (selection.kind === "task") {
+    renderTaskDetails(selection.item);
+  } else if (selection.kind === "event") {
+    renderEventDetails(selection.item);
+  } else if (selection.kind === "note") {
+    renderNoteDetails(selection.item);
+  }
+  appendQuickCapturePanel();
+}
+
+function setDetailsOpen(isOpen) {
+  document.body.classList.toggle("details-open", isOpen);
+  if (el.detailsBackdrop) {
+    el.detailsBackdrop.classList.toggle("hidden", !isOpen);
+    el.detailsBackdrop.setAttribute("aria-hidden", String(!isOpen));
+  }
+  if (el.detailsPanel) {
+    el.detailsPanel.setAttribute("aria-hidden", String(!isOpen));
+  }
+}
+
+function selectItem(kind, id) {
+  state.ui.selected = { kind, id };
+  saveState();
+  renderMain();
+  renderDetailsPanel();
+}
+
+function clearSelection() {
+  state.ui.selected = { kind: null, id: null };
+  saveState();
+  renderMain();
+  renderDetailsPanel();
+}
+
+function renderTaskDetails(task) {
+  el.detailsTitle.textContent = task.title || "Tarefa";
+
+  const titleInput = document.createElement("input");
+  titleInput.value = task.title;
+  titleInput.addEventListener("input", () => {
+    task.title = titleInput.value;
+    touch(task);
+    saveStateDebounced();
+    renderMain();
+  });
+
+  const statusSelect = createSelect(
+    STATUS_ORDER.map((status) => ({ value: status, label: STATUS_LABELS[status] })),
+    task.status
+  );
+  statusSelect.addEventListener("change", () => {
+    task.status = statusSelect.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = task.dueDate || "";
+  dateInput.addEventListener("change", () => {
+    task.dueDate = dateInput.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = task.dueTime || "";
+  timeInput.addEventListener("change", () => {
+    task.dueTime = timeInput.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const prioritySelect = createSelect(
+    [
+      { value: "low", label: "Baixa" },
+      { value: "med", label: "Media" },
+      { value: "high", label: "Alta" }
+    ],
+    task.priority
+  );
+  prioritySelect.addEventListener("change", () => {
+    task.priority = prioritySelect.value;
+    touch(task);
+    saveState();
+  });
+
+  const projectSelect = createProjectSelect(task.projectId);
+  projectSelect.addEventListener("change", () => {
+    task.projectId = projectSelect.value || null;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const areaSelect = createAreaSelect(task.areaId);
+  areaSelect.addEventListener("change", () => {
+    task.areaId = areaSelect.value || null;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 4;
+  notesInput.value = task.notes || "";
+  notesInput.addEventListener("input", () => {
+    task.notes = notesInput.value;
+    touch(task);
+    saveStateDebounced();
+  });
+
+  const linksInput = document.createElement("textarea");
+  linksInput.rows = 3;
+  linksInput.value = (task.attachments || []).join("\n");
+  linksInput.addEventListener("input", () => {
+    task.attachments = linksInput.value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    touch(task);
+    saveStateDebounced();
+  });
+
+  const noteSelect = createNoteSelect(task.linkedNoteId);
+  noteSelect.addEventListener("change", () => {
+    task.linkedNoteId = noteSelect.value || null;
+    touch(task);
+    saveState();
+  });
+
+  const checklist = createChecklistEditor(task);
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Concluir", "ghost-btn", () => {
+      task.status = "done";
+      touch(task);
+      saveState();
+      renderAll();
+    }),
+    createButton("Definir foco", "ghost-btn", () => toggleTaskFocus(task)),
+    createButton("Adiar 1 dia", "ghost-btn", () => snoozeTask(task, 1)),
+    createButton("Adiar 7 dias", "ghost-btn", () => snoozeTask(task, 7)),
+    createButton("Arquivar", "ghost-btn danger", () => archiveTask(task))
+  );
+
+  el.detailsBody.append(
+    buildField("Titulo", titleInput),
+    buildField("Status", statusSelect),
+    buildField("Prazo", dateInput),
+    buildField("Hora", timeInput),
+    buildField("Prioridade", prioritySelect),
+    buildField("Projeto", projectSelect),
+    buildField("Area", areaSelect),
+    buildField("Subtarefas", checklist),
+    buildField("Descricao", notesInput),
+    buildField("Anexos/links", linksInput),
+    buildField("Vinculo com nota", noteSelect),
+    buildField("Acoes chave", actions)
+  );
+}
+
+function renderEventDetails(event) {
+  el.detailsTitle.textContent = event.title || "Evento";
+
+  const titleInput = document.createElement("input");
+  titleInput.value = event.title;
+  titleInput.addEventListener("input", () => {
+    event.title = titleInput.value;
+    touch(event);
+    saveStateDebounced();
+    renderMain();
+  });
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = event.date;
+  dateInput.addEventListener("change", () => {
+    event.date = dateInput.value;
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = event.start;
+  timeInput.addEventListener("change", () => {
+    event.start = timeInput.value;
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const durationInput = document.createElement("input");
+  durationInput.type = "number";
+  durationInput.min = "15";
+  durationInput.value = event.duration;
+  durationInput.addEventListener("change", () => {
+    event.duration = Math.max(15, Number(durationInput.value) || 15);
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const recurrenceSelect = createSelect(
+    [
+      { value: "none", label: "Sem repeticao" },
+      { value: "daily", label: "Diario" },
+      { value: "weekly", label: "Semanal" },
+      { value: "monthly", label: "Mensal" }
+    ],
+    event.recurrence
+  );
+  recurrenceSelect.addEventListener("change", () => {
+    event.recurrence = recurrenceSelect.value;
+    touch(event);
+    saveState();
+  });
+
+  const locationInput = document.createElement("input");
+  locationInput.value = event.location || "";
+  locationInput.addEventListener("input", () => {
+    event.location = locationInput.value;
+    touch(event);
+    saveStateDebounced();
+  });
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 4;
+  notesInput.value = event.notes || "";
+  notesInput.addEventListener("input", () => {
+    event.notes = notesInput.value;
+    touch(event);
+    saveStateDebounced();
+  });
+
+  const projectSelect = createProjectSelect(event.projectId);
+  projectSelect.addEventListener("change", () => {
+    event.projectId = projectSelect.value || null;
+    touch(event);
+    saveState();
+  });
+
+  const areaSelect = createAreaSelect(event.areaId);
+  areaSelect.addEventListener("change", () => {
+    event.areaId = areaSelect.value || null;
+    touch(event);
+    saveState();
+  });
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Arquivar", "ghost-btn danger", () => archiveEvent(event))
+  );
+
+  el.detailsBody.append(
+    buildField("Titulo", titleInput),
+    buildField("Data", dateInput),
+    buildField("Hora", timeInput),
+    buildField("Duracao (min)", durationInput),
+    buildField("Repeticao", recurrenceSelect),
+    buildField("Local", locationInput),
+    buildField("Projeto", projectSelect),
+    buildField("Area", areaSelect),
+    buildField("Notas", notesInput),
+    buildField("Acoes chave", actions)
+  );
+}
+
+function renderNoteDetails(note) {
+  el.detailsTitle.textContent = note.title || "Nota";
+
+  const areaSelect = createAreaSelect(note.areaId);
+  areaSelect.addEventListener("change", () => {
+    note.areaId = areaSelect.value || null;
+    touch(note);
+    saveState();
+    renderMain();
+  });
+
+  const projectSelect = createProjectSelect(note.projectId);
+  projectSelect.addEventListener("change", () => {
+    note.projectId = projectSelect.value || null;
+    touch(note);
+    saveState();
+    renderMain();
+  });
+
+  const backlinks = createElement("div", "card");
+  const linkedTasks = state.tasks.filter(
+    (task) => task.linkedNoteId === note.id || task.sourceNoteId === note.id
+  );
+  backlinks.append(createElement("div", "card-title", "Backlinks"));
+  if (!linkedTasks.length) {
+    backlinks.append(createElement("div", "list-meta", "Nenhuma tarefa vinculada."));
+  } else {
+    linkedTasks.forEach((task) => backlinks.append(createTaskRow(task, { compact: true })));
+  }
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Abrir nota", "ghost-btn", () => navigate(`/notes/${note.id}`)),
+    createButton("Arquivar", "ghost-btn danger", () => archiveNote(note))
+  );
+
+  el.detailsBody.append(
+    buildField("Area", areaSelect),
+    buildField("Projeto", projectSelect),
+    buildField("Links", backlinks),
+    buildField("Acoes chave", actions)
+  );
+}
+
+function appendQuickCapturePanel() {
+  const route = parseRoute(state.ui.route);
+  if (!route || route.name !== "today") {
+    return;
+  }
+  const section = createElement("div", "section");
+  const header = createElement("div", "section-header");
+  header.append(createElement("div", "section-title", "+ Capturar rapido"));
+  section.append(header);
+  const input = document.createElement("input");
+  input.placeholder = "Digite uma tarefa para hoje...";
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const value = input.value.trim();
+      if (!value) {
+        return;
+      }
+      state.tasks.unshift(createTask({ title: value, dueDate: getTodayKey() }));
+      input.value = "";
+      saveState();
+      renderMain();
+    }
+  });
+  section.append(input);
+  el.detailsBody.append(section);
+}
+
+function createElement(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) {
+    node.className = className;
+  }
+  if (text !== undefined) {
+    node.textContent = text;
+  }
+  return node;
+}
+
+function createButton(label, className, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className || "ghost-btn";
+  button.textContent = label;
+  if (onClick) {
+    button.addEventListener("click", onClick);
+  }
+  return button;
+}
+
+function createSection(title, hint) {
+  const section = createElement("div", "section");
+  const header = createElement("div", "section-header");
+  const heading = createElement("div", "section-title", title);
+  header.append(heading);
+  if (hint) {
+    header.append(createElement("div", "section-hint", hint));
+  }
+  section.append(header);
+  const body = createElement("div");
+  section.append(body);
+  return { section, body };
+}
+
+function buildField(label, input) {
+  const wrapper = createElement("label", "field");
+  const title = createElement("span", "", label);
+  wrapper.append(title, input);
+  return wrapper;
+}
+
+function createSelect(options, value) {
+  const select = document.createElement("select");
+  options.forEach((optionData) => {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    select.append(option);
+  });
+  select.value = value || "";
+  return select;
+}
+
+function setCount(node, count) {
+  if (!node) {
+    return;
+  }
+  node.textContent = count ? String(count) : "";
+}
+
+function createTaskRow(task, options = {}) {
+  const row = createElement("div", "task-row");
+  row.classList.toggle(
+    "active",
+    state.ui.selected && state.ui.selected.kind === "task" && state.ui.selected.id === task.id
+  );
+  row.draggable = !task.archived && task.status !== "done";
+  row.addEventListener("dragstart", (event) => {
+    if (!row.draggable) {
+      event.preventDefault();
+      return;
+    }
+    row.classList.add("dragging");
+    setDragData(event, "task", task.id);
+  });
+  row.addEventListener("dragend", () => row.classList.remove("dragging"));
+
+  const info = createElement("div");
+  info.append(createElement("div", "task-title", task.title));
+  const metaParts = [];
+  if (task.dueDate) {
+    metaParts.push(`Prazo ${task.dueDate}`);
+  }
+  if (task.dueTime) {
+    metaParts.push(task.dueTime);
+  }
+  if (task.projectId) {
+    const project = getProject(task.projectId);
+    if (project) {
+      metaParts.push(project.name);
+    }
+  }
+  if (task.areaId) {
+    const area = getArea(task.areaId);
+    if (area) {
+      metaParts.push(area.name);
+    }
+  }
+  if (task.priority) {
+    metaParts.push(PRIORITY_LABELS[task.priority] || "");
+  }
+  info.append(createElement("div", "task-meta", metaParts.filter(Boolean).join(" / ")));
+
+  row.append(info);
+
+  if (!options.compact) {
+    const actions = createElement("div", "task-actions");
+    if (task.archived) {
+      actions.append(
+        createButton("Restaurar", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.archived = false;
+          touch(task);
+          saveState();
+          renderAll();
+        })
+      );
+    } else if (task.status === "done") {
+      actions.append(
+        createButton("Reabrir", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.status = "todo";
+          touch(task);
+          saveState();
+          renderAll();
+        })
+      );
+    } else {
+      actions.append(
+        createButton("Concluir", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.status = "done";
+          touch(task);
+          saveState();
+          renderAll();
+        }),
+        createButton(task.focus ? "Remover foco" : "Foco", "ghost-btn", (event) => {
+          event.stopPropagation();
+          toggleTaskFocus(task);
+        })
+      );
+    }
+    row.append(actions);
+  }
+
+  row.addEventListener("click", () => selectItem("task", task.id));
+  return row;
+}
+
+function createTaskCard(task, options = {}) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", task.title));
+  const meta = [];
+  if (task.dueDate) {
+    meta.push(`Prazo ${task.dueDate}`);
+  }
+  if (task.projectId) {
+    const project = getProject(task.projectId);
+    if (project) {
+      meta.push(project.name);
+    }
+  }
+  card.append(createElement("div", "card-meta", meta.join(" / ")));
+  if (!options.compact) {
+    card.append(
+      createButton("Ver detalhes", "ghost-btn", (event) => {
+        event.stopPropagation();
+        selectItem("task", task.id);
+      })
+    );
+  }
+  card.addEventListener("click", () => selectItem("task", task.id));
+  return card;
+}
+
+function createEventRow(event) {
+  const row = createElement("div", "event-row");
+  row.classList.toggle(
+    "active",
+    state.ui.selected && state.ui.selected.kind === "event" && state.ui.selected.id === event.id
+  );
+  row.draggable = !event.archived;
+  row.addEventListener("dragstart", (ev) => {
+    if (!row.draggable) {
+      ev.preventDefault();
+      return;
+    }
+    row.classList.add("dragging");
+    setDragData(ev, "event", event.id);
+  });
+  row.addEventListener("dragend", () => row.classList.remove("dragging"));
+
+  const info = createElement("div");
+  info.append(createElement("div", "event-title", event.title));
+  info.append(
+    createElement(
+      "div",
+      "event-meta",
+      `${event.date} - ${formatTimeLabel(event.start)}`
+    )
+  );
+  row.append(info);
+
+  const actions = createElement("div", "task-actions");
+  if (event.archived) {
+    actions.append(
+      createButton("Restaurar", "ghost-btn", (eventClick) => {
+        eventClick.stopPropagation();
+        event.archived = false;
+        touch(event);
+        saveState();
+        renderAll();
+      })
+    );
+  } else {
+    actions.append(
+      createButton("Arquivar", "ghost-btn", (eventClick) => {
+        eventClick.stopPropagation();
+        archiveEvent(event);
+      })
+    );
+  }
+  row.append(actions);
+
+  row.addEventListener("click", () => selectItem("event", event.id));
+  return row;
+}
+
+function createInboxRow(item, options = {}) {
+  const row = createElement("div", "inbox-row");
+  row.addEventListener("mouseenter", () => {
+    state.ui.inboxActiveId = item.id;
+  });
+
+  if (!options.compact) {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = state.ui.inboxSelection.includes(item.id);
+    checkbox.addEventListener("change", () => {
+      toggleInboxSelection(item.id);
+    });
+    row.append(checkbox);
+  } else {
+    row.append(createElement("div", "tag", item.kind));
+  }
+
+  const info = createElement("div");
+  info.append(createElement("div", "task-title", item.title));
+  info.append(createElement("div", "list-meta", `Sugestao: ${item.kind}`));
+  row.append(info);
+
+  const actions = createElement("div", "inbox-actions");
+  actions.append(
+    createButton("Processar", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openProcessModal(item);
+    })
+  );
+  if (!options.compact) {
+    actions.append(
+      createButton("Arquivar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        archiveInboxItem(item.id);
+      }),
+      createButton("Deletar", "ghost-btn danger", (event) => {
+        event.stopPropagation();
+        deleteInboxItem(item.id);
+      })
+    );
+  }
+  row.append(actions);
+  return row;
+}
+
+function createProjectCard(project) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", project.name));
+  if (project.objective) {
+    card.append(createElement("div", "card-meta", project.objective));
+  }
+  const tasks = state.tasks.filter((task) => task.projectId === project.id && !task.archived);
+  const done = tasks.filter((task) => task.status === "done").length;
+  const progress = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+  const progressWrap = createElement("div", "progress");
+  const bar = createElement("div", "progress-bar");
+  bar.style.width = `${progress}%`;
+  progressWrap.append(bar);
+  card.append(progressWrap);
+  const next = tasks.find((task) => task.status !== "done");
+  if (next) {
+    card.append(createElement("div", "card-meta", `Proximo: ${next.title}`));
+  }
+
+  const actions = createElement("div", "card-actions");
+  if (project.status === "active") {
+    actions.append(
+      createButton("Pausar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "paused";
+        touch(project);
+        saveState();
+        renderMain();
+      }),
+      createButton("Concluir", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "done";
+        touch(project);
+        saveState();
+        renderMain();
+      })
+    );
+  } else if (project.status === "paused") {
+    actions.append(
+      createButton("Reativar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "active";
+        touch(project);
         saveState();
         renderMain();
       })
     );
   }
+  card.append(actions);
 
-  const clearButton = document.createElement("button");
-  clearButton.type = "button";
-  clearButton.className = "chip-clear";
-  clearButton.textContent = "Limpar tudo";
-  clearButton.addEventListener("click", () => {
-    state.ui.viewId = null;
-    state.ui.specialView = null;
-    state.ui.triageMode = false;
-    state.ui.areaId = null;
-    state.ui.typeId = null;
-    state.ui.search = "";
-    el.globalSearch.value = "";
-    saveState();
-    renderMain();
-    renderSidebar();
-  });
-  el.activeFilters.append(clearButton);
+  card.addEventListener("click", () => navigate(`/projects/${project.id}`));
+  return card;
 }
 
-function createFilterChip(label, onRemove) {
-  const chip = document.createElement("div");
-  chip.className = "filter-chip";
-
-  const text = document.createElement("span");
-  text.textContent = label;
-
-  const remove = document.createElement("button");
-  remove.type = "button";
-  remove.className = "chip-remove";
-  remove.textContent = "x";
-  remove.setAttribute("aria-label", `Remover ${label}`);
-  remove.addEventListener("click", (event) => {
-    event.stopPropagation();
-    onRemove();
-  });
-
-  chip.append(text, remove);
-  return chip;
+function createAreaCard(area) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", area.name));
+  if (area.objective) {
+    card.append(createElement("div", "card-meta", area.objective));
+  }
+  card.addEventListener("click", () => navigate(`/areas/${area.id}`));
+  return card;
 }
 
-function buildViewFilterLabel(view) {
-  const filters = view.filters || {};
-  const details = [];
-  if (filters.areaId) {
-    const area = getArea(filters.areaId);
-    if (area) {
-      details.push(`Área: ${area.name}`);
-    }
+function createNoteCard(note) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", note.title));
+  const area = note.areaId ? getArea(note.areaId) : null;
+  if (area) {
+    card.append(createElement("div", "card-meta", area.name));
   }
-  if (filters.typeId) {
-    const type = getType(filters.typeId);
-    if (type) {
-      details.push(`Tipo: ${type.name}`);
-    }
-  }
-  if (filters.status && filters.status !== "any") {
-    const label = STATUS_LABELS[filters.status] || filters.status;
-    details.push(`Status: ${label}`);
-  }
-  if (filters.due && filters.due !== "any") {
-    details.push(`Prazo: ${formatDueFilterLabel(filters.due)}`);
-  }
-  if (filters.tag) {
-    details.push(`Tag: ${filters.tag}`);
-  }
-  if (!details.length) {
-    return `Visão: ${view.name}`;
-  }
-  return `Visão: ${view.name} (${details.join("; ")})`;
-}
-
-function formatDueFilterLabel(value) {
-  const labels = {
-    withdate: "Com prazo",
-    nodate: "Sem prazo",
-    overdue: "Atrasado",
-    today: "Hoje",
-    week: "7 dias"
-  };
-  return labels[value] || value;
-}
-
-function updateEmptyState(items) {
-  const title = el.emptyState.querySelector("h3");
-  const text = el.emptyState.querySelector("p");
-  const layout = getCurrentLayout();
-
-  if (state.types.length === 0) {
-    title.textContent = "Nenhum tipo ainda";
-    text.textContent = "Crie seu primeiro tipo para organizar.";
-    setHidden(el.emptyNewType, false);
-  } else if (state.ui.specialView === "inbox") {
-    title.textContent = "Inbox vazia";
-    text.textContent = "Capture algo no topo ou crie um item.";
-    setHidden(el.emptyNewType, true);
-  } else if (state.ui.specialView === "today") {
-    title.textContent = "Nada para hoje";
-    text.textContent = "Quer planejar a semana no Calendário?";
-    setHidden(el.emptyNewType, true);
-  } else if (layout === "board") {
-    title.textContent = "Quadro vazio";
-    text.textContent = "Arraste cards entre colunas ou crie um item.";
-    setHidden(el.emptyNewType, true);
-  } else {
-    title.textContent = "Nenhum item aqui";
-    text.textContent = "Crie um item ou ajuste filtros.";
-    setHidden(el.emptyNewType, true);
-  }
-
-  setHidden(el.emptyNewArea, false);
-  const showEmpty = layout !== "calendar" && (state.types.length === 0 || items.length === 0);
-  setHidden(el.emptyState, !showEmpty);
-}
-
-function renderMainHeaderActions() {
-  if (!el.mainActionsExtra) {
-    return;
-  }
-  el.mainActionsExtra.innerHTML = "";
-  if (state.ui.specialView === "inbox") {
-    const triageButton = document.createElement("button");
-    triageButton.className = "ghost-btn";
-    triageButton.textContent = state.ui.triageMode ? "Sair da triagem" : "Triar Inbox";
-    triageButton.addEventListener("click", () => {
-      state.ui.triageMode = !state.ui.triageMode;
-      saveState();
-      renderMain();
-    });
-    el.mainActionsExtra.append(triageButton);
-  }
-  if (state.ui.specialView === "today" || state.ui.specialView === "next7") {
-    const calendarButton = document.createElement("button");
-    calendarButton.className = "ghost-btn";
-    calendarButton.textContent = "Abrir no Calendário";
-    calendarButton.addEventListener("click", () => {
-      const target = new Date();
-      state.ui.calendarMonth = formatCalendarMonth(target);
-      setLayout("calendar");
-    });
-    el.mainActionsExtra.append(calendarButton);
-  }
-  // Atualiza indicador de sincronizacao, se presente.
-  if (el.syncStatus) {
-    el.syncStatus.textContent = buildSyncStatus();
-  }
-}
-
-function renderSelectionBar() {
-  if (!el.selectionBar) {
-    return;
-  }
-  const selection = getSelectionSet();
-  if (getCurrentLayout() !== "list" || selection.size === 0 || state.ui.triageMode) {
-    setHidden(el.selectionBar, true);
-    return;
-  }
-  setHidden(el.selectionBar, false);
-  el.selectionBar.innerHTML = "";
-
-  const count = document.createElement("div");
-  count.className = "list-meta";
-  count.textContent = `${selection.size} selecionado${selection.size > 1 ? "s" : ""}`;
-
-  const statusSelect = document.createElement("select");
-  [
-    { value: "", label: "Status..." },
-    { value: "todo", label: STATUS_LABELS.todo },
-    { value: "doing", label: STATUS_LABELS.doing },
-    { value: "done", label: STATUS_LABELS.done }
-  ].forEach((optionData) => {
-    const option = document.createElement("option");
-    option.value = optionData.value;
-    option.textContent = optionData.label;
-    statusSelect.append(option);
-  });
-  statusSelect.addEventListener("change", () => {
-    if (!statusSelect.value) {
-      return;
-    }
-    batchUpdateStatus(statusSelect.value);
-    statusSelect.value = "";
-  });
-
-  const areaSelect = document.createElement("select");
-  fillSelect(areaSelect, state.areas, "", true, "Mover para área...");
-  areaSelect.addEventListener("change", () => {
-    if (!areaSelect.value) {
-      return;
-    }
-    applyToSelection((item) => {
-      item.areaId = areaSelect.value;
-      autoTriageItem(item);
-      touchItem(item);
-    });
-    areaSelect.value = "";
-    saveState();
-    renderAll();
-    showToast("Área atualizada.");
-  });
-
-  const typeSelect = document.createElement("select");
-  fillSelect(typeSelect, state.types, "", true, "Definir tipo...");
-  typeSelect.addEventListener("change", () => {
-    if (!typeSelect.value) {
-      return;
-    }
-    applyToSelection((item) => {
-      item.typeId = typeSelect.value;
-      autoTriageItem(item);
-      touchItem(item);
-    });
-    typeSelect.value = "";
-    saveState();
-    renderAll();
-    showToast("Tipo atualizado.");
-  });
-
-  const tagWrap = document.createElement("div");
-  tagWrap.className = "field";
-  const tagInput = document.createElement("input");
-  tagInput.type = "text";
-  tagInput.placeholder = "Adicionar tag";
-  const tagButton = document.createElement("button");
-  tagButton.className = "ghost-btn";
-  tagButton.type = "button";
-  tagButton.textContent = "Aplicar";
-  tagButton.addEventListener("click", () => {
-    const value = tagInput.value.trim();
-    if (!value) {
-      return;
-    }
-    applyToSelection((item) => {
-      const tags = new Set([...(item.tags || []), value]);
-      item.tags = Array.from(tags);
-      touchItem(item);
-    });
-    tagInput.value = "";
-    saveState();
-    renderAll();
-    showToast("Tag adicionada.");
-  });
-  tagInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      tagButton.click();
-    }
-  });
-  tagWrap.append(tagInput, tagButton);
-
-  const dueWrap = document.createElement("div");
-  dueWrap.className = "field";
-  const dueInput = document.createElement("input");
-  dueInput.type = "date";
-  const dueButton = document.createElement("button");
-  dueButton.className = "ghost-btn";
-  dueButton.type = "button";
-  dueButton.textContent = "Definir prazo";
-  dueButton.addEventListener("click", () => {
-    if (!dueInput.value) {
-      return;
-    }
-    applyToSelection((item) => {
-      item.due = dueInput.value;
-      touchItem(item);
-    });
-    dueInput.value = "";
-    saveState();
-    renderAll();
-    showToast("Prazo atualizado.");
-  });
-  dueInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      dueButton.click();
-    }
-  });
-  dueWrap.append(dueInput, dueButton);
-
-  const clearButton = document.createElement("button");
-  clearButton.className = "ghost-btn";
-  clearButton.type = "button";
-  clearButton.textContent = "Limpar seleção";
-  clearButton.addEventListener("click", () => {
-    state.ui.selection = [];
-    saveState();
-    renderMain();
-  });
-
-  el.selectionBar.append(count, statusSelect, areaSelect, typeSelect, tagWrap, dueWrap, clearButton);
-}
-
-function getSelectionSet() {
-  return new Set(Array.isArray(state.ui.selection) ? state.ui.selection : []);
-}
-
-function toggleSelection(itemId, index) {
-  const selection = getSelectionSet();
-  if (selection.has(itemId)) {
-    selection.delete(itemId);
-  } else {
-    selection.add(itemId);
-  }
-  state.ui.selection = Array.from(selection);
-  state.ui.selectionAnchor = Number.isFinite(index) ? index : null;
-  saveState();
-  renderMain();
-}
-
-function selectRange(index, listIds) {
-  if (!Number.isFinite(index) || !Array.isArray(listIds) || !listIds.length) {
-    return;
-  }
-  const anchor = Number.isFinite(state.ui.selectionAnchor)
-    ? state.ui.selectionAnchor
-    : index;
-  const start = Math.min(anchor, index);
-  const end = Math.max(anchor, index);
-  const selection = getSelectionSet();
-  for (let i = start; i <= end; i += 1) {
-    if (listIds[i]) {
-      selection.add(listIds[i]);
-    }
-  }
-  state.ui.selection = Array.from(selection);
-  saveState();
-  renderMain();
-}
-
-function syncSelection(items) {
-  if (!Array.isArray(state.ui.selection) || state.ui.selection.length === 0) {
-    return;
-  }
-  const available = new Set(items.map((item) => item.id));
-  const next = state.ui.selection.filter((id) => available.has(id));
-  if (next.length !== state.ui.selection.length) {
-    state.ui.selection = next;
-    saveState();
-  }
-}
-
-function applyToSelection(fn) {
-  const selection = getSelectionSet();
-  if (!selection.size) {
-    return;
-  }
-  state.items.forEach((item) => {
-    if (selection.has(item.id)) {
-      fn(item);
-    }
-  });
-}
-
-function batchUpdateStatus(status) {
-  applyToSelection((item) => {
-    const current = getItemStatus(item);
-    if (current === status) {
-      return;
-    }
-    item.status = status;
-    touchItem(item);
-    if (status === "done") {
-      maybeGenerateRecurringItem(item);
-    }
-  });
-  saveState();
-  renderSidebar();
-  renderMain();
-  renderDetails();
-  showToast("Itens atualizados.");
-}
-
-function renderTriagePanel(items) {
-  if (!el.triagePanel) {
-    return;
-  }
-  el.triagePanel.innerHTML = "";
-  if (items.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.innerHTML = "<h3>Inbox vazia</h3><p>Capture algo no topo ou crie um item.</p>";
-    el.triagePanel.append(empty);
-    return;
-  }
-
-  items.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "triage-row";
-
-    const title = document.createElement("div");
-    title.className = "triage-title";
-    title.textContent = item.title || "Sem título";
-
-    const areaSelect = document.createElement("select");
-    fillSelect(areaSelect, state.areas, item.areaId || "", true, "Área");
-    areaSelect.addEventListener("change", () => {
-      item.areaId = areaSelect.value || null;
-      autoTriageItem(item, { silent: true });
-      touchItem(item);
-      saveState();
-      renderMain();
-      renderSidebar();
-    });
-
-    const typeSelect = document.createElement("select");
-    fillSelect(typeSelect, state.types, item.typeId || "", true, "Tipo");
-    typeSelect.addEventListener("change", () => {
-      item.typeId = typeSelect.value || null;
-      autoTriageItem(item, { silent: true });
-      touchItem(item);
-      saveState();
-      renderMain();
-      renderSidebar();
-    });
-
-    const statusSelect = document.createElement("select");
-    [
-      { value: "todo", label: STATUS_LABELS.todo },
-      { value: "doing", label: STATUS_LABELS.doing },
-      { value: "done", label: STATUS_LABELS.done }
-    ].forEach((optionData) => {
-      const option = document.createElement("option");
-      option.value = optionData.value;
-      option.textContent = optionData.label;
-      statusSelect.append(option);
-    });
-    statusSelect.value = getItemStatus(item);
-    statusSelect.addEventListener("change", () => {
-      updateItemStatus(item, statusSelect.value, { silent: true });
-    });
-
-    const dueInput = document.createElement("input");
-    dueInput.type = "date";
-    dueInput.value = item.due || "";
-    dueInput.addEventListener("change", () => {
-      item.due = dueInput.value;
-      touchItem(item);
-      saveState();
-      renderMain();
-    });
-
-    const doneButton = document.createElement("button");
-    doneButton.className = "ghost-btn";
-    doneButton.type = "button";
-    doneButton.textContent = "Concluir";
-    doneButton.disabled = !canAutoTriage(item);
-    doneButton.addEventListener("click", () => {
-      if (!canAutoTriage(item)) {
-        return;
-      }
-      item.inbox = false;
-      touchItem(item);
-      saveState();
-      renderMain();
-      renderSidebar();
-      showToast("Triagem concluída.");
-    });
-
-    row.append(title, areaSelect, typeSelect, statusSelect, dueInput, doneButton);
-    el.triagePanel.append(row);
-  });
-}
-
-function renderCalendar(items) {
-  if (!el.calendarView) {
-    return;
-  }
-  el.calendarView.innerHTML = "";
-
-  const current = getCalendarMonth();
-  const monthStart = new Date(current.year, current.month, 1);
-  const monthLabel = monthStart.toLocaleDateString("pt-BR", {
-    month: "long",
-    year: "numeric"
-  });
-
-  const header = document.createElement("div");
-  header.className = "calendar-header";
-
-  const title = document.createElement("div");
-  title.className = "item-title";
-  title.textContent = monthLabel;
-
-  const nav = document.createElement("div");
-  nav.className = "calendar-nav";
-  const prev = document.createElement("button");
-  prev.className = "mini-btn";
-  prev.textContent = "◀";
-  prev.addEventListener("click", () => {
-    shiftCalendarMonth(-1);
-  });
-  const next = document.createElement("button");
-  next.className = "mini-btn";
-  next.textContent = "▶";
-  next.addEventListener("click", () => {
-    shiftCalendarMonth(1);
-  });
-  nav.append(prev, next);
-
-  header.append(title, nav);
-  el.calendarView.append(header);
-
-  const weekdays = document.createElement("div");
-  weekdays.className = "calendar-weekdays";
-  ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].forEach((day) => {
-    const label = document.createElement("div");
-    label.className = "calendar-weekday";
-    label.textContent = day;
-    weekdays.append(label);
-  });
-  el.calendarView.append(weekdays);
-
-  const grid = document.createElement("div");
-  grid.className = "calendar-grid";
-
-  const firstDay = monthStart.getDay();
-  const daysInMonth = new Date(current.year, current.month + 1, 0).getDate();
-  const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
-  const startDate = addDays(monthStart, -firstDay);
-
-  const itemsByDate = groupItemsByDate(items);
-
-  for (let i = 0; i < totalCells; i += 1) {
-    const dayDate = addDays(startDate, i);
-    const dayKey = formatDateInput(dayDate);
-    const cell = document.createElement("div");
-    cell.className = "calendar-cell";
-    if (dayDate.getMonth() !== current.month) {
-      cell.classList.add("other-month");
-    }
-    cell.dataset.date = dayKey;
-
-    cell.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = "move";
-      }
-    });
-    cell.addEventListener("dragenter", () => {
-      cell.classList.add("dropping");
-    });
-    cell.addEventListener("dragleave", () => {
-      cell.classList.remove("dropping");
-    });
-    cell.addEventListener("drop", (event) => {
-      event.preventDefault();
-      cell.classList.remove("dropping");
-      const itemId = event.dataTransfer ? event.dataTransfer.getData("text/plain") : "";
-      const item = state.items.find((entry) => entry.id === itemId);
-      if (!item) {
-        return;
-      }
-      item.due = dayKey;
-      touchItem(item);
-      saveState();
-      showToast(`Prazo definido para ${formatDateDisplay(dayKey)}.`);
-      renderMain();
-      renderDetails();
-    });
-
-    const dateLabel = document.createElement("div");
-    dateLabel.className = "calendar-date";
-    dateLabel.textContent = String(dayDate.getDate());
-    cell.append(dateLabel);
-
-    const itemsWrap = document.createElement("div");
-    itemsWrap.className = "calendar-items";
-    const dayItems = itemsByDate[dayKey] || [];
-    dayItems.slice(0, 3).forEach((item) => {
-      const mini = document.createElement("div");
-      mini.className = "calendar-item";
-      mini.textContent = item.title || "Sem título";
-      mini.setAttribute("role", "button");
-      mini.tabIndex = 0;
-      mini.addEventListener("click", (event) => {
+  if (note.archived) {
+    const actions = createElement("div", "card-actions");
+    actions.append(
+      createButton("Restaurar", "ghost-btn", (event) => {
         event.stopPropagation();
-        state.selectedItemId = item.id;
+        note.archived = false;
+        touch(note);
         saveState();
-        renderMain();
-        renderDetails();
-      });
-      mini.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          state.selectedItemId = item.id;
-          saveState();
-          renderMain();
-          renderDetails();
-        }
-      });
-      mini.draggable = true;
-      mini.addEventListener("dragstart", (event) => {
-        if (event.dataTransfer) {
-          event.dataTransfer.setData("text/plain", item.id);
-          event.dataTransfer.effectAllowed = "move";
-        }
-      });
-      itemsWrap.append(mini);
-    });
-    if (dayItems.length > 3) {
-      const more = document.createElement("div");
-      more.className = "calendar-more";
-      more.textContent = `+${dayItems.length - 3} mais`;
-      more.addEventListener("click", (event) => {
-        event.stopPropagation();
-      });
-      itemsWrap.append(more);
-    }
-    cell.append(itemsWrap);
-
-    cell.addEventListener("click", () => {
-      openNewItemModal({ due: dayKey, inbox: false });
-    });
-
-    grid.append(cell);
+        renderAll();
+      })
+    );
+    card.append(actions);
   }
-
-  el.calendarView.append(grid);
+  card.addEventListener("click", () => navigate(`/notes/${note.id}`));
+  return card;
 }
 
-function renderList(items) {
-  el.itemsList.innerHTML = "";
-  const listIds = items.map((item) => item.id);
-  items.forEach((item, index) => {
-    el.itemsList.append(createItemCard(item, { mode: "list", index, listIds }));
-  });
-}
-
-function renderBoard(items) {
-  el.itemsBoard.innerHTML = "";
-  STATUS_ORDER.forEach((status) => {
-    const column = document.createElement("div");
-    column.className = "board-column";
-    column.dataset.status = status;
-    let dragDepth = 0;
-    column.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = "move";
-      }
-    });
-    column.addEventListener("dragenter", () => {
-      dragDepth += 1;
-      column.classList.add("dropping");
-    });
-    column.addEventListener("dragleave", () => {
-      dragDepth = Math.max(0, dragDepth - 1);
-      if (dragDepth === 0) {
-        column.classList.remove("dropping");
-      }
-    });
-    column.addEventListener("drop", (event) => {
-      event.preventDefault();
-      dragDepth = 0;
-      column.classList.remove("dropping");
-      const itemId = event.dataTransfer ? event.dataTransfer.getData("text/plain") : "";
-      if (!itemId) {
-        return;
-      }
-      const item = state.items.find((entry) => entry.id === itemId);
-      if (!item) {
-        return;
-      }
-      if (getItemStatus(item) === status) {
-        return;
-      }
-      updateItemStatus(item, status, { silent: true });
-    });
-    const columnItems = items.filter((item) => getItemStatus(item) === status);
-    const header = document.createElement("div");
-    header.className = "board-header";
-    const headerTitle = document.createElement("div");
-    headerTitle.textContent = STATUS_LABELS[status];
-    const headerMeta = document.createElement("div");
-    headerMeta.className = "list-meta";
-    headerMeta.textContent = String(columnItems.length);
-    header.append(headerTitle, headerMeta);
-    column.append(header);
-    columnItems.forEach((item) => {
-      column.append(createItemCard(item, { mode: "board" }));
-    });
-    el.itemsBoard.append(column);
-  });
-}
-
-function setDetailsOpen(isOpen) {
-  document.body.classList.toggle("details-open", isOpen);
-  if (el.detailsPanel) {
-    el.detailsPanel.setAttribute("aria-hidden", String(!isOpen));
-  }
-  if (el.detailsBackdrop) {
-    setHidden(el.detailsBackdrop, !isOpen);
-    el.detailsBackdrop.setAttribute("aria-hidden", String(!isOpen));
-  }
-}
-
-function closeDetails() {
-  if (!state.selectedItemId) {
-    setDetailsOpen(false);
-    return;
-  }
-  state.selectedItemId = null;
-  saveState();
-  renderMain();
-  renderDetails();
-}
-
-function renderDetails() {
-  const item = getSelectedItem();
-  setDetailsOpen(Boolean(item));
-  if (!item) {
-    setHidden(el.detailsEmpty, true);
-    setHidden(el.detailsForm, true);
-    el.deleteItem.disabled = true;
-    if (el.returnInbox) {
-      el.returnInbox.disabled = true;
-      setHidden(el.returnInbox, true);
-    }
-    return;
-  }
-
-  el.deleteItem.disabled = false;
-  setHidden(el.detailsEmpty, true);
-  setHidden(el.detailsForm, false);
-
-  fillSelect(el.itemType, state.types, item.typeId, true, "Sem tipo");
-  fillSelect(el.itemArea, state.areas, item.areaId, true, "Sem área");
-
-  el.itemTitle.value = item.title || "";
-  el.itemStatus.value = getItemStatus(item);
-  el.itemDue.value = item.due || "";
-  el.itemTags.value = (item.tags || []).join(", ");
-  el.itemNotes.value = item.notes || "";
-  el.itemProgress.value = String(item.progress || 0);
-  el.itemProgressValue.textContent = `${item.progress || 0}%`;
-
-  const type = getType(item.typeId);
-  const features = type ? type.features || {} : {};
-  const showStatus = Boolean(features.status);
-  const showDue = Boolean(features.due);
-  const showProgress = Boolean(features.progress);
-  const showChecklist = Boolean(features.checklist);
-  const showCustom = Boolean(type && Array.isArray(type.customFields) && type.customFields.length);
-
-  const statusLabel = el.itemStatus.closest("label");
-  const dueLabel = el.itemDue.closest("label");
-  if (statusLabel) {
-    setHidden(statusLabel, !showStatus);
-  }
-  if (dueLabel) {
-    setHidden(dueLabel, !showDue);
-  }
-
-  setHidden(el.statusRow, !(showStatus || showDue));
-  setHidden(el.progressRow, !showProgress);
-  setHidden(el.checklistRow, !showChecklist);
-
-  renderChecklist(item, showChecklist);
-  renderCustomFields(item, type);
-
-  if (el.returnInbox) {
-    setHidden(el.returnInbox, Boolean(item.inbox));
-    el.returnInbox.disabled = Boolean(item.inbox);
-  }
-
-  renderDetailsQuickActions(item);
-  renderRecurrenceFields(item);
-
-  const hasCustomData = item.custom && Object.keys(item.custom).length > 0;
-  const hasAdvancedData = Boolean(
-    (showProgress && item.progress) ||
-      (showChecklist && Array.isArray(item.checklist) && item.checklist.length) ||
-      (showCustom && hasCustomData) ||
-      item.recurrence ||
-      item.recurrenceParentId
-  );
-  const shouldOpenAdvanced = Boolean(state.ui.detailsSections.advancedOpen || hasAdvancedData);
-  if (el.advancedSection) {
-    setHidden(el.advancedSection, !shouldOpenAdvanced);
-  }
-  if (el.advancedToggle) {
-    el.advancedToggle.querySelector(".toggle-icon").textContent = shouldOpenAdvanced ? "-" : "+";
-  }
-}
-
-function renderChecklist(item, enabled) {
-  el.checklistList.innerHTML = "";
-  if (!enabled) {
-    return;
-  }
-  if (!Array.isArray(item.checklist)) {
-    item.checklist = [];
-  }
-
-  item.checklist.forEach((entry) => {
-    const row = document.createElement("div");
-    row.className = "check-item";
-
+function createChecklistEditor(task) {
+  const wrapper = createElement("div");
+  const list = createElement("div");
+  task.checklist.forEach((item) => {
+    const row = createElement("div", "task-row");
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    checkbox.checked = Boolean(entry.done);
+    checkbox.checked = Boolean(item.done);
     checkbox.addEventListener("change", () => {
-      entry.done = checkbox.checked;
-      touchItem(item);
+      item.done = checkbox.checked;
+      touch(task);
       saveState();
     });
-
-    const text = document.createElement("input");
-    text.type = "text";
-    text.placeholder = "Item";
-    text.value = entry.text || "";
-    text.addEventListener("input", () => {
-      entry.text = text.value;
-      touchItem(item);
-      saveStateDebounced();
-    });
-
-    const remove = document.createElement("button");
-    remove.className = "mini-btn";
-    remove.textContent = "x";
-    remove.addEventListener("click", () => {
-      item.checklist = item.checklist.filter((check) => check.id !== entry.id);
-      touchItem(item);
-      saveState();
-      renderDetails();
-    });
-
-    row.append(checkbox, text, remove);
-    el.checklistList.append(row);
-  });
-}
-
-function renderCustomFields(item, type) {
-  el.customFields.innerHTML = "";
-  const fields = type && Array.isArray(type.customFields) ? type.customFields : [];
-  if (!fields.length) {
-    return;
-  }
-
-  fields.forEach((field) => {
-    const wrapper = document.createElement("label");
-    wrapper.className = "field";
-    const label = document.createElement("span");
-    label.textContent = field.label || "Campo";
-
-    let input;
-    if (field.kind === "select") {
-      input = document.createElement("select");
-      const options = parseList(field.options);
-      options.forEach((optionValue) => {
-        const option = document.createElement("option");
-        option.value = optionValue;
-        option.textContent = optionValue;
-        input.append(option);
-      });
-    } else if (field.kind === "number") {
-      input = document.createElement("input");
-      input.type = "number";
-    } else if (field.kind === "date") {
-      input = document.createElement("input");
-      input.type = "date";
-    } else if (field.kind === "checkbox") {
-      input = document.createElement("input");
-      input.type = "checkbox";
-    } else {
-      input = document.createElement("input");
-      input.type = "text";
-    }
-
-    const customValue = item.custom ? item.custom[field.id] : undefined;
-    if (input.type === "checkbox") {
-      input.checked = Boolean(customValue);
-    } else if (customValue !== undefined && customValue !== null) {
-      input.value = String(customValue);
-    }
-
+    const input = document.createElement("input");
+    input.value = item.text || "";
     input.addEventListener("input", () => {
-      if (!item.custom) {
-        item.custom = {};
-      }
-      if (input.type === "checkbox") {
-        item.custom[field.id] = input.checked;
-      } else {
-        item.custom[field.id] = input.value;
-      }
-      touchItem(item);
+      item.text = input.value;
+      touch(task);
       saveStateDebounced();
     });
-
-    wrapper.append(label, input);
-    el.customFields.append(wrapper);
+    row.append(checkbox, input);
+    list.append(row);
   });
-}
-
-function renderDetailsQuickActions(item) {
-  if (!el.detailsQuickActions) {
-    return;
-  }
-  el.detailsQuickActions.innerHTML = "";
-  const snooze = createSnoozeMenu(item, { label: "Adiar" });
-  el.detailsQuickActions.append(snooze);
-}
-
-function renderRecurrenceFields(item) {
-  if (!el.itemRecurrence || !el.itemRecurrenceInterval || !el.recurrenceIntervalRow) {
-    return;
-  }
-  if (item.recurrence && item.recurrence.freq) {
-    el.itemRecurrence.value = item.recurrence.freq;
-  } else {
-    el.itemRecurrence.value = "";
-  }
-  if (item.recurrence && item.recurrence.freq === "interval") {
-    el.recurrenceIntervalRow.classList.remove("hidden");
-    el.itemRecurrenceInterval.value = String(item.recurrence.intervalDays || 1);
-  } else {
-    el.recurrenceIntervalRow.classList.add("hidden");
-    el.itemRecurrenceInterval.value = "1";
-  }
-  if (el.recurrenceSource) {
-    setHidden(el.recurrenceSource, !item.recurrenceParentId);
-  }
-}
-
-function toggleAdvancedSection() {
-  state.ui.detailsSections.advancedOpen = !state.ui.detailsSections.advancedOpen;
-  saveState();
-  renderDetails();
-}
-function handleQuickAdd() {
-  if (!ensureTypeReady()) {
-    return;
-  }
-  const raw = el.quickInput.value.trim();
-  if (!raw) {
-    return;
-  }
-  const typeId = el.quickType.value || null;
-  const parsed = parseQuickInput(raw);
-  const item = createItem({
-    title: parsed.title,
-    typeId,
-    areaId: getDefaultAreaId(),
-    tags: parsed.tags,
-    due: parsed.due
+  const add = createButton("+", "ghost-btn", () => {
+    task.checklist.push({ id: uid("sub"), text: "", done: false });
+    touch(task);
+    saveState();
+    renderDetailsPanel();
   });
-  state.items.unshift(item);
-  state.selectedItemId = item.id;
-  el.quickInput.value = "";
-  saveState();
-  renderAll();
-  el.itemTitle.focus();
+  wrapper.append(list, add);
+  return wrapper;
 }
 
-function handleNewItem() {
-  openNewItemModal();
-}
+function createBlockEditor(note, block, index) {
+  const wrap = createElement("div", "block");
+  const toolbar = createElement("div", "block-toolbar");
 
-function ensureTypeReady() {
-  if (state.types.length === 0) {
-    openTypeModal();
-    return false;
-  }
-  return true;
-}
-
-function openNewItemModal(options = {}) {
-  if (!ensureTypeReady()) {
-    return;
-  }
-
-  const titleInput = document.createElement("input");
-  titleInput.type = "text";
-  titleInput.placeholder = "Título do item";
-
-  const typeSelect = document.createElement("select");
-  const initialType = options.typeId || state.ui.typeId || "";
-  fillSelect(typeSelect, state.types, initialType, true, "Sem tipo");
-
-  const areaSelect = document.createElement("select");
-  const initialArea = options.areaId || state.ui.areaId || "";
-  fillSelect(areaSelect, state.areas, initialArea, true, "Sem área");
-
-  const dueInput = document.createElement("input");
-  dueInput.type = "date";
-  dueInput.value = options.due || "";
-
-  function applyTypeDefaultsToForm() {
-    const type = getType(typeSelect.value);
-    if (!type) {
-      return;
-    }
-    if (!dueInput.value && Number.isFinite(type.defaultDueOffsetDays)) {
-      dueInput.value = formatDateInput(addDays(new Date(), type.defaultDueOffsetDays));
-    }
-  }
-
+  const typeSelect = createSelect(BLOCK_TYPES, block.type);
   typeSelect.addEventListener("change", () => {
-    applyTypeDefaultsToForm();
+    block.type = typeSelect.value;
+    resetBlockForType(block);
+    touch(note);
+    saveState();
+    renderMain();
   });
 
-  applyTypeDefaultsToForm();
-
-  const row = document.createElement("div");
-  row.className = "field-row";
-  row.append(buildField("Tipo", typeSelect), buildField("Área", areaSelect));
-
-  openModal({
-    eyebrow: "Item",
-    title: "Novo item",
-    body: [
-      buildField("Título", titleInput),
-      row,
-      buildField("Prazo", dueInput)
-    ],
-    saveLabel: "Criar item",
-    onSave: () => {
-      const item = createItem(
-        {
-          title: titleInput.value.trim() || "Novo item",
-          typeId: typeSelect.value || null,
-          areaId: areaSelect.value || null,
-          due: dueInput.value || ""
-        },
-        { inbox: options.inbox }
-      );
-      state.items.unshift(item);
-      state.selectedItemId = item.id;
-      saveState();
-      renderAll();
-      el.itemTitle.focus();
-      return true;
-    }
+  const moveUp = createButton("Cima", "ghost-btn", () => moveBlock(note, index, -1));
+  const moveDown = createButton("Baixo", "ghost-btn", () => moveBlock(note, index, 1));
+  const toTask = createButton("Converter em tarefa", "ghost-btn", () =>
+    convertBlockToTask(note, block)
+  );
+  const remove = createButton("Excluir", "ghost-btn danger", () => {
+    note.blocks.splice(index, 1);
+    touch(note);
+    saveState();
+    renderMain();
   });
+
+  toolbar.append(typeSelect, moveUp, moveDown, toTask, remove);
+  wrap.append(toolbar);
+
+  const content = createBlockContent(note, block);
+  wrap.append(content);
+  return wrap;
 }
 
-function setAreaFilter(id) {
-  state.ui.areaId = id || null;
-  saveState();
-  renderMain();
-  renderSidebar();
-}
-
-function setTypeFilter(id) {
-  state.ui.typeId = id || null;
-  saveState();
-  renderMain();
-  renderSidebar();
-}
-
-function setView(id) {
-  state.ui.viewId = id || null;
-  if (state.ui.viewId) {
-    state.ui.specialView = null;
-    state.ui.triageMode = false;
-  }
-  saveState();
-  renderMain();
-  renderSidebar();
-}
-
-function setSpecialView(id) {
-  state.ui.specialView = id || null;
-  if (state.ui.specialView) {
-    state.ui.viewId = null;
-  }
-  if (state.ui.specialView !== "inbox") {
-    state.ui.triageMode = false;
-  }
-  saveState();
-  renderMain();
-  renderSidebar();
-}
-
-function getFlowCounts() {
-  const counts = {
-    inbox: 0,
-    today: 0,
-    next7: 0,
-    overdue: 0,
-    nodue: 0,
-    doing: 0
-  };
-  const today = dateOnly(new Date());
-  const weekEnd = addDays(today, 7);
-  state.items.forEach((item) => {
-    const status = getItemStatus(item);
-    const dueDate = parseDate(item.due);
-    if (item.inbox) {
-      counts.inbox += 1;
-    }
-    if (status === "doing") {
-      counts.doing += 1;
-    }
-    if (!item.due) {
-      counts.nodue += 1;
-      return;
-    }
-    if (!dueDate) {
-      return;
-    }
-    if (sameDay(dueDate, today)) {
-      counts.today += 1;
-    }
-    if (dueDate >= today && dueDate <= weekEnd) {
-      counts.next7 += 1;
-    }
-    if (dueDate < today && status !== "done") {
-      counts.overdue += 1;
-    }
-  });
-  return counts;
-}
-
-function canAutoTriage(item) {
-  return Boolean(item.areaId || item.typeId);
-}
-
-function autoTriageItem(item, options = {}) {
-  if (!canAutoTriage(item)) {
-    item.inbox = true;
-    return;
-  }
-  if (item.inbox) {
-    item.inbox = false;
-    if (!options.silent) {
-      showToast("Triagem concluída.");
-    }
-  }
-}
-
-function toggleSection(section) {
-  if (!state.ui.collapsed) {
-    state.ui.collapsed = { areas: false, views: false, types: false };
-  }
-  state.ui.collapsed[section] = !state.ui.collapsed[section];
-  saveState();
-  renderSidebar();
-}
-function openAreaModal(area) {
-  const nameInput = document.createElement("input");
-  nameInput.type = "text";
-  nameInput.placeholder = "Nome da área";
-  nameInput.value = area ? area.name : "";
-
-  openModal({
-    eyebrow: "Área",
-    title: area ? "Editar área" : "Nova área",
-    body: [buildField("Nome", nameInput)],
-    onSave: () => {
-      const name = nameInput.value.trim();
-      if (!name) {
-        alert("Informe um nome.");
-        return false;
-      }
-      if (area) {
-        area.name = name;
-        touchEntity(area);
-      } else {
-        const newArea = { id: uid("area"), name, updatedAt: nowIso() };
-        state.areas.push(newArea);
-        if (!state.ui.areaId) {
-          state.ui.areaId = newArea.id;
-        }
-      }
-      saveState();
-      renderAll();
-      return true;
-    },
-    onDelete: area
-      ? () => {
-          confirmWithModal("Excluir área?", () => {
-            recordDeletion("areas", area.id);
-            state.areas = state.areas.filter((entry) => entry.id !== area.id);
-            state.items.forEach((item) => {
-              if (item.areaId === area.id) {
-                item.areaId = null;
-                touchItem(item);
-              }
-            });
-            state.views.forEach((view) => {
-              if (view.filters && view.filters.areaId === area.id) {
-                view.filters.areaId = null;
-                touchEntity(view);
-              }
-            });
-            if (state.ui.areaId === area.id) {
-              state.ui.areaId = null;
-            }
-            saveState();
-            renderAll();
-          }, { confirmLabel: "Excluir" });
-          return false;
-        }
-      : null
-  });
-}
-function openTypeModal(type) {
-  const nameInput = document.createElement("input");
-  nameInput.type = "text";
-  nameInput.placeholder = "Nome do tipo";
-  nameInput.value = type ? type.name : "";
-
-  const baseFeatures = {
-    status: true,
-    due: true,
-    checklist: false,
-    progress: false
-  };
-  const initialFeatures = type ? { ...baseFeatures, ...(type.features || {}) } : baseFeatures;
-
-  const statusToggle = createToggleLine("Status", initialFeatures.status);
-  const dueToggle = createToggleLine("Prazo", initialFeatures.due);
-  const checklistToggle = createToggleLine("Checklist", initialFeatures.checklist);
-  const progressToggle = createToggleLine("Progresso", initialFeatures.progress);
-
-  const featureGroup = document.createElement("div");
-  featureGroup.className = "field-list";
-  featureGroup.append(statusToggle.wrapper, dueToggle.wrapper, checklistToggle.wrapper, progressToggle.wrapper);
-
-  let localFields = type ? cloneFields(type.customFields) : [];
-  const fieldList = document.createElement("div");
-  fieldList.className = "field-list";
-
-  const addFieldButton = document.createElement("button");
-  addFieldButton.className = "ghost-btn";
-  addFieldButton.textContent = "Adicionar campo";
-  addFieldButton.addEventListener("click", () => {
-    localFields.push({
-      id: uid("field"),
-      label: "Campo",
-      kind: "text",
-      options: []
+function createBlockContent(note, block) {
+  const container = createElement("div");
+  if (["title", "heading"].includes(block.type)) {
+    const input = document.createElement("input");
+    input.value = block.text || "";
+    input.addEventListener("input", () => {
+      block.text = input.value;
+      touch(note);
+      saveStateDebounced();
     });
-    renderFieldList();
-  });
-
-  function renderFieldList() {
-    fieldList.innerHTML = "";
-    localFields.forEach((field) => {
-      const row = document.createElement("div");
-      row.className = "field-row-inline";
-
-      const labelInput = document.createElement("input");
-      labelInput.type = "text";
-      labelInput.value = field.label || "";
-      labelInput.placeholder = "Nome do campo";
-      labelInput.addEventListener("input", () => {
-        field.label = labelInput.value;
-      });
-
-      const kindSelect = document.createElement("select");
-      ["text", "number", "date", "select", "checkbox"].forEach((kind) => {
-        const option = document.createElement("option");
-        option.value = kind;
-        option.textContent = kind;
-        kindSelect.append(option);
-      });
-      kindSelect.value = field.kind || "text";
-      kindSelect.addEventListener("change", () => {
-        field.kind = kindSelect.value;
-        renderFieldList();
-      });
-
-      const optionsInput = document.createElement("input");
-      optionsInput.type = "text";
-      optionsInput.placeholder = "opcao1, opcao2";
-      optionsInput.value = Array.isArray(field.options) ? field.options.join(", ") : "";
-      optionsInput.addEventListener("input", () => {
-        field.options = parseList(optionsInput.value);
-      });
-      setHidden(optionsInput, kindSelect.value !== "select");
-
-      const removeButton = document.createElement("button");
-      removeButton.className = "mini-btn";
-      removeButton.textContent = "x";
-      removeButton.addEventListener("click", () => {
-        localFields = localFields.filter((entry) => entry.id !== field.id);
-        renderFieldList();
-      });
-
-      row.append(labelInput, kindSelect, optionsInput, removeButton);
-      fieldList.append(row);
+    container.append(input);
+  } else if (["text", "quote"].includes(block.type)) {
+    const input = document.createElement("textarea");
+    input.rows = 3;
+    input.value = block.text || "";
+    input.addEventListener("input", () => {
+      block.text = input.value;
+      touch(note);
+      saveStateDebounced();
     });
-  }
-  renderFieldList();
-
-  const fieldsSection = document.createElement("div");
-  fieldsSection.append(fieldList, addFieldButton);
-
-  const defaultStatusSelect = document.createElement("select");
-  [
-    { value: "todo", label: STATUS_LABELS.todo },
-    { value: "doing", label: STATUS_LABELS.doing },
-    { value: "done", label: STATUS_LABELS.done }
-  ].forEach((optionData) => {
-    const option = document.createElement("option");
-    option.value = optionData.value;
-    option.textContent = optionData.label;
-    defaultStatusSelect.append(option);
-  });
-  defaultStatusSelect.value = type && type.defaultStatus ? type.defaultStatus : "todo";
-
-  const defaultTagsInput = document.createElement("input");
-  defaultTagsInput.type = "text";
-  defaultTagsInput.placeholder = "tag1, tag2";
-  defaultTagsInput.value = Array.isArray(type?.defaultTags) ? type.defaultTags.join(", ") : "";
-
-  const defaultDueInput = document.createElement("input");
-  defaultDueInput.type = "number";
-  defaultDueInput.placeholder = "Ex.: 3";
-  defaultDueInput.value =
-    type && Number.isFinite(type.defaultDueOffsetDays) ? String(type.defaultDueOffsetDays) : "";
-
-  const defaultChecklistInput = document.createElement("textarea");
-  defaultChecklistInput.rows = 4;
-  defaultChecklistInput.placeholder = "Um item por linha";
-  defaultChecklistInput.value = Array.isArray(type?.defaultChecklist)
-    ? type.defaultChecklist.join("\n")
-    : "";
-
-  const defaultNotesInput = document.createElement("textarea");
-  defaultNotesInput.rows = 4;
-  defaultNotesInput.placeholder = "Notas padrão";
-  defaultNotesInput.value = type && type.defaultNotes ? type.defaultNotes : "";
-
-  openModal({
-    eyebrow: "Tipo",
-    title: type ? "Editar tipo" : "Novo tipo",
-    body: [
-      buildField("Nome", nameInput),
-      buildSectionLabel("Recursos"),
-      featureGroup,
-      buildSectionLabel("Campos personalizados"),
-      fieldsSection,
-      buildSectionLabel("Padrões do tipo"),
-      buildField("Status padrão", defaultStatusSelect),
-      buildField("Tags padrão", defaultTagsInput),
-      buildField("Prazo padrão (dias)", defaultDueInput),
-      buildField("Checklist padrão", defaultChecklistInput),
-      buildField("Notas padrão", defaultNotesInput)
-    ],
-    onSave: () => {
-      const name = nameInput.value.trim();
-      if (!name) {
-        alert("Informe um nome.");
-        return false;
-      }
-      const defaultDueOffset = defaultDueInput.value.trim();
-      const defaultDueOffsetDays = defaultDueOffset ? Number(defaultDueOffset) : null;
-      const defaultChecklist = defaultChecklistInput.value
+    container.append(input);
+  } else if (block.type === "list") {
+    const input = document.createElement("textarea");
+    input.rows = 3;
+    input.value = (block.items || []).join("\n");
+    input.addEventListener("input", () => {
+      block.items = input.value
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean);
-      const payload = {
-        id: type ? type.id : uid("type"),
-        name,
-        updatedAt: nowIso(),
-        features: {
-          status: statusToggle.input.checked,
-          due: dueToggle.input.checked,
-          checklist: checklistToggle.input.checked,
-          progress: progressToggle.input.checked
-        },
-        customFields: localFields.map(sanitizeField),
-        defaultStatus: defaultStatusSelect.value,
-        defaultTags: parseList(defaultTagsInput.value),
-        defaultDueOffsetDays: Number.isFinite(defaultDueOffsetDays) ? defaultDueOffsetDays : null,
-        defaultChecklist,
-        defaultNotes: defaultNotesInput.value.trim()
-      };
-      if (type) {
-        Object.assign(type, payload);
-      } else {
-        state.types.push(payload);
-        if (!state.ui.typeId) {
-          state.ui.typeId = payload.id;
-        }
-      }
+      touch(note);
+      saveStateDebounced();
+    });
+    container.append(input);
+  } else if (block.type === "checklist") {
+    const list = createElement("div");
+    (block.items || []).forEach((item) => {
+      const row = createElement("div", "task-row");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = Boolean(item.done);
+      checkbox.addEventListener("change", () => {
+        item.done = checkbox.checked;
+        touch(note);
+        saveStateDebounced();
+      });
+      const input = document.createElement("input");
+      input.value = item.text || "";
+      input.addEventListener("input", () => {
+        item.text = input.value;
+        touch(note);
+        saveStateDebounced();
+      });
+      row.append(checkbox, input);
+      list.append(row);
+    });
+    const add = createButton("Adicionar item", "ghost-btn", () => {
+      block.items = block.items || [];
+      block.items.push({ id: uid("check"), text: "", done: false });
+      touch(note);
       saveState();
-      renderAll();
-      return true;
-    },
-    onDelete: type
-      ? () => {
-          confirmWithModal("Excluir tipo?", () => {
-            recordDeletion("types", type.id);
-            state.types = state.types.filter((entry) => entry.id !== type.id);
-            state.items.forEach((item) => {
-              if (item.typeId === type.id) {
-                item.typeId = null;
-                touchItem(item);
-              }
-            });
-            state.views.forEach((view) => {
-              if (view.filters && view.filters.typeId === type.id) {
-                view.filters.typeId = null;
-                touchEntity(view);
-              }
-            });
-            if (state.ui.typeId === type.id) {
-              state.ui.typeId = null;
-            }
-            if (state.ui.quickTypeId === type.id) {
-              state.ui.quickTypeId = null;
-            }
-            saveState();
-            renderAll();
-          }, { confirmLabel: "Excluir" });
-          return false;
-        }
-      : null
+      renderMain();
+    });
+    container.append(list, add);
+  } else if (block.type === "table") {
+    const input = document.createElement("textarea");
+    input.rows = 4;
+    input.value = (block.rows || []).map((row) => row.join(" | ")).join("\n");
+    input.addEventListener("input", () => {
+      block.rows = input.value
+        .split("\n")
+        .map((line) => line.split("|").map((cell) => cell.trim()))
+        .filter((row) => row.length && row[0]);
+      touch(note);
+      saveStateDebounced();
+    });
+    container.append(input);
+  } else if (block.type === "divider") {
+    container.append(document.createElement("hr"));
+  } else if (block.type === "embed") {
+    const input = document.createElement("input");
+    input.placeholder = "https://...";
+    input.value = block.url || "";
+    input.addEventListener("input", () => {
+      block.url = input.value;
+      touch(note);
+      saveStateDebounced();
+    });
+    container.append(input);
+  }
+  return container;
+}
+
+function createMilestoneRow(project, milestone) {
+  const row = createElement("div", "task-row");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = Boolean(milestone.done);
+  checkbox.addEventListener("change", () => {
+    milestone.done = checkbox.checked;
+    touch(project);
+    saveState();
+  });
+  const input = document.createElement("input");
+  input.value = milestone.title || "";
+  input.addEventListener("input", () => {
+    milestone.title = input.value;
+    touch(project);
+    saveStateDebounced();
+  });
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = milestone.dueDate || "";
+  dateInput.addEventListener("change", () => {
+    milestone.dueDate = dateInput.value;
+    touch(project);
+    saveStateDebounced();
+  });
+  row.append(checkbox, input, dateInput);
+  return row;
+}
+
+function resetBlockForType(block) {
+  block.text = "";
+  block.items = [];
+  block.rows = [];
+  block.url = "";
+  if (block.type === "checklist") {
+    block.items = [];
+  }
+  if (block.type === "list") {
+    block.items = [];
+  }
+  if (block.type === "table") {
+    block.rows = [];
+  }
+  if (block.type === "embed") {
+    block.url = "";
+  }
+}
+
+function moveBlock(note, index, direction) {
+  const target = index + direction;
+  if (target < 0 || target >= note.blocks.length) {
+    return;
+  }
+  const [block] = note.blocks.splice(index, 1);
+  note.blocks.splice(target, 0, block);
+  touch(note);
+  saveState();
+  renderMain();
+}
+
+function convertBlockToTask(note, block) {
+  const text = getBlockText(block);
+  if (!text) {
+    showToast("Bloco vazio.");
+    return;
+  }
+  const task = createTask({
+    title: text,
+    sourceNoteId: note.id,
+    linkedNoteId: note.id
+  });
+  state.tasks.unshift(task);
+  saveState();
+  showToast("Tarefa criada a partir da nota.");
+  renderMain();
+}
+
+function toggleInboxSelection(id) {
+  const selection = new Set(state.ui.inboxSelection);
+  if (selection.has(id)) {
+    selection.delete(id);
+  } else {
+    selection.add(id);
+  }
+  state.ui.inboxSelection = Array.from(selection);
+  saveState();
+  renderMain();
+}
+
+function bulkArchiveInbox(ids) {
+  ids.forEach((id) => archiveInboxItem(id));
+  state.ui.inboxSelection = [];
+  saveState();
+  renderMain();
+}
+
+function bulkDeleteInbox(ids) {
+  ids.forEach((id) => deleteInboxItem(id));
+  state.ui.inboxSelection = [];
+  saveState();
+  renderMain();
+}
+
+function archiveInboxItem(id) {
+  state.inbox = state.inbox.filter((item) => item.id !== id);
+  showToast("Item arquivado.");
+  saveState();
+  renderMain();
+}
+
+function deleteInboxItem(id) {
+  state.inbox = state.inbox.filter((item) => item.id !== id);
+  showToast("Item removido.");
+  saveState();
+  renderMain();
+}
+
+function handleInboxShortcuts(event) {
+  const route = parseRoute(state.ui.route);
+  if (!route || route.name !== "inbox") {
+    return;
+  }
+  if (["input", "textarea", "select"].includes(document.activeElement?.tagName?.toLowerCase())) {
+    return;
+  }
+  const key = event.key.toLowerCase();
+  if (!["t", "n", "e"].includes(key)) {
+    return;
+  }
+  event.preventDefault();
+  const kind = key === "t" ? "task" : key === "n" ? "note" : "event";
+  if (state.ui.inboxSelection.length) {
+    openBulkProcessModal(state.ui.inboxSelection, { kind });
+    return;
+  }
+  const activeId = state.ui.inboxActiveId || (state.inbox[0] ? state.inbox[0].id : null);
+  if (!activeId) {
+    return;
+  }
+  const item = state.inbox.find((entry) => entry.id === activeId);
+  if (item) {
+    openProcessModal(item, { kind });
+  }
+}
+
+function toggleTaskFocus(task) {
+  if (!task.focus && countFocusTasks() >= 3) {
+    showToast("Limite de 3 focos.");
+    return;
+  }
+  task.focus = !task.focus;
+  touch(task);
+  saveState();
+  renderMain();
+}
+
+function snoozeTask(task, days) {
+  const base = task.dueDate ? parseDate(task.dueDate) : dateOnly(new Date());
+  const next = addDays(base || new Date(), days);
+  task.dueDate = formatDate(next);
+  task.dueTime = "";
+  task.timeBlock = null;
+  touch(task);
+  saveState();
+  renderMain();
+}
+
+function archiveTask(task) {
+  task.archived = true;
+  touch(task);
+  saveState();
+  clearSelection();
+  renderMain();
+}
+
+function archiveEvent(event) {
+  event.archived = true;
+  touch(event);
+  saveState();
+  clearSelection();
+  renderMain();
+}
+
+function archiveNote(note) {
+  note.archived = true;
+  touch(note);
+  saveState();
+  clearSelection();
+  renderMain();
+}
+
+function matchesTaskSearch(task, query) {
+  if (!query) {
+    return true;
+  }
+  const project = task.projectId ? getProject(task.projectId) : null;
+  const area = task.areaId ? getArea(task.areaId) : null;
+  const haystack = [
+    task.title,
+    task.notes,
+    project ? project.name : "",
+    area ? area.name : ""
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(query);
+}
+
+function matchesEventSearch(event, query) {
+  if (!query) {
+    return true;
+  }
+  const project = event.projectId ? getProject(event.projectId) : null;
+  const area = event.areaId ? getArea(event.areaId) : null;
+  const haystack = [
+    event.title,
+    event.notes,
+    event.location,
+    project ? project.name : "",
+    area ? area.name : ""
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(query);
+}
+
+function matchesNoteSearch(note, query) {
+  if (!query) {
+    return true;
+  }
+  const blockText = (note.blocks || []).map((block) => getBlockText(block)).join(" ");
+  const haystack = [note.title, blockText].join(" ").toLowerCase();
+  return haystack.includes(query);
+}
+
+function setDragData(event, kind, id) {
+  if (event.dataTransfer) {
+    event.dataTransfer.setData("text/plain", `${kind}:${id}`);
+    event.dataTransfer.effectAllowed = "move";
+  }
+}
+
+function parseDragData(event) {
+  if (!event.dataTransfer) {
+    return null;
+  }
+  const raw = event.dataTransfer.getData("text/plain");
+  if (!raw || !raw.includes(":")) {
+    return null;
+  }
+  const [kind, id] = raw.split(":");
+  if (!kind || !id) {
+    return null;
+  }
+  return { kind, id };
+}
+
+function attachDropHandlers(node, { date, time }) {
+  let dragDepth = 0;
+  node.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+  });
+  node.addEventListener("dragenter", () => {
+    dragDepth += 1;
+    node.classList.add("dropping");
+  });
+  node.addEventListener("dragleave", () => {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) {
+      node.classList.remove("dropping");
+    }
+  });
+  node.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dragDepth = 0;
+    node.classList.remove("dropping");
+    const data = parseDragData(event);
+    if (!data) {
+      return;
+    }
+    if (data.kind === "task") {
+      const task = getTask(data.id);
+      if (!task) {
+        return;
+      }
+      scheduleTask(task, date, time);
+    }
+    if (data.kind === "event") {
+      const eventItem = getEvent(data.id);
+      if (!eventItem) {
+        return;
+      }
+      scheduleEvent(eventItem, date, time);
+    }
   });
 }
-function openViewModal(view) {
-  const nameInput = document.createElement("input");
-  nameInput.type = "text";
-  nameInput.placeholder = "Nome da visão";
-  nameInput.value = view ? view.name : "";
 
-  const areaSelect = document.createElement("select");
-  fillSelect(areaSelect, state.areas, view?.filters?.areaId || "", true, "Qualquer área");
+function scheduleTask(task, date, time) {
+  task.dueDate = date || task.dueDate;
+  if (time) {
+    task.timeBlock = {
+      date,
+      start: time,
+      duration: task.timeBlock ? task.timeBlock.duration : 60
+    };
+  } else {
+    task.timeBlock = null;
+  }
+  touch(task);
+  saveState();
+  renderAll();
+}
 
-  const typeSelect = document.createElement("select");
-  fillSelect(typeSelect, state.types, view?.filters?.typeId || "", true, "Qualquer tipo");
+function scheduleEvent(eventItem, date, time) {
+  if (date) {
+    eventItem.date = date;
+  }
+  if (time) {
+    eventItem.start = time;
+  }
+  touch(eventItem);
+  saveState();
+  renderAll();
+}
 
-  const statusSelect = document.createElement("select");
-  [
-    { value: "any", label: "Qualquer" },
-    { value: "todo", label: STATUS_LABELS.todo },
-    { value: "doing", label: STATUS_LABELS.doing },
-    { value: "done", label: STATUS_LABELS.done }
-  ].forEach((optionData) => {
-    const option = document.createElement("option");
-    option.value = optionData.value;
-    option.textContent = optionData.label;
-    statusSelect.append(option);
+function getScheduledItems(date, time) {
+  const items = [];
+  state.events.forEach((eventItem) => {
+    if (!eventItem.archived && eventItem.date === date && eventItem.start === time) {
+      items.push({ kind: "event", id: eventItem.id, title: eventItem.title });
+    }
   });
-  statusSelect.value = view?.filters?.status || "any";
-
-  const dueSelect = document.createElement("select");
-  [
-    { value: "any", label: "Qualquer" },
-    { value: "withdate", label: "Com prazo" },
-    { value: "nodate", label: "Sem prazo" },
-    { value: "overdue", label: "Atrasado" },
-    { value: "today", label: "Hoje" },
-    { value: "week", label: "7 dias" }
-  ].forEach((optionData) => {
-    const option = document.createElement("option");
-    option.value = optionData.value;
-    option.textContent = optionData.label;
-    dueSelect.append(option);
+  state.tasks.forEach((task) => {
+    if (
+      !task.archived &&
+      task.status !== "done" &&
+      task.timeBlock &&
+      task.timeBlock.date === date &&
+      task.timeBlock.start === time
+    ) {
+      items.push({ kind: "task", id: task.id, title: task.title });
+    }
   });
-  dueSelect.value = view?.filters?.due || "any";
+  return items;
+}
 
-  const tagInput = document.createElement("input");
-  tagInput.type = "text";
-  tagInput.placeholder = "tag";
-  tagInput.value = view?.filters?.tag || "";
+function groupNotesByArea() {
+  const grouped = {};
+  state.notes
+    .filter((note) => !note.archived && matchesNoteSearch(note, state.ui.search))
+    .forEach((note) => {
+      const key = note.areaId || "";
+      if (!grouped[key]) {
+        grouped[key] = [];
+      }
+      grouped[key].push(note);
+    });
+  return grouped;
+}
 
-  const layoutSelect = document.createElement("select");
-  [
-    { value: "list", label: "Lista" },
-    { value: "board", label: "Quadro" },
-    { value: "calendar", label: "Calendário" }
-  ].forEach((optionData) => {
-    const option = document.createElement("option");
-    option.value = optionData.value;
-    option.textContent = optionData.label;
-    layoutSelect.append(option);
+function setWeekTab(tab) {
+  state.ui.weekTab = tab;
+  saveState();
+  renderMain();
+}
+
+function shiftWeek(delta) {
+  state.ui.weekOffset += delta;
+  saveState();
+  renderMain();
+}
+
+function setProjectFilter(filter) {
+  state.ui.projectFilter = filter;
+  saveState();
+  renderMain();
+}
+
+function setCalendarView(view) {
+  state.ui.calendarView = view;
+  saveState();
+  renderMain();
+}
+
+function shiftCalendarWeek(delta) {
+  state.ui.calendarWeekOffset += delta;
+  saveState();
+  renderMain();
+}
+
+function shiftCalendarMonth(delta) {
+  state.ui.calendarMonthOffset += delta;
+  saveState();
+  renderMain();
+}
+
+function renderCalendarWeek() {
+  const wrapper = createElement("div", "calendar-week");
+  const days = getWeekDays(state.ui.calendarWeekOffset);
+  const query = (state.ui.search || "").trim().toLowerCase();
+  days.forEach((day) => {
+    const column = createElement("div", "calendar-day");
+    const header = createElement("div", "section-title", day.label);
+    column.append(header);
+    attachDropHandlers(column, { date: day.date, time: null });
+
+    const dayTasks = state.tasks.filter(
+      (task) =>
+        !task.archived &&
+        task.status !== "done" &&
+        task.dueDate === day.date &&
+        !task.timeBlock &&
+        matchesTaskSearch(task, query)
+    );
+    dayTasks.forEach((task) => column.append(createTaskRow(task, { compact: true })));
+
+    CALENDAR_HOURS.forEach((time) => {
+      const slot = createElement("div", "week-slot");
+      slot.append(createElement("div", "list-meta", time));
+      const items = getScheduledItems(day.date, time).filter((item) =>
+        matchesQuery(item.title, query)
+      );
+      items.forEach((item) => {
+        const chip = createElement("div", "calendar-item", item.title);
+        chip.draggable = true;
+        chip.addEventListener("dragstart", (event) => setDragData(event, item.kind, item.id));
+        chip.addEventListener("click", () => selectItem(item.kind, item.id));
+        slot.append(chip);
+      });
+      attachDropHandlers(slot, { date: day.date, time });
+      column.append(slot);
+    });
+
+    wrapper.append(column);
   });
-  layoutSelect.value = view?.layout || state.ui.layout;
+  return wrapper;
+}
 
-  const rowOne = document.createElement("div");
-  rowOne.className = "field-row";
-  rowOne.append(buildField("Área", areaSelect), buildField("Tipo", typeSelect));
+function renderCalendarMonth() {
+  const wrapper = createElement("div", "calendar-month");
+  const base = addMonths(new Date(), state.ui.calendarMonthOffset);
+  const monthStart = new Date(base.getFullYear(), base.getMonth(), 1);
+  const weekStart = getWeekStart(monthStart, state.settings.weekStartsMonday);
+  for (let i = 0; i < 42; i += 1) {
+    const day = addDays(weekStart, i);
+    const dayKey = formatDate(day);
+    const cell = createElement("div", "month-cell");
+    cell.append(createElement("div", "list-meta", String(day.getDate())));
+    const items = [
+      ...state.events.filter((event) => event.date === dayKey && !event.archived),
+      ...state.tasks.filter(
+        (task) =>
+          task.dueDate === dayKey && !task.archived && task.status !== "done"
+      )
+    ];
+    if (items.length) {
+      cell.append(createElement("div", "card-meta", `${items.length} itens`));
+    }
+    cell.addEventListener("click", () => {
+      openEventModal({ date: dayKey });
+    });
+    attachDropHandlers(cell, { date: dayKey, time: null });
+    wrapper.append(cell);
+  }
+  return wrapper;
+}
 
-  const rowTwo = document.createElement("div");
-  rowTwo.className = "field-row";
-  rowTwo.append(buildField("Status", statusSelect), buildField("Prazo", dueSelect));
+function createAreaSelect(selectedId) {
+  const options = [{ value: "", label: "Sem area" }].concat(
+    state.areas.map((area) => ({ value: area.id, label: area.name }))
+  );
+  return createSelect(options, selectedId || "");
+}
 
-  const rowThree = document.createElement("div");
-  rowThree.className = "field-row";
-  rowThree.append(buildField("Layout", layoutSelect), buildField("Tag", tagInput));
+function createProjectSelect(selectedId) {
+  const options = [{ value: "", label: "Sem projeto" }].concat(
+    state.projects.map((project) => ({ value: project.id, label: project.name }))
+  );
+  return createSelect(options, selectedId || "");
+}
 
-  const cardDefaults = defaultCardFields();
-  const cardFields = view && view.cardFields ? view.cardFields : cardDefaults;
-  const cardSection = buildSectionLabel("Campos no card");
-  const cardToggleType = createToggleLine("Tipo", cardFields.showType);
-  const cardToggleArea = createToggleLine("Área", cardFields.showArea);
-  const cardToggleStatus = createToggleLine("Status", cardFields.showStatus);
-  const cardToggleDue = createToggleLine("Prazo", cardFields.showDue);
-  const cardToggleProgress = createToggleLine("Progresso", cardFields.showProgress);
-  const cardToggleTags = createToggleLine("Tags", cardFields.showTags);
+function createNoteSelect(selectedId) {
+  const options = [{ value: "", label: "Sem nota" }].concat(
+    state.notes.map((note) => ({ value: note.id, label: note.title }))
+  );
+  return createSelect(options, selectedId || "");
+}
+
+function openCreateChooser() {
+  const body = createElement("div", "card-actions");
+  const options = [
+    { label: "Tarefa", action: () => openTaskModal({}) },
+    { label: "Evento", action: () => openEventModal({}) },
+    { label: "Nota", action: () => openNoteModal({}) },
+    { label: "Projeto", action: () => openProjectModal({}) },
+    { label: "Area", action: () => openAreaModal({}) }
+  ];
+  options.forEach((option) => {
+    const btn = createButton(option.label, "ghost-btn", () => {
+      closeModal();
+      option.action();
+    });
+    body.append(btn);
+  });
+  openModal({
+    eyebrow: "Criar",
+    title: "O que voce quer criar?",
+    body: [body],
+    saveLabel: "Fechar",
+    onSave: () => true
+  });
+}
+
+function openTaskModal(options = {}) {
+  const titleInput = document.createElement("input");
+  titleInput.value = options.title || "";
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = options.dueDate || "";
+
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = options.dueTime || "";
+
+  const prioritySelect = createSelect(
+    [
+      { value: "low", label: "Baixa" },
+      { value: "med", label: "Media" },
+      { value: "high", label: "Alta" }
+    ],
+    options.priority || "med"
+  );
+
+  const projectSelect = createProjectSelect(options.projectId);
+  const areaSelect = createAreaSelect(options.areaId);
 
   openModal({
-    eyebrow: "Visão",
-    title: view ? "Editar visão" : "Nova visão",
+    eyebrow: "Nova tarefa",
+    title: "Tarefa",
     body: [
-      buildField("Nome", nameInput),
-      rowOne,
-      rowTwo,
-      rowThree,
-      cardSection,
-      cardToggleType.wrapper,
-      cardToggleArea.wrapper,
-      cardToggleStatus.wrapper,
-      cardToggleDue.wrapper,
-      cardToggleProgress.wrapper,
-      cardToggleTags.wrapper
+      buildField("Titulo", titleInput),
+      buildField("Prazo", dateInput),
+      buildField("Hora", timeInput),
+      buildField("Prioridade", prioritySelect),
+      buildField("Projeto", projectSelect),
+      buildField("Area", areaSelect)
     ],
+    saveLabel: "Criar tarefa",
     onSave: () => {
-      const name = nameInput.value.trim();
-      if (!name) {
-        alert("Informe um nome.");
-        return false;
-      }
-      const filters = {
-        areaId: areaSelect.value || null,
-        typeId: typeSelect.value || null,
-        status: statusSelect.value || "any",
-        due: dueSelect.value || "any",
-        tag: tagInput.value.trim() || null
-      };
-      const payload = {
-        id: view ? view.id : uid("view"),
-        name,
-        updatedAt: nowIso(),
-        filters,
-        layout: layoutSelect.value,
-        cardFields: {
-          showType: cardToggleType.input.checked,
-          showArea: cardToggleArea.input.checked,
-          showStatus: cardToggleStatus.input.checked,
-          showDue: cardToggleDue.input.checked,
-          showProgress: cardToggleProgress.input.checked,
-          showTags: cardToggleTags.input.checked
-        }
-      };
-      if (view) {
-        Object.assign(view, payload);
-      } else {
-        state.views.push(payload);
-        state.ui.viewId = payload.id;
-      }
+      const task = createTask({
+        title: titleInput.value.trim() || "Nova tarefa",
+        dueDate: dateInput.value,
+        dueTime: timeInput.value,
+        priority: prioritySelect.value,
+        projectId: projectSelect.value || null,
+        areaId: areaSelect.value || null
+      });
+      state.tasks.unshift(task);
+      state.ui.selected = { kind: "task", id: task.id };
       saveState();
       renderAll();
       return true;
-    },
-    onDelete: view
-      ? () => {
-          confirmWithModal("Excluir visão?", () => {
-            recordDeletion("views", view.id);
-            state.views = state.views.filter((entry) => entry.id !== view.id);
-            if (state.ui.viewId === view.id) {
-              state.ui.viewId = null;
-            }
-            saveState();
-            renderAll();
-          }, { confirmLabel: "Excluir" });
-          return false;
-        }
-      : null
+    }
+  });
+}
+
+function openEventModal(options = {}) {
+  const titleInput = document.createElement("input");
+  titleInput.value = options.title || "";
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = options.date || getTodayKey();
+
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = options.start || "09:00";
+
+  const durationInput = document.createElement("input");
+  durationInput.type = "number";
+  durationInput.min = "15";
+  durationInput.value = options.duration || state.settings.defaultEventDuration;
+
+  const projectSelect = createProjectSelect(options.projectId);
+  const areaSelect = createAreaSelect(options.areaId);
+
+  const locationInput = document.createElement("input");
+  locationInput.value = options.location || "";
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 3;
+  notesInput.value = options.notes || "";
+
+  openModal({
+    eyebrow: "Novo evento",
+    title: "Evento",
+    body: [
+      buildField("Titulo", titleInput),
+      buildField("Data", dateInput),
+      buildField("Hora", timeInput),
+      buildField("Duracao (min)", durationInput),
+      buildField("Projeto", projectSelect),
+      buildField("Area", areaSelect),
+      buildField("Local", locationInput),
+      buildField("Notas", notesInput)
+    ],
+    saveLabel: "Criar evento",
+    onSave: () => {
+      const eventItem = createEvent({
+        title: titleInput.value.trim() || "Novo evento",
+        date: dateInput.value,
+        start: timeInput.value,
+        duration: Number(durationInput.value) || state.settings.defaultEventDuration,
+        projectId: projectSelect.value || null,
+        areaId: areaSelect.value || null,
+        location: locationInput.value,
+        notes: notesInput.value
+      });
+      state.events.unshift(eventItem);
+      state.ui.selected = { kind: "event", id: eventItem.id };
+      saveState();
+      renderAll();
+      return true;
+    }
+  });
+}
+
+function openNoteModal(options = {}) {
+  const titleInput = document.createElement("input");
+  titleInput.value = options.title || "";
+
+  const areaSelect = createAreaSelect(options.areaId);
+  const projectSelect = createProjectSelect(options.projectId);
+
+  openModal({
+    eyebrow: "Nova nota",
+    title: "Nota",
+    body: [
+      buildField("Titulo", titleInput),
+      buildField("Area", areaSelect),
+      buildField("Projeto", projectSelect)
+    ],
+    saveLabel: "Criar nota",
+    onSave: () => {
+      const note = createNote({
+        title: titleInput.value.trim() || "Nova nota",
+        areaId: areaSelect.value || null,
+        projectId: projectSelect.value || null,
+        blocks: buildTemplateBlocks(options.template)
+      });
+      state.notes.unshift(note);
+      state.ui.notesNoteId = note.id;
+      saveState();
+      navigate(`/notes/${note.id}`);
+      return true;
+    }
+  });
+}
+
+function openProjectModal() {
+  const nameInput = document.createElement("input");
+  const objectiveInput = document.createElement("textarea");
+  objectiveInput.rows = 3;
+  const areaSelect = createAreaSelect();
+  openModal({
+    eyebrow: "Novo projeto",
+    title: "Projeto",
+    body: [
+      buildField("Nome", nameInput),
+      buildField("Objetivo", objectiveInput),
+      buildField("Area", areaSelect)
+    ],
+    saveLabel: "Criar projeto",
+    onSave: () => {
+      const project = createProject({
+        name: nameInput.value.trim() || "Novo projeto",
+        objective: objectiveInput.value,
+        areaId: areaSelect.value || null
+      });
+      state.projects.unshift(project);
+      saveState();
+      navigate(`/projects/${project.id}`);
+      return true;
+    }
+  });
+}
+
+function openAreaModal() {
+  const nameInput = document.createElement("input");
+  const objectiveInput = document.createElement("textarea");
+  objectiveInput.rows = 3;
+  openModal({
+    eyebrow: "Nova area",
+    title: "Area",
+    body: [buildField("Nome", nameInput), buildField("Objetivo", objectiveInput)],
+    saveLabel: "Criar area",
+    onSave: () => {
+      const area = createArea({
+        name: nameInput.value.trim() || "Nova area",
+        objective: objectiveInput.value
+      });
+      state.areas.unshift(area);
+      saveState();
+      navigate(`/areas/${area.id}`);
+      return true;
+    }
   });
 }
 
 function openSettingsModal() {
-  const info = document.createElement("div");
-  info.className = "list-meta";
-  info.textContent = "Backup local do navegador.";
-
-  const textArea = document.createElement("textarea");
-  textArea.rows = 10;
-  textArea.placeholder = "Cole o JSON aqui para importar.";
-
-  const exportButton = document.createElement("button");
-  exportButton.className = "ghost-btn";
-  exportButton.textContent = "Gerar JSON";
-  exportButton.addEventListener("click", () => {
-    textArea.value = JSON.stringify(state, null, 2);
-  });
-
-  const importButton = document.createElement("button");
-  importButton.className = "ghost-btn";
-  importButton.textContent = "Importar JSON";
-  importButton.addEventListener("click", () => {
-    const raw = textArea.value.trim();
-    if (!raw) {
-      return;
-    }
-    try {
-      const parsed = JSON.parse(raw);
-      state = normalizeSelection(normalizeState(parsed));
-      saveState({ skipSync: true });
-      renderAll();
-      textArea.value = "";
-    } catch (error) {
-      alert("JSON inválido.");
-    }
-  });
-
-  const resetButton = document.createElement("button");
-  resetButton.className = "ghost-btn danger";
-  resetButton.textContent = "Limpar tudo";
-  resetButton.addEventListener("click", () => {
-    confirmWithModal("Limpar todos os dados?", () => {
-      state = normalizeSelection(defaultState());
-      saveState();
-      renderAll();
-      closeModal();
-    }, { confirmLabel: "Limpar" });
-  });
-
-  const actionRow = document.createElement("div");
-  actionRow.className = "main-actions";
-  actionRow.append(exportButton, importButton, resetButton);
-
-  const syncLabel = buildSectionLabel("Sincronização online");
-
-  const urlInput = document.createElement("input");
-  urlInput.type = "text";
-  urlInput.placeholder = "https://sua-api.com";
-  urlInput.value = remote.url || "";
-
-  const apiKeyInput = document.createElement("input");
-  apiKeyInput.type = "text";
-  apiKeyInput.placeholder = "sua-chave";
-  apiKeyInput.value = remote.apiKey || "";
-
-  const autoToggle = createToggleLine("Sincronização automática", remote.autoSync);
-
-  const syncStatus = document.createElement("div");
-  syncStatus.className = "list-meta";
-  syncStatus.textContent = buildSyncStatus();
-
-  const syncRow = document.createElement("div");
-  syncRow.className = "main-actions";
-
-  const testButton = document.createElement("button");
-  testButton.className = "ghost-btn";
-  testButton.textContent = "Testar";
-
-  const pullButton = document.createElement("button");
-  pullButton.className = "ghost-btn";
-  pullButton.textContent = "Baixar";
-
-  const pushButton = document.createElement("button");
-  pushButton.className = "ghost-btn";
-  pushButton.textContent = "Enviar";
-
-  syncRow.append(testButton, pullButton, pushButton);
-
-  function applyRemoteInputs() {
-    remote.url = urlInput.value.trim();
-    remote.apiKey = apiKeyInput.value.trim();
-    remote.autoSync = autoToggle.input.checked;
-    saveRemoteConfig();
-  }
-
-  function refreshSyncStatus(message) {
-    syncStatus.textContent = message || buildSyncStatus();
-  }
-
-  testButton.addEventListener("click", async () => {
-    applyRemoteInputs();
-    refreshSyncStatus("Testando...");
-    const result = await testConnection();
-    refreshSyncStatus(result.ok ? "Conectado" : buildSyncStatus());
-  });
-
-  pullButton.addEventListener("click", async () => {
-    applyRemoteInputs();
-    refreshSyncStatus("Baixando...");
-    const result = await pullState();
-    refreshSyncStatus(result.ok ? "Dados atualizados" : buildSyncStatus());
-  });
-
-  pushButton.addEventListener("click", async () => {
-    applyRemoteInputs();
-    refreshSyncStatus("Enviando...");
-    const result = await pushState();
-    refreshSyncStatus(result.ok ? "Dados enviados" : buildSyncStatus());
-  });
+  const weekToggle = document.createElement("input");
+  weekToggle.type = "checkbox";
+  weekToggle.checked = Boolean(state.settings.weekStartsMonday);
+  const timeSelect = createSelect(
+    [
+      { value: "24h", label: "24h" },
+      { value: "12h", label: "12h" }
+    ],
+    state.settings.timeFormat
+  );
+  const durationInput = document.createElement("input");
+  durationInput.type = "number";
+  durationInput.min = "15";
+  durationInput.value = state.settings.defaultEventDuration;
 
   openModal({
-    eyebrow: "Ajustes",
-    title: "Ajustes",
+    eyebrow: "Preferencias",
+    title: "Configuracoes",
     body: [
-      info,
-      actionRow,
-      textArea,
-      syncLabel,
-      buildField("API URL", urlInput),
-      buildField("API Key", apiKeyInput),
-      autoToggle.wrapper,
-      syncStatus,
-      syncRow
+      buildField("Semana inicia segunda", weekToggle),
+      buildField("Formato de hora", timeSelect),
+      buildField("Duracao padrao (min)", durationInput)
     ],
-    saveLabel: "Salvar ajustes",
+    saveLabel: "Salvar",
     onSave: () => {
-      applyRemoteInputs();
+      state.settings.weekStartsMonday = weekToggle.checked;
+      state.settings.timeFormat = timeSelect.value;
+      state.settings.defaultEventDuration = Math.max(15, Number(durationInput.value) || 60);
+      saveState();
+      renderAll();
       return true;
     }
   });
 }
+
+function openExportModal() {
+  const textarea = document.createElement("textarea");
+  textarea.rows = 12;
+  textarea.value = JSON.stringify(state, null, 2);
+  const copyBtn = createButton("Copiar", "ghost-btn", async () => {
+    try {
+      await navigator.clipboard.writeText(textarea.value);
+      showToast("Dados copiados.");
+    } catch (error) {
+      showToast("Nao foi possivel copiar.");
+    }
+  });
+  openModal({
+    eyebrow: "Exportar",
+    title: "Seus dados",
+    body: [textarea, copyBtn],
+    saveLabel: "Fechar",
+    onSave: () => true
+  });
+}
+
+function openImportModal() {
+  const textarea = document.createElement("textarea");
+  textarea.rows = 12;
+  textarea.placeholder = "Cole o JSON aqui...";
+  openModal({
+    eyebrow: "Importar",
+    title: "Importar dados",
+    body: [textarea],
+    saveLabel: "Importar",
+    onSave: () => {
+      try {
+        const parsed = JSON.parse(textarea.value);
+        state = normalizeState(parsed);
+        saveState();
+        renderAll();
+        return true;
+      } catch (error) {
+        showToast("JSON invalido.");
+        return false;
+      }
+    }
+  });
+}
+
+function buildTemplateBlocks(template) {
+  if (template === "meeting") {
+    return [
+      { id: uid("block"), type: "heading", text: "Participantes" },
+      { id: uid("block"), type: "list", items: [] },
+      { id: uid("block"), type: "heading", text: "Decisoes" },
+      { id: uid("block"), type: "list", items: [] },
+      { id: uid("block"), type: "heading", text: "Proximos passos" },
+      { id: uid("block"), type: "checklist", items: [] }
+    ];
+  }
+  if (template === "diary") {
+    return [
+      { id: uid("block"), type: "heading", text: "Resumo" },
+      { id: uid("block"), type: "text", text: "" },
+      { id: uid("block"), type: "heading", text: "Aprendizados" },
+      { id: uid("block"), type: "list", items: [] }
+    ];
+  }
+  if (template === "study") {
+    return [
+      { id: uid("block"), type: "heading", text: "Tema" },
+      { id: uid("block"), type: "text", text: "" },
+      { id: uid("block"), type: "heading", text: "Notas" },
+      { id: uid("block"), type: "list", items: [] }
+    ];
+  }
+  if (template === "monthly") {
+    return [
+      { id: uid("block"), type: "heading", text: "Objetivos do mes" },
+      { id: uid("block"), type: "checklist", items: [] },
+      { id: uid("block"), type: "heading", text: "Projetos em foco" },
+      { id: uid("block"), type: "list", items: [] }
+    ];
+  }
+  return [];
+}
+
+function openProcessModal(item, options = {}) {
+  const kindSelect = createSelect(
+    [
+      { value: "task", label: "Tarefa" },
+      { value: "note", label: "Nota" },
+      { value: "event", label: "Evento" }
+    ],
+    options.kind || item.kind
+  );
+  const titleInput = document.createElement("input");
+  titleInput.value = item.title;
+  const areaSelect = createAreaSelect();
+  const projectSelect = createProjectSelect();
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  const durationInput = document.createElement("input");
+  durationInput.type = "number";
+  durationInput.min = "15";
+  durationInput.value = state.settings.defaultEventDuration;
+
+  const extraWrap = createElement("div");
+
+  const renderFields = () => {
+    extraWrap.innerHTML = "";
+    if (kindSelect.value === "task") {
+      extraWrap.append(
+        buildField("Area", areaSelect),
+        buildField("Projeto", projectSelect),
+        buildField("Data", dateInput)
+      );
+    }
+    if (kindSelect.value === "note") {
+      extraWrap.append(buildField("Area", areaSelect), buildField("Projeto", projectSelect));
+    }
+    if (kindSelect.value === "event") {
+      extraWrap.append(
+        buildField("Area", areaSelect),
+        buildField("Projeto", projectSelect),
+        buildField("Data", dateInput),
+        buildField("Hora", timeInput),
+        buildField("Duracao (min)", durationInput)
+      );
+    }
+  };
+  kindSelect.addEventListener("change", renderFields);
+  renderFields();
+
+  openModal({
+    eyebrow: "Processar",
+    title: "Processar item",
+    body: [buildField("Tipo", kindSelect), buildField("Titulo", titleInput), extraWrap],
+    saveLabel: "Salvar",
+    onSave: () => {
+      processInboxItem(item, kindSelect.value, {
+        title: titleInput.value,
+        areaId: areaSelect.value || null,
+        projectId: projectSelect.value || null,
+        date: dateInput.value,
+        time: timeInput.value,
+        duration: Number(durationInput.value) || state.settings.defaultEventDuration
+      });
+      return true;
+    }
+  });
+}
+
+function openBulkProcessModal(ids, options = {}) {
+  const kindSelect = createSelect(
+    [
+      { value: "task", label: "Tarefa" },
+      { value: "note", label: "Nota" },
+      { value: "event", label: "Evento" }
+    ],
+    options.kind || "task"
+  );
+  const areaSelect = createAreaSelect();
+  const projectSelect = createProjectSelect();
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  const durationInput = document.createElement("input");
+  durationInput.type = "number";
+  durationInput.min = "15";
+  durationInput.value = state.settings.defaultEventDuration;
+
+  const extraWrap = createElement("div");
+  const renderFields = () => {
+    extraWrap.innerHTML = "";
+    if (kindSelect.value === "task") {
+      extraWrap.append(
+        buildField("Area", areaSelect),
+        buildField("Projeto", projectSelect),
+        buildField("Data", dateInput)
+      );
+    }
+    if (kindSelect.value === "note") {
+      extraWrap.append(buildField("Area", areaSelect), buildField("Projeto", projectSelect));
+    }
+    if (kindSelect.value === "event") {
+      extraWrap.append(
+        buildField("Area", areaSelect),
+        buildField("Projeto", projectSelect),
+        buildField("Data", dateInput),
+        buildField("Hora", timeInput),
+        buildField("Duracao (min)", durationInput)
+      );
+    }
+  };
+  kindSelect.addEventListener("change", renderFields);
+  renderFields();
+
+  openModal({
+    eyebrow: "Processar lote",
+    title: `${ids.length} itens`,
+    body: [buildField("Tipo", kindSelect), extraWrap],
+    saveLabel: "Processar",
+    onSave: () => {
+      ids.forEach((id) => {
+        const item = state.inbox.find((entry) => entry.id === id);
+        if (!item) {
+          return;
+        }
+        processInboxItem(item, kindSelect.value, {
+          title: item.title,
+          areaId: areaSelect.value || null,
+          projectId: projectSelect.value || null,
+          date: dateInput.value,
+          time: timeInput.value,
+          duration: Number(durationInput.value) || state.settings.defaultEventDuration
+        }, { silent: true });
+      });
+      state.ui.inboxSelection = [];
+      saveState();
+      renderMain();
+      return true;
+    }
+  });
+}
+
+function processInboxItem(item, kind, data, options = {}) {
+  if (kind === "task") {
+    state.tasks.unshift(
+      createTask({
+        title: data.title || item.title,
+        dueDate: data.date || "",
+        projectId: data.projectId,
+        areaId: data.areaId
+      })
+    );
+  } else if (kind === "note") {
+    state.notes.unshift(
+      createNote({
+        title: data.title || item.title,
+        areaId: data.areaId,
+        projectId: data.projectId,
+        blocks: [
+          { id: uid("block"), type: "text", text: item.title }
+        ]
+      })
+    );
+  } else if (kind === "event") {
+    state.events.unshift(
+      createEvent({
+        title: data.title || item.title,
+        date: data.date || getTodayKey(),
+        start: data.time || "09:00",
+        duration: data.duration,
+        projectId: data.projectId,
+        areaId: data.areaId
+      })
+    );
+  }
+  state.inbox = state.inbox.filter((entry) => entry.id !== item.id);
+  state.ui.inboxSelection = state.ui.inboxSelection.filter((id) => id !== item.id);
+  if (!options.silent) {
+    saveState();
+    renderAll();
+  }
+}
+
 function openModal({ eyebrow, title, body, onSave, onDelete, saveLabel }) {
   el.modalEyebrow.textContent = eyebrow || "Editor";
   el.modalTitle.textContent = title || "Editar";
@@ -2432,20 +3742,6 @@ function handleModalDelete() {
   closeModal();
 }
 
-function handleModalKeydown(event) {
-  if (!isModalOpen()) {
-    return;
-  }
-  if (event.key === "Escape") {
-    event.preventDefault();
-    closeModal();
-    return;
-  }
-  if (event.key === "Tab") {
-    trapTabKey(event);
-  }
-}
-
 function isModalOpen() {
   return !el.modalBackdrop.classList.contains("hidden");
 }
@@ -2456,28 +3752,6 @@ function focusModal() {
   if (target) {
     target.focus();
   }
-}
-
-// Abre um modal de confirmação acessível. `onConfirm` é executado quando
-// o usuário confirma. Retorna sem bloquear (modal lida com o fluxo).
-function confirmWithModal(message, onConfirm, options = {}) {
-  const desc = document.createElement("div");
-  desc.textContent = message;
-  openModal({
-    eyebrow: "Confirmar",
-    title: message,
-    body: [desc],
-    saveLabel: options.confirmLabel || "Confirmar",
-    onSave: () => {
-      try {
-        onConfirm();
-      } catch (e) {
-        console.error(e);
-      }
-      return true;
-    },
-    onDelete: null
-  });
 }
 
 function trapTabKey(event) {
@@ -2514,33 +3788,6 @@ function getFocusableElements(container) {
   );
 }
 
-function handleGlobalShortcuts(event) {
-  if (commandState.open) {
-    handleCommandPaletteKeydown(event);
-    return;
-  }
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-    event.preventDefault();
-    openCommandPalette();
-  }
-}
-
-function handleGlobalClick(event) {
-  if (openMenu && !openMenu.contains(event.target)) {
-    openMenu.classList.add("hidden");
-    if (openMenu === el.moreMenu && el.moreToggle) {
-      el.moreToggle.setAttribute("aria-expanded", "false");
-    }
-    openMenu = null;
-  }
-  if (commandState.open && el.commandPalette) {
-    const card = el.commandPalette.querySelector(".command-card");
-    if (card && !card.contains(event.target)) {
-      closeCommandPalette();
-    }
-  }
-}
-
 function openCommandPalette() {
   if (!el.commandPalette || !el.commandInput || !el.commandList) {
     return;
@@ -2560,11 +3807,10 @@ function closeCommandPalette(options = {}) {
   if (!el.commandPalette || !el.commandInput) {
     return;
   }
-  const restoreFocus = options.restoreFocus !== false;
   commandState.open = false;
   el.commandPalette.classList.add("hidden");
   el.commandInput.removeEventListener("input", handleCommandInput);
-  if (restoreFocus && commandState.previousFocus && document.body.contains(commandState.previousFocus)) {
+  if (options.restoreFocus !== false && commandState.previousFocus) {
     commandState.previousFocus.focus();
   }
   commandState.previousFocus = null;
@@ -2590,18 +3836,12 @@ function handleCommandPaletteKeydown(event) {
     return;
   }
   if (event.key === "ArrowDown") {
-    if (!commandState.filtered.length) {
-      return;
-    }
     event.preventDefault();
     commandState.index = Math.min(commandState.index + 1, commandState.filtered.length - 1);
     renderCommandList();
     return;
   }
   if (event.key === "ArrowUp") {
-    if (!commandState.filtered.length) {
-      return;
-    }
     event.preventDefault();
     commandState.index = Math.max(commandState.index - 1, 0);
     renderCommandList();
@@ -2611,8 +3851,8 @@ function handleCommandPaletteKeydown(event) {
     event.preventDefault();
     const command = commandState.filtered[commandState.index];
     if (command) {
-      closeCommandPalette();
       command.action();
+      closeCommandPalette();
     }
   }
 }
@@ -2623,28 +3863,19 @@ function renderCommandList() {
   }
   el.commandList.innerHTML = "";
   if (!commandState.filtered.length) {
-    const empty = document.createElement("div");
-    empty.className = "list-meta";
-    empty.textContent = "Nenhum comando encontrado.";
-    el.commandList.append(empty);
+    el.commandList.append(createElement("div", "list-meta", "Nenhum comando."));
     return;
   }
-  commandState.index = Math.min(commandState.index, commandState.filtered.length - 1);
   commandState.filtered.forEach((command, index) => {
-    const row = document.createElement("div");
-    row.className = "command-item";
+    const row = createElement("div", "command-item");
     if (index === commandState.index) {
       row.classList.add("active");
     }
-    const label = document.createElement("div");
-    label.textContent = command.label;
-    const hint = document.createElement("div");
-    hint.className = "command-hint";
-    hint.textContent = command.hint || "";
-    row.append(label, hint);
+    row.append(createElement("div", "", command.label));
+    row.append(createElement("div", "command-hint", command.hint || ""));
     row.addEventListener("click", () => {
-      closeCommandPalette();
       command.action();
+      closeCommandPalette();
     });
     el.commandList.append(row);
   });
@@ -2652,1853 +3883,28 @@ function renderCommandList() {
 
 function buildCommands() {
   return [
-    {
-      label: "Criar item",
-      hint: "Novo item",
-      action: () => openNewItemModal()
-    },
-    ...FLOW_VIEWS.map((flow) => ({
-      label: `Ir para ${flow.label}`,
-      hint: "Fluxo",
-      action: () => setSpecialView(flow.id)
-    })),
-    {
-      label: "Layout: Lista",
-      hint: "Visualização",
-      action: () => setLayout("list")
-    },
-    {
-      label: "Layout: Quadro",
-      hint: "Visualização",
-      action: () => setLayout("board")
-    },
-    {
-      label: "Layout: Calendário",
-      hint: "Visualização",
-      action: () => setLayout("calendar")
-    },
-    {
-      label: "Criar área",
-      hint: "Sidebar",
-      action: () => openAreaModal()
-    },
-    {
-      label: "Criar tipo",
-      hint: "Sidebar",
-      action: () => openTypeModal()
-    },
-    {
-      label: "Criar visão",
-      hint: "Sidebar",
-      action: () => openViewModal()
-    },
-    {
-      label: "Buscar",
-      hint: "Focar busca",
-      action: () => el.globalSearch.focus()
-    }
+    { label: "Ir para Hoje", hint: "/today", action: () => navigate("/today") },
+    { label: "Ir para Inbox", hint: "/inbox", action: () => navigate("/inbox") },
+    { label: "Ir para Semana", hint: "/week", action: () => navigate("/week") },
+    { label: "Ir para Projetos", hint: "/projects", action: () => navigate("/projects") },
+    { label: "Ir para Notas", hint: "/notes", action: () => navigate("/notes") },
+    { label: "Ir para Calendario", hint: "/calendar", action: () => navigate("/calendar") },
+    { label: "Ir para Areas", hint: "/areas", action: () => navigate("/areas") },
+    { label: "Ir para Arquivo", hint: "/archive", action: () => navigate("/archive") },
+    { label: "Nova tarefa", hint: "Criar", action: () => openTaskModal({}) },
+    { label: "Novo evento", hint: "Criar", action: () => openEventModal({}) },
+    { label: "Nova nota", hint: "Criar", action: () => openNoteModal({}) },
+    { label: "Novo projeto", hint: "Criar", action: () => openProjectModal({}) },
+    { label: "Nova area", hint: "Criar", action: () => openAreaModal({}) },
+    { label: "Abrir configuracoes", hint: "Preferencias", action: () => openSettingsModal() }
   ];
-}
-
-function setLayout(layout) {
-  const view = getCurrentView();
-  if (view) {
-    view.layout = layout;
-  }
-  state.ui.layout = layout;
-  saveState();
-  renderMain();
-}
-
-function createItemCard(item, options = {}) {
-  const mode = options.mode || "list";
-  const listIds = Array.isArray(options.listIds) ? options.listIds : [];
-  const index = Number.isFinite(options.index) ? options.index : null;
-  const selection = getSelectionSet();
-  const selectionActive = selection.size > 0;
-
-  const card = document.createElement("div");
-  card.className = `item-card${item.id === state.selectedItemId ? " active" : ""}`;
-  card.dataset.mode = mode;
-  if (selection.has(item.id)) {
-    card.classList.add("selected");
-  }
-  if (selectionActive) {
-    card.classList.add("selection-active");
-  }
-  card.setAttribute("role", "button");
-  card.tabIndex = 0;
-
-  const selectItem = () => {
-    state.selectedItemId = item.id;
-    saveState();
-    renderMain();
-    renderDetails();
-  };
-
-  const handleSelectionClick = (event) => {
-    if (mode !== "list") {
-      return false;
-    }
-    if (event.shiftKey) {
-      event.preventDefault();
-      selectRange(index, listIds);
-      return true;
-    }
-    if (event.metaKey || event.ctrlKey) {
-      event.preventDefault();
-      toggleSelection(item.id, index);
-      return true;
-    }
-    return false;
-  };
-
-  card.addEventListener("click", (event) => {
-    if (event.target.closest("button") || event.target.closest("input")) {
-      return;
-    }
-    if (handleSelectionClick(event)) {
-      return;
-    }
-    selectItem();
-  });
-  card.addEventListener("keydown", (event) => {
-    if (event.target !== card) {
-      return;
-    }
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      selectItem();
-    }
-  });
-
-  card.draggable = mode !== "calendar";
-  card.addEventListener("dragstart", (event) => {
-    if (event.dataTransfer) {
-      event.dataTransfer.setData("text/plain", item.id);
-      event.dataTransfer.effectAllowed = "move";
-    }
-  });
-
-  const selectWrap = document.createElement("div");
-  selectWrap.className = "card-select";
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  checkbox.checked = selection.has(item.id);
-  checkbox.addEventListener("click", (event) => event.stopPropagation());
-  checkbox.addEventListener("change", () => toggleSelection(item.id, index));
-  selectWrap.append(checkbox);
-
-  const info = document.createElement("div");
-  const title = document.createElement("div");
-  title.className = "item-title";
-  title.textContent = item.title || "Sem título";
-  const meta = document.createElement("div");
-  meta.className = "item-meta";
-
-  const cardFields = getCardFieldConfig();
-  const type = getType(item.typeId);
-  if (type && cardFields.showType) {
-    meta.append(createBadge(type.name));
-  }
-  const area = getArea(item.areaId);
-  if (area && cardFields.showArea) {
-    meta.append(createBadge(area.name));
-  }
-  if (item.due && cardFields.showDue) {
-    meta.append(createBadge(`Prazo ${item.due}`));
-  }
-  if (cardFields.showStatus) {
-    const statusLabel = STATUS_LABELS[getItemStatus(item)];
-    if (statusLabel) {
-      if (mode === "list") {
-        const statusButton = document.createElement("button");
-        statusButton.type = "button";
-        statusButton.className = "badge badge-action";
-        statusButton.textContent = statusLabel;
-        statusButton.setAttribute("aria-label", "Alternar status");
-        statusButton.addEventListener("click", (event) => {
-          event.stopPropagation();
-          cycleItemStatus(item);
-        });
-        statusButton.addEventListener("keydown", (event) => {
-          event.stopPropagation();
-        });
-        meta.append(statusButton);
-      } else {
-        meta.append(createBadge(statusLabel));
-      }
-    }
-  }
-  if (item.progress && cardFields.showProgress) {
-    meta.append(createBadge(`${item.progress}%`));
-  }
-  if (item.recurrence) {
-    const recurBadge = createBadge("↻");
-    recurBadge.title = "Recorrência";
-    meta.append(recurBadge);
-  }
-  if (item.recurrenceParentId) {
-    meta.append(createBadge("Gerado"));
-  }
-  if (cardFields.showTags) {
-    (item.tags || []).slice(0, 3).forEach((tag) => {
-      meta.append(createBadge(`#${tag}`));
-    });
-  }
-
-  info.append(title, meta);
-
-  const side = document.createElement("div");
-  side.className = "item-side";
-  const updated = document.createElement("div");
-  updated.className = "list-meta";
-  updated.textContent = formatUpdated(item.updatedAt);
-  if (mode === "list") {
-    const snooze = createSnoozeMenu(item, { label: "Adiar", compact: true });
-    side.append(snooze, updated);
-  } else {
-    side.append(updated);
-  }
-
-  card.append(selectWrap, info, side);
-  return card;
-}
-
-function updateItemStatus(item, status, options = {}) {
-  const current = getItemStatus(item);
-  if (current === status) {
-    return;
-  }
-  item.status = status;
-  touchItem(item);
-  if (status === "done") {
-    maybeGenerateRecurringItem(item);
-  }
-  saveState();
-  renderSidebar();
-  renderMain();
-  if (state.selectedItemId === item.id) {
-    renderDetails();
-  }
-  if (!options.silent) {
-    showToast(`Status atualizado para ${STATUS_LABELS[status] || status}.`);
-  }
-}
-
-function cycleItemStatus(item) {
-  const current = getItemStatus(item);
-  const index = STATUS_ORDER.indexOf(current);
-  const next = STATUS_ORDER[(index + 1) % STATUS_ORDER.length] || STATUS_ORDER[0];
-  updateItemStatus(item, next);
-}
-
-function maybeGenerateRecurringItem(item) {
-  if (!item.recurrence) {
-    return;
-  }
-  const alreadyGenerated = state.items.some(
-    (entry) => entry.recurrenceParentId && entry.recurrenceParentId === item.id
-  );
-  if (alreadyGenerated) {
-    return;
-  }
-  const nextDue = computeNextDueDate(item);
-  const nextChecklist = Array.isArray(item.checklist)
-    ? item.checklist.map((entry) => ({
-        id: uid("check"),
-        text: entry.text || "",
-        done: false
-      }))
-    : [];
-  const nextItem = createItem(
-    {
-      title: item.title || "Novo item",
-      typeId: item.typeId || null,
-      areaId: item.areaId || null,
-      tags: Array.isArray(item.tags) ? [...item.tags] : [],
-      notes: item.notes || "",
-      due: nextDue || "",
-      status: "todo",
-      progress: 0,
-      checklist: nextChecklist,
-      custom: {}
-    },
-    { inbox: false, applyDefaults: false }
-  );
-  nextItem.recurrence = item.recurrence;
-  nextItem.recurrenceParentId = item.id;
-  state.items.unshift(nextItem);
-  showToast("Recorrência criada.");
-}
-
-function computeNextDueDate(item) {
-  const base = parseDate(item.due) || dateOnly(new Date());
-  if (!item.recurrence || !item.recurrence.freq) {
-    return "";
-  }
-  const freq = item.recurrence.freq;
-  if (freq === "daily") {
-    return formatDateInput(addDays(base, 1));
-  }
-  if (freq === "weekly") {
-    return formatDateInput(addDays(base, 7));
-  }
-  if (freq === "monthly") {
-    return formatDateInput(addMonths(base, 1));
-  }
-  if (freq === "interval") {
-    const interval = Number(item.recurrence.intervalDays) || 1;
-    return formatDateInput(addDays(base, interval));
-  }
-  return "";
-}
-
-function addMonths(date, amount) {
-  const year = date.getFullYear();
-  const month = date.getMonth();
-  const day = date.getDate();
-  const targetMonth = month + amount;
-  const lastDay = new Date(year, targetMonth + 1, 0).getDate();
-  const safeDay = Math.min(day, lastDay);
-  return new Date(year, targetMonth, safeDay);
-}
-
-function createBadge(text) {
-  const badge = document.createElement("span");
-  badge.className = "badge";
-  badge.textContent = text;
-  return badge;
-}
-
-function createSnoozeMenu(item, options = {}) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "snooze";
-
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = options.compact ? "mini-btn" : "ghost-btn";
-  button.textContent = options.label || "Adiar";
-  button.addEventListener("click", (event) => {
-    event.stopPropagation();
-    toggleMenu(menu);
-  });
-
-  const menu = document.createElement("div");
-  menu.className = "snooze-menu hidden";
-
-  const today = formatDateInput(new Date());
-  const tomorrow = formatDateInput(addDays(new Date(), 1));
-  const nextWeek = formatDateInput(addDays(new Date(), 7));
-
-  menu.append(
-    buildSnoozeAction("Mais tarde (hoje)", () => {
-      applySnooze(item, today);
-      toggleMenu(menu, false);
-    }),
-    buildSnoozeAction("Amanhã", () => {
-      applySnooze(item, tomorrow);
-      toggleMenu(menu, false);
-    }),
-    buildSnoozeAction("Próxima semana", () => {
-      applySnooze(item, nextWeek);
-      toggleMenu(menu, false);
-    })
-  );
-
-  const customWrap = document.createElement("div");
-  const customLabel = document.createElement("div");
-  customLabel.className = "list-meta";
-  customLabel.textContent = "Escolher data";
-  const customInput = document.createElement("input");
-  customInput.type = "date";
-  customInput.addEventListener("change", () => {
-    if (!customInput.value) {
-      return;
-    }
-    applySnooze(item, customInput.value);
-    toggleMenu(menu, false);
-  });
-  customWrap.append(customLabel, customInput);
-  menu.append(customWrap);
-
-  wrapper.append(button, menu);
-  return wrapper;
-}
-
-function buildSnoozeAction(label, onClick) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "ghost-btn";
-  button.textContent = label;
-  button.addEventListener("click", () => {
-    onClick();
-  });
-  return button;
-}
-
-function applySnooze(item, dateValue) {
-  item.due = dateValue;
-  touchItem(item);
-  saveState();
-  renderMain();
-  if (state.selectedItemId === item.id) {
-    renderDetails();
-  }
-  showToast(`Prazo definido para ${formatDateDisplay(dateValue)}.`);
-}
-
-function toggleMenu(menu, shouldOpen) {
-  const isOpen = !menu.classList.contains("hidden");
-  const openNow = typeof shouldOpen === "boolean" ? shouldOpen : !isOpen;
-  if (openMenu && openMenu !== menu) {
-    openMenu.classList.add("hidden");
-  }
-  if (openNow) {
-    menu.classList.remove("hidden");
-    openMenu = menu;
-  } else {
-    menu.classList.add("hidden");
-    if (openMenu === menu) {
-      openMenu = null;
-    }
-  }
-  if (menu === el.moreMenu && el.moreToggle) {
-    el.moreToggle.setAttribute("aria-expanded", String(openNow));
-  }
-}
-
-function closeMoreMenu() {
-  if (!el.moreMenu) {
-    return;
-  }
-  el.moreMenu.classList.add("hidden");
-  if (openMenu === el.moreMenu) {
-    openMenu = null;
-  }
-  if (el.moreToggle) {
-    el.moreToggle.setAttribute("aria-expanded", "false");
-  }
-}
-
-function createListItem({ name, count, active, onSelect, onEdit, icon, extraClass }) {
-  const item = document.createElement("div");
-  const extra = extraClass ? ` ${extraClass}` : "";
-  item.className = `list-item${active ? " active" : ""}${extra}`;
-  item.setAttribute("role", "button");
-  item.tabIndex = 0;
-  item.addEventListener("click", onSelect);
-  item.addEventListener("keydown", (event) => {
-    if (event.target !== item) {
-      return;
-    }
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelect();
-    }
-  });
-
-  const content = document.createElement("div");
-  const title = document.createElement("div");
-  title.textContent = name;
-  const meta = document.createElement("div");
-  meta.className = "list-meta";
-  meta.textContent = String(count);
-  if (icon) {
-    const iconEl = document.createElement("span");
-    iconEl.className = "list-icon";
-    iconEl.textContent = icon;
-    const row = document.createElement("div");
-    row.className = "list-row";
-    row.append(iconEl, title);
-    content.append(row, meta);
-  } else {
-    content.append(title, meta);
-  }
-
-  item.append(content);
-
-  if (onEdit) {
-    const editButton = document.createElement("button");
-    editButton.className = "mini-btn";
-    editButton.textContent = "...";
-    editButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      onEdit();
-    });
-    item.append(editButton);
-  }
-
-  return item;
-}
-
-function buildField(labelText, inputEl) {
-  const label = document.createElement("label");
-  label.className = "field";
-  const span = document.createElement("span");
-  span.textContent = labelText;
-  label.append(span, inputEl);
-  return label;
-}
-
-function buildSectionLabel(text) {
-  const label = document.createElement("div");
-  label.className = "eyebrow";
-  label.textContent = text;
-  return label;
-}
-
-function createToggleLine(text, checked) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "check-item";
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.checked = Boolean(checked);
-  const label = document.createElement("span");
-  label.textContent = text;
-  wrapper.append(input, label);
-  return { wrapper, input };
-}
-
-function fillSelect(select, options, selected, allowEmpty, emptyLabel) {
-  select.innerHTML = "";
-  if (allowEmpty) {
-    const option = document.createElement("option");
-    option.value = "";
-    option.textContent = emptyLabel || "Nenhum";
-    select.append(option);
-  }
-  options.forEach((entry) => {
-    const option = document.createElement("option");
-    option.value = entry.id;
-    option.textContent = entry.name;
-    select.append(option);
-  });
-  select.value = selected || "";
-}
-
-function getCurrentView() {
-  return state.views.find((view) => view.id === state.ui.viewId) || null;
-}
-
-function defaultCardFields() {
-  return {
-    showType: true,
-    showArea: true,
-    showStatus: true,
-    showDue: true,
-    showProgress: true,
-    showTags: true
-  };
-}
-
-function getCardFieldConfig() {
-  const view = getCurrentView();
-  if (view && view.cardFields) {
-    return view.cardFields;
-  }
-  return defaultCardFields();
-}
-
-function getSelectedItem() {
-  return state.items.find((item) => item.id === state.selectedItemId) || null;
-}
-
-function getArea(id) {
-  return state.areas.find((area) => area.id === id) || null;
-}
-
-function getType(id) {
-  return state.types.find((type) => type.id === id) || null;
-}
-
-function getCurrentLayout() {
-  const view = getCurrentView();
-  if (view && ["list", "board", "calendar"].includes(view.layout)) {
-    return view.layout;
-  }
-  return state.ui.layout;
-}
-function getFilteredItems() {
-  let items = [...state.items];
-  const view = getCurrentView();
-
-  if (state.ui.areaId) {
-    items = items.filter((item) => item.areaId === state.ui.areaId);
-  }
-  if (state.ui.typeId) {
-    items = items.filter((item) => item.typeId === state.ui.typeId);
-  }
-  if (state.ui.specialView) {
-    items = items.filter((item) => matchesSpecialView(item, state.ui.specialView));
-  }
-  if (view) {
-    items = items.filter((item) => matchViewFilters(item, view));
-  }
-  if (state.ui.search) {
-    items = items.filter((item) => matchesSearch(item, state.ui.search));
-  }
-
-  return sortItems(items);
-}
-
-function getItemsForView(view) {
-  return state.items.filter((item) => matchViewFilters(item, view));
-}
-
-function matchViewFilters(item, view) {
-  const filters = view.filters || {};
-  if (filters.areaId && item.areaId !== filters.areaId) {
-    return false;
-  }
-  if (filters.typeId && item.typeId !== filters.typeId) {
-    return false;
-  }
-  if (filters.status && filters.status !== "any" && getItemStatus(item) !== filters.status) {
-    return false;
-  }
-  if (filters.tag) {
-    const tags = item.tags || [];
-    if (!tags.includes(filters.tag)) {
-      return false;
-    }
-  }
-  if (!matchDueFilter(item.due, filters.due || "any")) {
-    return false;
-  }
-  return true;
-}
-
-function matchesSpecialView(item, specialView) {
-  const today = dateOnly(new Date());
-  const dueDate = parseDate(item.due);
-  const status = getItemStatus(item);
-  if (specialView === "inbox") {
-    return Boolean(item.inbox);
-  }
-  if (specialView === "today") {
-    return Boolean(dueDate && sameDay(dueDate, today));
-  }
-  if (specialView === "next7") {
-    if (!dueDate) {
-      return false;
-    }
-    const end = addDays(today, 7);
-    return dueDate >= today && dueDate <= end;
-  }
-  if (specialView === "overdue") {
-    return Boolean(dueDate && dueDate < today && status !== "done");
-  }
-  if (specialView === "nodue") {
-    return !item.due;
-  }
-  if (specialView === "doing") {
-    return status === "doing";
-  }
-  return true;
-}
-
-function getSpecialViewLabel(value) {
-  const entry = FLOW_VIEWS.find((flow) => flow.id === value);
-  return entry ? entry.label : "Fluxo";
-}
-
-function matchesSearch(item, query) {
-  const value = query.trim().toLowerCase();
-  if (!value) {
-    return true;
-  }
-  const area = getArea(item.areaId);
-  const type = getType(item.typeId);
-  const haystack = [
-    item.title,
-    item.notes,
-    (item.tags || []).join(" "),
-    area ? area.name : "",
-    type ? type.name : ""
-  ]
-    .join(" ")
-    .toLowerCase();
-  return haystack.includes(value);
-}
-
-function sortItems(items) {
-  const sorted = [...items];
-  if (state.ui.sort === "title") {
-    sorted.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
-    return sorted;
-  }
-  if (state.ui.sort === "due") {
-    sorted.sort((a, b) => {
-      const dateA = parseDate(a.due);
-      const dateB = parseDate(b.due);
-      if (!dateA && !dateB) {
-        return 0;
-      }
-      if (!dateA) {
-        return 1;
-      }
-      if (!dateB) {
-        return -1;
-      }
-      return dateA - dateB;
-    });
-    return sorted;
-  }
-  sorted.sort((a, b) => {
-    const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-    const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-    return timeB - timeA;
-  });
-  return sorted;
-}
-
-function buildMainTitle() {
-  const view = getCurrentView();
-  let title = state.ui.specialView
-    ? getSpecialViewLabel(state.ui.specialView)
-    : view
-      ? view.name
-      : "Tudo";
-  const parts = [];
-  if (state.ui.areaId) {
-    const area = getArea(state.ui.areaId);
-    if (area) {
-      parts.push(area.name);
-    }
-  }
-  if (state.ui.typeId) {
-    const type = getType(state.ui.typeId);
-    if (type) {
-      parts.push(type.name);
-    }
-  }
-  if (parts.length) {
-    title = `${title} - ${parts.join(" / ")}`;
-  }
-  return title;
-}
-
-function getItemStatus(item) {
-  const status = item.status || "todo";
-  return STATUS_ORDER.includes(status) ? status : "todo";
-}
-
-function matchDueFilter(value, filter) {
-  if (!filter || filter === "any") {
-    return true;
-  }
-  const hasDue = Boolean(value);
-  if (filter === "withdate") {
-    return hasDue;
-  }
-  if (filter === "nodate") {
-    return !hasDue;
-  }
-  if (!hasDue) {
-    return false;
-  }
-  const dueDate = parseDate(value);
-  if (!dueDate) {
-    return false;
-  }
-  const today = dateOnly(new Date());
-  if (filter === "overdue") {
-    return dueDate < today;
-  }
-  if (filter === "today") {
-    return sameDay(dueDate, today);
-  }
-  if (filter === "week") {
-    const end = addDays(today, 7);
-    return dueDate >= today && dueDate <= end;
-  }
-  return true;
-}
-function parseQuickInput(text) {
-  const parts = text.trim().split(/\s+/);
-  const tags = [];
-  let due = "";
-  const titleParts = [];
-  parts.forEach((part) => {
-    if (part.startsWith("#")) {
-      const tag = part.slice(1).trim().toLowerCase();
-      if (tag) {
-        tags.push(tag);
-      }
-      return;
-    }
-    if (part.startsWith("@")) {
-      const parsed = parseDueToken(part);
-      if (parsed) {
-        due = parsed;
-        return;
-      }
-    }
-    titleParts.push(part);
-  });
-  const title = titleParts.join(" ").trim() || text.trim();
-  return { title, tags, due };
-}
-
-function parseDueToken(token) {
-  const lower = token.toLowerCase();
-  if (lower === "@today") {
-    return formatDateInput(new Date());
-  }
-  if (lower === "@tomorrow") {
-    return formatDateInput(addDays(new Date(), 1));
-  }
-  if (/^@\d{4}-\d{2}-\d{2}$/.test(lower)) {
-    return lower.slice(1);
-  }
-  return "";
-}
-
-function createItem(data = {}, options = {}) {
-  const typeId = data.typeId || null;
-  const areaId = data.areaId || null;
-  const item = {
-    id: uid("item"),
-    title: data.title || "Novo item",
-    typeId,
-    areaId,
-    status: data.status || "todo",
-    due: data.due || "",
-    tags: Array.isArray(data.tags) ? data.tags : [],
-    notes: data.notes || "",
-    progress: data.progress || 0,
-    checklist: Array.isArray(data.checklist) ? data.checklist : [],
-    custom: data.custom && typeof data.custom === "object" ? data.custom : {},
-    inbox: typeof options.inbox === "boolean" ? options.inbox : !(typeId || areaId),
-    recurrence: data.recurrence || null,
-    recurrenceParentId: data.recurrenceParentId || null,
-    createdAt: nowIso(),
-    updatedAt: nowIso()
-  };
-  if (options.applyDefaults !== false && typeId) {
-    applyTypeDefaults(item, getType(typeId), {
-      hasExplicitDue: Boolean(data.due),
-      hasExplicitStatus: Boolean(data.status),
-      hasExplicitNotes: Boolean(data.notes),
-      hasExplicitChecklist: Array.isArray(data.checklist) && data.checklist.length > 0,
-      hasExplicitTags: Array.isArray(data.tags) && data.tags.length > 0
-    });
-  }
-  item.inbox = typeof options.inbox === "boolean" ? options.inbox : !(item.typeId || item.areaId);
-  return item;
-}
-
-function applyTypeDefaults(item, type, options = {}) {
-  if (!type) {
-    return;
-  }
-  const hasExplicitStatus = Boolean(options.hasExplicitStatus);
-  const hasExplicitTags = Boolean(options.hasExplicitTags);
-  const hasExplicitDue = Boolean(options.hasExplicitDue);
-  const hasExplicitNotes = Boolean(options.hasExplicitNotes);
-  const hasExplicitChecklist = Boolean(options.hasExplicitChecklist);
-
-  if (!hasExplicitStatus && type.defaultStatus) {
-    item.status = type.defaultStatus;
-  }
-
-  const tags = new Set([...(type.defaultTags || []), ...(item.tags || [])]);
-  item.tags = Array.from(tags).filter(Boolean);
-
-  if (!hasExplicitDue && !item.due && Number.isFinite(type.defaultDueOffsetDays)) {
-    item.due = formatDateInput(addDays(new Date(), type.defaultDueOffsetDays));
-  }
-
-  if (!hasExplicitNotes && !item.notes && type.defaultNotes) {
-    item.notes = type.defaultNotes;
-  }
-
-  if (
-    !hasExplicitChecklist &&
-    (!item.checklist || item.checklist.length === 0) &&
-    type.features &&
-    type.features.checklist
-  ) {
-    const defaults = Array.isArray(type.defaultChecklist) ? type.defaultChecklist : [];
-    if (defaults.length) {
-      item.checklist = defaults.map((text) => ({
-        id: uid("check"),
-        text: String(text),
-        done: false
-      }));
-    }
-  }
-}
-
-function sanitizeField(field) {
-  const label = field.label && field.label.trim() ? field.label.trim() : "Campo";
-  const kindList = ["text", "number", "date", "select", "checkbox"];
-  const kind = kindList.includes(field.kind) ? field.kind : "text";
-  return {
-    id: field.id || uid("field"),
-    label,
-    kind,
-    options: kind === "select" ? parseList(field.options) : []
-  };
-}
-
-function cloneFields(fields) {
-  if (!Array.isArray(fields)) {
-    return [];
-  }
-  return fields.map((field) => ({
-    id: field.id,
-    label: field.label,
-    kind: field.kind,
-    options: Array.isArray(field.options) ? [...field.options] : []
-  }));
-}
-
-function parseList(value) {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item).trim()).filter(Boolean);
-  }
-  if (!value || typeof value !== "string") {
-    return [];
-  }
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function formatUpdated(value) {
-  if (!value) {
-    return "";
-  }
-  return value.slice(0, 10);
-}
-function formatDateInput(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function formatDateDisplay(value) {
-  const parsed = parseDate(value);
-  if (!parsed) {
-    return value || "";
-  }
-  return parsed.toLocaleDateString("pt-BR");
-}
-
-function formatCalendarMonth(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
-
-function getCalendarMonth() {
-  if (state.ui.calendarMonth && /^\d{4}-\d{2}$/.test(state.ui.calendarMonth)) {
-    const [year, month] = state.ui.calendarMonth.split("-").map(Number);
-    return { year, month: month - 1 };
-  }
-  const now = new Date();
-  return { year: now.getFullYear(), month: now.getMonth() };
-}
-
-function shiftCalendarMonth(offset) {
-  const current = getCalendarMonth();
-  const next = new Date(current.year, current.month + offset, 1);
-  state.ui.calendarMonth = formatCalendarMonth(next);
-  saveState();
-  renderMain();
-}
-
-function groupItemsByDate(items) {
-  return items.reduce((acc, item) => {
-    if (!item.due) {
-      return acc;
-    }
-    if (!acc[item.due]) {
-      acc[item.due] = [];
-    }
-    acc[item.due].push(item);
-    return acc;
-  }, {});
-}
-
-function parseDate(value) {
-  if (!value) {
-    return null;
-  }
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-  return parsed;
-}
-
-function dateOnly(date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function sameDay(a, b) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-function addDays(date, days) {
-  const copy = new Date(date);
-  copy.setDate(copy.getDate() + days);
-  return copy;
-}
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function touchEntity(entity) {
-  if (!entity) {
-    return;
-  }
-  entity.updatedAt = nowIso();
-}
-
-function touchItem(item) {
-  touchEntity(item);
-}
-
-function recordDeletion(kind, id) {
-  if (!id) {
-    return;
-  }
-  if (!state.deleted || typeof state.deleted !== "object") {
-    state.deleted = { areas: [], types: [], views: [], items: [] };
-  }
-  if (!Array.isArray(state.deleted[kind])) {
-    state.deleted[kind] = [];
-  }
-  const deletedAt = nowIso();
-  const existing = state.deleted[kind].find((entry) => entry.id === id);
-  if (existing) {
-    existing.deletedAt = deletedAt;
-    return;
-  }
-  state.deleted[kind].push({ id, deletedAt });
-}
-
-function clamp(value, min, max) {
-  if (Number.isNaN(value)) {
-    return min;
-  }
-  return Math.min(max, Math.max(min, value));
-}
-
-function setHidden(node, hidden) {
-  if (!node) {
-    return;
-  }
-  node.classList.toggle("hidden", hidden);
-}
-
-function getDefaultAreaId() {
-  if (state.ui.areaId) {
-    return state.ui.areaId;
-  }
-  const view = getCurrentView();
-  if (view && view.filters && view.filters.areaId) {
-    return view.filters.areaId;
-  }
-  return null;
-}
-function normalizeSelection(current) {
-  if (!current || typeof current !== "object") {
-    return defaultState();
-  }
-  if (current.selectedItemId && !current.items.find((item) => item.id === current.selectedItemId)) {
-    current.selectedItemId = null;
-  }
-  if (current.ui.viewId && !current.views.find((view) => view.id === current.ui.viewId)) {
-    current.ui.viewId = null;
-  }
-  if (current.ui.areaId && !current.areas.find((area) => area.id === current.ui.areaId)) {
-    current.ui.areaId = null;
-  }
-  if (current.ui.typeId && !current.types.find((type) => type.id === current.ui.typeId)) {
-    current.ui.typeId = null;
-  }
-  if (current.ui.specialView && !FLOW_VIEWS.find((entry) => entry.id === current.ui.specialView)) {
-    current.ui.specialView = null;
-  }
-  if (typeof current.ui.quickTypeId !== "string" || !current.ui.quickTypeId) {
-    current.ui.quickTypeId = null;
-  }
-  if (
-    current.ui.quickTypeId &&
-    !current.types.find((type) => type.id === current.ui.quickTypeId)
-  ) {
-    current.ui.quickTypeId = null;
-  }
-  if (!["list", "board", "calendar"].includes(current.ui.layout)) {
-    current.ui.layout = "list";
-  }
-  if (!["updated", "due", "title"].includes(current.ui.sort)) {
-    current.ui.sort = "updated";
-  }
-  if (!current.ui.collapsed) {
-    current.ui.collapsed = { areas: false, views: false, types: false };
-  }
-  if (!current.ui.detailsSections) {
-    current.ui.detailsSections = { advancedOpen: false };
-  }
-  if (!Array.isArray(current.ui.selection)) {
-    current.ui.selection = [];
-  }
-  if (!Number.isFinite(current.ui.selectionAnchor)) {
-    current.ui.selectionAnchor = null;
-  }
-  if (current.ui.calendarMonth && typeof current.ui.calendarMonth !== "string") {
-    current.ui.calendarMonth = null;
-  }
-  return current;
-}
-
-function defaultState() {
-  return {
-    areas: [],
-    types: [],
-    views: [],
-    items: [],
-    deleted: {
-      areas: [],
-      types: [],
-      views: [],
-      items: []
-    },
-    selectedItemId: null,
-    ui: {
-      viewId: null,
-      areaId: null,
-      typeId: null,
-      specialView: null,
-      layout: "list",
-      sort: "updated",
-      search: "",
-      quickTypeId: null,
-      quickOpen: false,
-      triageMode: false,
-      calendarMonth: null,
-      selection: [],
-      selectionAnchor: null,
-      detailsSections: { advancedOpen: false },
-      collapsed: {
-        areas: false,
-        views: false,
-        types: false
-      }
-    }
-  };
-}
-
-function loadState() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    return defaultState();
-  }
-  try {
-    return normalizeState(JSON.parse(raw));
-  } catch (error) {
-    return defaultState();
-  }
-}
-
-function normalizeState(data) {
-  const base = defaultState();
-  if (!data || typeof data !== "object") {
-    return base;
-  }
-  const ui = {
-    ...base.ui,
-    ...(data.ui || {})
-  };
-  ui.collapsed = {
-    ...base.ui.collapsed,
-    ...((data.ui && data.ui.collapsed) || {})
-  };
-  ui.detailsSections = {
-    ...base.ui.detailsSections,
-    ...((data.ui && data.ui.detailsSections) || {})
-  };
-  ui.quickOpen = Boolean(ui.quickOpen);
-  ui.selection = Array.isArray(ui.selection) ? ui.selection : [];
-  ui.selectionAnchor = Number.isFinite(ui.selectionAnchor) ? ui.selectionAnchor : null;
-  const deleted = normalizeDeletedState(data.deleted);
-  return {
-    areas: Array.isArray(data.areas) ? data.areas.map(normalizeArea).filter(Boolean) : [],
-    types: Array.isArray(data.types) ? data.types.map(normalizeType).filter(Boolean) : [],
-    views: Array.isArray(data.views) ? data.views.map(normalizeView).filter(Boolean) : [],
-    items: Array.isArray(data.items) ? data.items.map(normalizeItem).filter(Boolean) : [],
-    deleted,
-    selectedItemId: data.selectedItemId || null,
-    ui
-  };
-}
-
-function normalizeUpdatedAt(value) {
-  if (!value) {
-    return null;
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  if (Number.isFinite(value)) {
-    return new Date(value).toISOString();
-  }
-  return null;
-}
-
-function normalizeArea(area) {
-  if (!area || typeof area !== "object") {
-    return null;
-  }
-  const normalized = { ...area };
-  normalized.updatedAt =
-    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
-  return normalized;
-}
-
-function normalizeItem(item) {
-  if (!item || typeof item !== "object") {
-    return null;
-  }
-  const normalized = { ...item };
-  normalized.inbox = typeof normalized.inbox === "boolean" ? normalized.inbox : false;
-  normalized.recurrenceParentId =
-    typeof normalized.recurrenceParentId === "string" ? normalized.recurrenceParentId : null;
-  if (normalized.recurrence && typeof normalized.recurrence === "object") {
-    const freqList = ["daily", "weekly", "monthly", "interval"];
-    const freq = freqList.includes(normalized.recurrence.freq) ? normalized.recurrence.freq : null;
-    if (freq) {
-      const intervalDays =
-        freq === "interval" && Number.isFinite(normalized.recurrence.intervalDays)
-          ? Math.max(1, Math.floor(normalized.recurrence.intervalDays))
-          : undefined;
-      normalized.recurrence = freq === "interval" ? { freq, intervalDays } : { freq };
-    } else {
-      normalized.recurrence = null;
-    }
-  } else {
-    normalized.recurrence = null;
-  }
-  normalized.tags = Array.isArray(normalized.tags) ? normalized.tags : [];
-  normalized.checklist = Array.isArray(normalized.checklist) ? normalized.checklist : [];
-  normalized.custom =
-    normalized.custom && typeof normalized.custom === "object" ? normalized.custom : {};
-  normalized.updatedAt =
-    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
-  return normalized;
-}
-
-function normalizeType(type) {
-  if (!type || typeof type !== "object") {
-    return null;
-  }
-  const normalized = { ...type };
-  normalized.features = normalized.features && typeof normalized.features === "object"
-    ? normalized.features
-    : {};
-  normalized.customFields = Array.isArray(normalized.customFields) ? normalized.customFields : [];
-  normalized.defaultStatus = STATUS_ORDER.includes(normalized.defaultStatus)
-    ? normalized.defaultStatus
-    : "todo";
-  normalized.defaultTags = Array.isArray(normalized.defaultTags) ? normalized.defaultTags : [];
-  normalized.defaultDueOffsetDays = Number.isFinite(normalized.defaultDueOffsetDays)
-    ? Math.floor(normalized.defaultDueOffsetDays)
-    : null;
-  normalized.defaultNotes = typeof normalized.defaultNotes === "string" ? normalized.defaultNotes : "";
-  normalized.defaultChecklist = Array.isArray(normalized.defaultChecklist)
-    ? normalized.defaultChecklist
-    : [];
-  normalized.updatedAt =
-    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
-  return normalized;
-}
-
-function normalizeView(view) {
-  if (!view || typeof view !== "object") {
-    return null;
-  }
-  const normalized = { ...view };
-  const defaults = {
-    showType: true,
-    showArea: true,
-    showStatus: true,
-    showDue: true,
-    showProgress: true,
-    showTags: true
-  };
-  normalized.cardFields = {
-    ...defaults,
-    ...((normalized.cardFields && typeof normalized.cardFields === "object") ? normalized.cardFields : {})
-  };
-  normalized.updatedAt =
-    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
-  return normalized;
-}
-
-function normalizeDeletedList(list) {
-  if (!Array.isArray(list)) {
-    return [];
-  }
-  return list
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return null;
-      }
-      const id = typeof entry.id === "string" ? entry.id : null;
-      const deletedAt = normalizeUpdatedAt(entry.deletedAt || entry.updatedAt);
-      if (!id || !deletedAt) {
-        return null;
-      }
-      return { id, deletedAt };
-    })
-    .filter(Boolean);
-}
-
-function normalizeDeletedState(data) {
-  const empty = { areas: [], types: [], views: [], items: [] };
-  if (!data || typeof data !== "object") {
-    return empty;
-  }
-  return {
-    areas: normalizeDeletedList(data.areas),
-    types: normalizeDeletedList(data.types),
-    views: normalizeDeletedList(data.views),
-    items: normalizeDeletedList(data.items)
-  };
-}
-
-function defaultRemoteConfig() {
-  return {
-    url: DEFAULT_API_URL,
-    apiKey: DEFAULT_API_KEY,
-    autoSync: false,
-    lastSyncAt: null,
-    lastError: ""
-  };
-}
-
-function loadRemoteConfig() {
-  const raw = localStorage.getItem(REMOTE_KEY);
-  if (!raw) {
-    return defaultRemoteConfig();
-  }
-  try {
-    return normalizeRemote(JSON.parse(raw));
-  } catch (error) {
-    return defaultRemoteConfig();
-  }
-}
-
-function normalizeRemote(data) {
-  const base = defaultRemoteConfig();
-  if (!data || typeof data !== "object") {
-    return base;
-  }
-  return {
-    url: typeof data.url === "string" ? data.url : base.url,
-    apiKey: typeof data.apiKey === "string" ? data.apiKey : base.apiKey,
-    autoSync: Boolean(data.autoSync),
-    lastSyncAt: Number.isFinite(data.lastSyncAt) ? data.lastSyncAt : base.lastSyncAt,
-    lastError: typeof data.lastError === "string" ? data.lastError : base.lastError
-  };
-}
-
-function saveRemoteConfig() {
-  localStorage.setItem(REMOTE_KEY, JSON.stringify(remote));
-}
-
-function applyDefaultRemoteConfig() {
-  let updated = false;
-  if (!remote.url && DEFAULT_API_URL) {
-    remote.url = DEFAULT_API_URL;
-    updated = true;
-  }
-  if (!remote.apiKey && DEFAULT_API_KEY) {
-    remote.apiKey = DEFAULT_API_KEY;
-    updated = true;
-  }
-  if (updated) {
-    saveRemoteConfig();
-  }
-}
-
-function buildApiUrl(path) {
-  const base = (remote.url || "").trim();
-  if (!base) {
-    return "";
-  }
-  return base.replace(/\/+$/, "") + path;
-}
-
-function buildStateUrl() {
-  return buildApiUrl("/state");
-}
-
-function buildHealthUrl() {
-  return buildApiUrl("/health");
-}
-
-function getAuthHeaders() {
-  const headers = {
-    "Content-Type": "application/json"
-  };
-  if (remote.apiKey) {
-    headers["X-API-Key"] = remote.apiKey;
-  }
-  return headers;
-}
-
-function getSyncState(source = state) {
-  const deleted = source.deleted || {};
-  return {
-    areas: Array.isArray(source.areas) ? source.areas : [],
-    types: Array.isArray(source.types) ? source.types : [],
-    views: Array.isArray(source.views) ? source.views : [],
-    items: Array.isArray(source.items) ? source.items : [],
-    deleted: {
-      areas: Array.isArray(deleted.areas) ? deleted.areas : [],
-      types: Array.isArray(deleted.types) ? deleted.types : [],
-      views: Array.isArray(deleted.views) ? deleted.views : [],
-      items: Array.isArray(deleted.items) ? deleted.items : []
-    }
-  };
-}
-
-function hashSyncState(syncState) {
-  try {
-    return JSON.stringify(syncState);
-  } catch (error) {
-    return "";
-  }
-}
-
-function getUpdatedAtValue(entry) {
-  if (!entry || !entry.updatedAt) {
-    return 0;
-  }
-  const time = Date.parse(entry.updatedAt);
-  return Number.isNaN(time) ? 0 : time;
-}
-
-function getDeletedAtValue(entry) {
-  if (!entry || !entry.deletedAt) {
-    return 0;
-  }
-  const time = Date.parse(entry.deletedAt);
-  return Number.isNaN(time) ? 0 : time;
-}
-
-function mergeDeletedMap(...lists) {
-  const map = new Map();
-  lists.forEach((list) => {
-    (Array.isArray(list) ? list : []).forEach((entry) => {
-      if (!entry || !entry.id) {
-        return;
-      }
-      const deletedAt = normalizeUpdatedAt(entry.deletedAt || entry.updatedAt);
-      if (!deletedAt) {
-        return;
-      }
-      const time = Date.parse(deletedAt);
-      if (Number.isNaN(time)) {
-        return;
-      }
-      const existing = map.get(entry.id);
-      if (!existing || time >= Date.parse(existing)) {
-        map.set(entry.id, deletedAt);
-      }
-    });
-  });
-  return map;
-}
-
-function deletedMapToList(deletedMap) {
-  return Array.from(deletedMap.entries()).map(([id, deletedAt]) => ({ id, deletedAt }));
-}
-
-function mergeEntitySet(localList = [], remoteList = [], localDeleted = [], remoteDeleted = []) {
-  const map = new Map();
-  localList.forEach((entry) => {
-    if (entry && entry.id) {
-      map.set(entry.id, { local: entry });
-    }
-  });
-  remoteList.forEach((entry) => {
-    if (!entry || !entry.id) {
-      return;
-    }
-    const existing = map.get(entry.id);
-    if (existing) {
-      existing.remote = entry;
-    } else {
-      map.set(entry.id, { remote: entry });
-    }
-  });
-
-  const deletedMap = mergeDeletedMap(localDeleted, remoteDeleted);
-  const merged = [];
-
-  map.forEach(({ local, remote }, id) => {
-    let item = null;
-    if (local && !remote) {
-      item = local;
-    } else if (remote && !local) {
-      item = remote;
-    } else {
-      const localTime = getUpdatedAtValue(local);
-      const remoteTime = getUpdatedAtValue(remote);
-      item = localTime || remoteTime ? (localTime >= remoteTime ? local : remote) : local || remote;
-    }
-    const deletedAt = deletedMap.get(id);
-    const deletedTime = deletedAt ? getDeletedAtValue({ deletedAt }) : 0;
-    const itemTime = getUpdatedAtValue(item);
-
-    if (deletedTime && deletedTime >= itemTime) {
-      return;
-    }
-    if (deletedTime && itemTime > deletedTime) {
-      deletedMap.delete(id);
-    }
-    merged.push(item);
-  });
-
-  return { items: merged, deleted: deletedMapToList(deletedMap) };
-}
-
-function mergeStates(localState, remoteState) {
-  const localData = getSyncState(localState);
-  const remoteData = getSyncState(remoteState);
-  const areas = mergeEntitySet(
-    localData.areas,
-    remoteData.areas,
-    localData.deleted.areas,
-    remoteData.deleted.areas
-  );
-  const types = mergeEntitySet(
-    localData.types,
-    remoteData.types,
-    localData.deleted.types,
-    remoteData.deleted.types
-  );
-  const views = mergeEntitySet(
-    localData.views,
-    remoteData.views,
-    localData.deleted.views,
-    remoteData.deleted.views
-  );
-  const items = mergeEntitySet(
-    localData.items,
-    remoteData.items,
-    localData.deleted.items,
-    remoteData.deleted.items
-  );
-  return {
-    ...localState,
-    areas: areas.items,
-    types: types.items,
-    views: views.items,
-    items: items.items,
-    deleted: {
-      areas: areas.deleted,
-      types: types.deleted,
-      views: views.deleted,
-      items: items.deleted
-    }
-  };
-}
-
-function applyRemoteState(remoteState, updatedAt) {
-  const normalizedRemote = normalizeState(remoteState);
-  const remoteData = getSyncState(normalizedRemote);
-  const mergedState = normalizeSelection(mergeStates(state, normalizedRemote));
-  const mergedData = getSyncState(mergedState);
-  const remoteHash = hashSyncState(remoteData);
-  const mergedHash = hashSyncState(mergedData);
-
-  state = mergedState;
-  saveState({ skipSync: true });
-  if (Number.isFinite(updatedAt)) {
-    remote.lastSyncAt = updatedAt;
-  }
-  remote.lastError = "";
-  saveRemoteConfig();
-  sync.lastPushedHash = remoteHash;
-
-  renderAll();
-
-  return { mergedHash, remoteHash, needsPush: mergedHash !== remoteHash };
-}
-
-function scheduleAutoSync() {
-  if (!remote.autoSync || !remote.url || !remote.apiKey) {
-    return;
-  }
-  sync.pending = true;
-  if (sync.timer) {
-    clearTimeout(sync.timer);
-  }
-  sync.timer = setTimeout(() => {
-    sync.timer = null;
-    if (sync.busy) {
-      return;
-    }
-    pushState({ silent: true });
-  }, 1200);
-}
-
-async function pushState(options = {}) {
-  const url = buildStateUrl();
-  if (!url) {
-    remote.lastError = "Configure URL";
-    saveRemoteConfig();
-    return { ok: false, error: remote.lastError };
-  }
-  if (!remote.apiKey) {
-    remote.lastError = "Informe a API Key";
-    saveRemoteConfig();
-    return { ok: false, error: remote.lastError, code: "missing_key" };
-  }
-  if (sync.busy) {
-    sync.pending = true;
-    return { ok: false, error: "Sincronização em andamento" };
-  }
-  sync.busy = true;
-  sync.pending = false;
-  try {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const payloadState = getSyncState();
-      const payloadHash = hashSyncState(payloadState);
-      if (payloadHash && payloadHash === sync.lastPushedHash) {
-        return { ok: true, skipped: true };
-      }
-      const payload = { state: payloadState };
-      if (Number.isFinite(remote.lastSyncAt)) {
-        payload.baseUpdatedAt = remote.lastSyncAt;
-      }
-      const response = await fetch(url, {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload)
-      });
-      if (response.status === 401 || response.status === 403) {
-        remote.lastError = "API Key inválida";
-        saveRemoteConfig();
-        return { ok: false, error: remote.lastError, code: "unauthorized" };
-      }
-      if (response.status === 409) {
-        const data = await response.json().catch(() => null);
-        if (data && data.state && typeof data.state === "object") {
-          const mergeResult = applyRemoteState(data.state, data.updatedAt);
-          if (!mergeResult.needsPush) {
-            return { ok: true, merged: true };
-          }
-          continue;
-        }
-        remote.lastError = "Conflito de sincronizacao";
-        saveRemoteConfig();
-        return { ok: false, error: remote.lastError, code: "conflict" };
-      }
-      if (!response.ok) {
-        remote.lastError = `HTTP ${response.status}`;
-        saveRemoteConfig();
-        return { ok: false, error: remote.lastError };
-      }
-      const data = await response.json().catch(() => ({}));
-      remote.lastSyncAt = Number.isFinite(data.updatedAt) ? data.updatedAt : Date.now();
-      remote.lastError = "";
-      saveRemoteConfig();
-      sync.lastPushedHash = payloadHash;
-      return { ok: true };
-    }
-    remote.lastError = "Conflito de sincronizacao";
-    saveRemoteConfig();
-    sync.pending = true;
-    return { ok: false, error: remote.lastError, code: "conflict" };
-  } catch (error) {
-    remote.lastError = "Falha de rede";
-    saveRemoteConfig();
-    return { ok: false, error: remote.lastError };
-  } finally {
-    sync.busy = false;
-    if (sync.pending) {
-      scheduleAutoSync();
-    }
-  }
-}
-
-async function pullState(options = {}) {
-  const url = buildStateUrl();
-  if (!url) {
-    remote.lastError = "Configure URL";
-    saveRemoteConfig();
-    return { ok: false, error: remote.lastError };
-  }
-  if (!remote.apiKey) {
-    remote.lastError = "Informe a API Key";
-    saveRemoteConfig();
-    return { ok: false, error: remote.lastError, code: "missing_key" };
-  }
-  if (sync.busy) {
-    return { ok: false, error: "Sincronização em andamento" };
-  }
-  sync.busy = true;
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: getAuthHeaders()
-    });
-    if (response.status === 404) {
-      remote.lastError = "Servidor vazio";
-      saveRemoteConfig();
-      if (options.pushOnEmpty) {
-        scheduleAutoSync();
-      }
-      return { ok: false, error: remote.lastError, code: "empty" };
-    }
-    if (response.status === 401 || response.status === 403) {
-      remote.lastError = "API Key inválida";
-      saveRemoteConfig();
-      return { ok: false, error: remote.lastError, code: "unauthorized" };
-    }
-    if (!response.ok) {
-      remote.lastError = `HTTP ${response.status}`;
-      saveRemoteConfig();
-      return { ok: false, error: remote.lastError };
-    }
-    const data = await response.json().catch(() => null);
-    if (!data || !data.state || typeof data.state !== "object") {
-      remote.lastError = "Resposta inválida";
-      saveRemoteConfig();
-      return { ok: false, error: remote.lastError };
-    }
-    const mergeResult = applyRemoteState(data.state, data.updatedAt);
-    if (mergeResult.needsPush && options.queuePush) {
-      scheduleAutoSync();
-    }
-    return { ok: true, needsPush: mergeResult.needsPush };
-  } catch (error) {
-    remote.lastError = "Falha de rede";
-    saveRemoteConfig();
-    return { ok: false, error: remote.lastError };
-  } finally {
-    sync.busy = false;
-    if (sync.pending) {
-      scheduleAutoSync();
-    }
-  }
-}
-
-async function testConnection() {
-  const url = buildHealthUrl();
-  if (!url) {
-    remote.lastError = "Configure URL";
-    saveRemoteConfig();
-    return { ok: false, error: remote.lastError };
-  }
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: getAuthHeaders()
-    });
-    if (!response.ok) {
-      remote.lastError = `HTTP ${response.status}`;
-      saveRemoteConfig();
-      return { ok: false, error: remote.lastError };
-    }
-    remote.lastError = "";
-    saveRemoteConfig();
-    return { ok: true };
-  } catch (error) {
-    remote.lastError = "Falha de rede";
-    saveRemoteConfig();
-    return { ok: false, error: remote.lastError };
-  }
-}
-
-function formatSyncTime(timestamp) {
-  if (!timestamp) {
-    return "";
-  }
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
-}
-
-function buildSyncStatus() {
-  if (!remote.url) {
-    return "Sync desativado (configure nos Ajustes)";
-  }
-  if (remote.lastError) {
-    return `Erro: ${remote.lastError}`;
-  }
-  if (remote.lastSyncAt) {
-    return `Último sync: ${formatSyncTime(remote.lastSyncAt)}`;
-  }
-  if (!remote.autoSync) {
-    return "Sync manual (auto-sync desativado)";
-  }
-  if (!remote.apiKey) {
-    return "Informe a API Key para sincronizar";
-  }
-  return "Sync pronto";
-}
-
-function saveState(options = {}) {
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = null;
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  if (!options.skipSync) {
-    scheduleAutoSync();
-  }
-}
-
-function saveStateDebounced(options = {}) {
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-  }
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    saveState(options);
-  }, SAVE_DEBOUNCE_MS);
-}
-
-function flushPendingSave() {
-  if (!saveTimer) {
-    return;
-  }
-  clearTimeout(saveTimer);
-  saveTimer = null;
-  saveState();
 }
 
 function showToast(message) {
   if (!el.toastContainer) {
     return;
   }
-  const toast = document.createElement("div");
-  toast.className = "toast";
-  toast.textContent = message;
+  const toast = createElement("div", "toast", message);
   el.toastContainer.append(toast);
   setTimeout(() => {
     if (toast.parentNode) {
@@ -4506,9 +3912,3 @@ function showToast(message) {
     }
   }, 3000);
 }
-
-function uid(prefix) {
-  return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
-}
-
-init();

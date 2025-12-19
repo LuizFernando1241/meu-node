@@ -3,266 +3,118 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Meu Node - Central de Organização</title>
-  <meta name="theme-color" content="#0f172a">
+  <title>Meu Node - Fluxo de trabalho total</title>
+  <meta name="theme-color" content="#f26a4f">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="bg-gradient"></div>
-  <div class="bg-noise"></div>
+  <div class="bg-aurora"></div>
+  <div class="bg-grid"></div>
 
   <div class="app" id="appRoot">
-    <header class="top panel">
+    <header class="topbar panel">
       <div class="brand">
-        <div class="logo-dot"></div>
+        <div class="logo-mark"></div>
         <div>
           <div class="brand-title">Meu Node</div>
-          <div class="brand-sub">Organização flexível, visual limpo</div>
+          <div class="brand-sub">Planejamento, foco e conhecimento</div>
         </div>
       </div>
-      <div class="search-global">
-        <input id="globalSearch" type="search" aria-label="Buscar itens, tags ou notas" placeholder="Buscar itens, tags ou notas..." />
+
+      <div class="search-wrap">
+        <div class="search-input">
+          <span class="search-icon">/</span>
+          <input id="globalSearch" type="search" aria-label="Busca global" placeholder="Buscar tarefas, eventos, notas, projetos..." />
+          <button id="searchClear" class="icon-btn ghost-btn" aria-label="Limpar busca">&times;</button>
+        </div>
+        <div class="search-hint">Ctrl/Cmd + K</div>
       </div>
-      <div class="top-actions">
-        <button id="newItem" class="primary-btn">Novo item</button>
+
+      <div class="topbar-actions">
+        <button id="createBtn" class="primary-btn">+ Criar</button>
+        <button id="commandBtn" class="ghost-btn">Paleta</button>
         <div class="menu">
-          <button id="moreToggle" class="ghost-btn icon-btn" aria-label="Mais ações" aria-expanded="false">&#8942;</button>
-          <div id="moreMenu" class="menu-panel hidden" role="menu">
-            <button id="newType" class="ghost-btn" role="menuitem">Criar tipo</button>
-            <button id="newView" class="ghost-btn" role="menuitem">Nova visão</button>
-            <button id="openSettings" class="ghost-btn" role="menuitem">Ajustes</button>
+          <button id="avatarToggle" class="avatar-btn" aria-label="Conta e preferencias">LF</button>
+          <div id="avatarMenu" class="menu-panel hidden" role="menu">
+            <button id="openSettings" class="ghost-btn" role="menuitem">Configuracoes</button>
+            <button id="exportData" class="ghost-btn" role="menuitem">Exportar dados</button>
+            <button id="importData" class="ghost-btn" role="menuitem">Importar dados</button>
           </div>
         </div>
       </div>
     </header>
 
-    <main class="layout">
-      <aside class="side panel">
-        <div class="side-group">
-          <div class="side-group-title">Navegação</div>
-          <section class="side-section" id="flowSection">
-            <div class="section-header">
-              <h3>Fluxo</h3>
-            </div>
-            <div id="flowList" class="list"></div>
-          </section>
-
-          <section class="side-section">
-            <div class="section-header">
-              <h3>Visões</h3>
-              <div class="section-actions">
-                <button id="addView" class="mini-btn" aria-label="Adicionar visão">+</button>
-                <button class="mini-btn toggle" data-toggle="views" aria-controls="viewsList" aria-expanded="true">-</button>
-              </div>
-            </div>
-            <div id="viewsList" class="list"></div>
-          </section>
+    <main class="shell">
+      <aside class="sidebar panel">
+        <div class="sidebar-section">
+          <div class="sidebar-title">Mapa geral</div>
+          <button class="nav-item" data-route="/today">
+            <span>Hoje</span>
+            <span class="nav-meta" id="countToday"></span>
+          </button>
+          <button class="nav-item" data-route="/inbox">
+            <span>Inbox</span>
+            <span class="nav-meta" id="countInbox"></span>
+          </button>
+          <button class="nav-item" data-route="/week">
+            <span>Semana</span>
+            <span class="nav-meta" id="countWeek"></span>
+          </button>
+          <button class="nav-item" data-route="/projects">
+            <span>Projetos</span>
+            <span class="nav-meta" id="countProjects"></span>
+          </button>
+          <button class="nav-item" data-route="/notes">
+            <span>Notas</span>
+            <span class="nav-meta" id="countNotes"></span>
+          </button>
         </div>
 
-        <div class="side-divider"></div>
-
-        <div class="side-group">
-          <div class="side-group-title">Organização</div>
-          <section class="side-section">
-            <div class="section-header">
-              <h3>Áreas</h3>
-              <div class="section-actions">
-                <button id="addArea" class="mini-btn" aria-label="Adicionar área">+</button>
-                <button class="mini-btn toggle" data-toggle="areas" aria-controls="areasList" aria-expanded="true">-</button>
-              </div>
-            </div>
-            <div id="areasList" class="list"></div>
-          </section>
-
-          <section class="side-section">
-            <div class="section-header">
-              <h3>Tipos</h3>
-              <div class="section-actions">
-                <button id="addType" class="mini-btn" aria-label="Adicionar tipo">+</button>
-                <button class="mini-btn toggle" data-toggle="types" aria-controls="typesList" aria-expanded="true">-</button>
-              </div>
-            </div>
-            <div id="typesList" class="list"></div>
-          </section>
+        <div class="sidebar-section">
+          <button id="moreToggle" class="nav-item nav-more" aria-expanded="false">
+            <span>Mais</span>
+            <span class="nav-meta">+</span>
+          </button>
+          <div id="moreMenu" class="submenu hidden">
+            <button class="nav-subitem" data-route="/calendar">Calendario</button>
+            <button class="nav-subitem" data-route="/areas">Areas</button>
+            <button class="nav-subitem" data-route="/archive">Arquivo</button>
+            <button id="settingsShortcut" class="nav-subitem">Configuracoes</button>
+          </div>
         </div>
 
-        <div class="side-footer">
-          <div id="syncStatus" class="list-meta" aria-live="polite"></div>
+        <div class="sidebar-footer">
+          <div class="list-meta">Sync local</div>
         </div>
       </aside>
 
-      <section class="main panel">
-        <div class="main-header">
+      <section class="content panel">
+        <div class="page-header">
           <div>
-            <div class="eyebrow">Visão atual</div>
-            <h2 id="mainTitle">Tudo</h2>
+            <div class="eyebrow" id="pageEyebrow">Rota</div>
+            <h1 id="pageTitle">Hoje</h1>
           </div>
-          <div class="main-actions">
-            <div id="mainActionsExtra" class="main-actions-extra"></div>
-            <button id="quickToggle" class="ghost-btn" aria-controls="quickPanel" aria-expanded="false">Captura rápida</button>
-            <select id="layoutSelect" aria-label="Selecionar layout">
-              <option value="list">Lista</option>
-              <option value="board">Quadro</option>
-              <option value="calendar">Calendário</option>
-            </select>
-            <select id="sortSelect" aria-label="Ordenar por">
-              <option value="updated">Atualizado</option>
-              <option value="due">Prazo</option>
-              <option value="title">Título</option>
-            </select>
-          </div>
+          <div id="pageActions" class="page-actions"></div>
         </div>
-        <div id="quickPanel" class="quick-panel hidden">
-          <div class="quick-form">
-            <input id="quickInput" type="text" aria-label="Captura rápida" placeholder="Captura rápida: #tag @today" />
-            <select id="quickType" aria-label="Tipo para captura rápida"></select>
-            <button id="quickAdd" class="primary-btn" aria-label="Adicionar item rápido">Adicionar</button>
-          </div>
-        </div>
-        <div id="activeFilters" class="active-filters hidden" aria-label="Filtros ativos" aria-live="polite"></div>
-        <div id="selectionBar" class="selection-bar hidden" aria-label="Ações em lote"></div>
-
-        <div id="emptyState" class="empty hidden">
-          <h3>Nenhum item ainda</h3>
-          <p>Crie seu primeiro tipo e comece a organizar do seu jeito.</p>
-          <div class="empty-actions">
-            <button id="emptyNewType" class="ghost-btn">Criar tipo</button>
-            <button id="emptyNewArea" class="ghost-btn">Criar área</button>
-          </div>
-        </div>
-
-        <div id="triagePanel" class="triage hidden"></div>
-        <div id="itemsBoard" class="board hidden"></div>
-        <div id="itemsList" class="items"></div>
-        <div id="calendarView" class="calendar hidden"></div>
+        <div id="viewRoot" class="view-root"></div>
       </section>
 
-      <aside id="detailsPanel" class="details panel details-drawer" aria-hidden="true">
+      <aside id="detailsPanel" class="details panel" aria-live="polite">
         <div class="details-header">
           <div>
             <div class="eyebrow">Detalhes</div>
-            <h2>Item</h2>
+            <h2 id="detailsTitle">Nada selecionado</h2>
           </div>
           <div class="details-actions">
             <button id="detailsClose" class="ghost-btn icon-btn" aria-label="Fechar detalhes">&times;</button>
-            <button id="returnInbox" class="ghost-btn">Voltar para Inbox</button>
-            <button id="deleteItem" class="ghost-btn danger">Excluir</button>
           </div>
         </div>
-
-        <div id="detailsEmpty" class="empty">
-          <h3>Selecione um item</h3>
-          <p>Edite campos, tags e detalhes aqui.</p>
-        </div>
-
-        <div id="detailsForm" class="details-form hidden">
-          <div class="details-section">
-            <div class="section-header">
-              <div>
-                <div class="eyebrow">Básico</div>
-              </div>
-            </div>
-            <label class="field">
-              <span>Título</span>
-              <input id="itemTitle" type="text" placeholder="Título do item" />
-            </label>
-            <div class="field-row">
-              <label class="field">
-                <span>Tipo</span>
-                <select id="itemType"></select>
-              </label>
-              <label class="field">
-                <span>Área</span>
-                <select id="itemArea"></select>
-              </label>
-            </div>
-
-            <div id="statusRow" class="field-row">
-              <label class="field">
-                <span>Status</span>
-                <select id="itemStatus">
-                  <option value="todo">A fazer</option>
-                  <option value="doing">Em progresso</option>
-                  <option value="done">Feito</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Prazo</span>
-                <input id="itemDue" type="date" />
-              </label>
-            </div>
-
-            <label class="field">
-              <span>Tags</span>
-              <input id="itemTags" type="text" placeholder="tag1, tag2" />
-            </label>
-
-            <div id="detailsQuickActions" class="details-quick"></div>
-          </div>
-
-          <div class="details-section">
-            <div class="section-header">
-              <div>
-                <div class="eyebrow">Notas</div>
-              </div>
-            </div>
-            <label class="field">
-              <span>Notas</span>
-              <textarea id="itemNotes" rows="6" placeholder="Observações, ideias, referências..."></textarea>
-            </label>
-          </div>
-
-          <div class="details-section">
-            <button id="advancedToggle" class="section-toggle" type="button">
-              <span>Avançado</span>
-              <span class="toggle-icon">+</span>
-            </button>
-            <div id="advancedSection" class="advanced-section hidden">
-              <div id="progressRow" class="field hidden">
-                <span>Progresso</span>
-                <div class="progress-wrap">
-                  <input id="itemProgress" type="range" min="0" max="100" value="0" />
-                  <span id="itemProgressValue" class="pill">0%</span>
-                </div>
-              </div>
-
-              <div id="checklistRow" class="field hidden">
-                <div class="field-row">
-                  <span>Checklist</span>
-                  <button id="addChecklist" class="mini-btn">+</button>
-                </div>
-                <div id="checklistList" class="checklist"></div>
-              </div>
-
-              <div id="customFields" class="custom-fields"></div>
-
-              <div id="recurrenceRow" class="field">
-                <div class="field-row">
-                  <label class="field">
-                    <span>Recorrência</span>
-                    <select id="itemRecurrence">
-                      <option value="">Nenhuma</option>
-                      <option value="daily">Diária</option>
-                      <option value="weekly">Semanal</option>
-                      <option value="monthly">Mensal</option>
-                      <option value="interval">A cada X dias</option>
-                    </select>
-                  </label>
-                  <label id="recurrenceIntervalRow" class="field hidden">
-                    <span>A cada (dias)</span>
-                    <input id="itemRecurrenceInterval" type="number" min="1" />
-                  </label>
-                </div>
-                <div id="recurrenceSource" class="list-meta hidden">Gerado a partir de recorrência.</div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <div id="detailsBody" class="details-body"></div>
       </aside>
     </main>
 
@@ -282,7 +134,7 @@
       <div class="modal-actions">
         <button id="modalDelete" class="ghost-btn danger hidden">Excluir</button>
         <button id="modalCancel" class="ghost-btn">Cancelar</button>
-        <button id="modalSave" class="ghost-btn">Salvar</button>
+        <button id="modalSave" class="primary-btn">Salvar</button>
       </div>
     </div>
   </div>
