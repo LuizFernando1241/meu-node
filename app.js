@@ -2,7 +2,6 @@
 
 const STORAGE_KEY = "meu-node-rebuild-v1";
 const REMOTE_KEY = "meu-node-remote-v1";
-const AUTH_KEY = "meu-node-auth-v1";
 
 const STATUS_ORDER = ["todo", "doing", "done"];
 const STATUS_LABELS = {
@@ -118,6 +117,10 @@ let openMenu = null;
 
 function init() {
   bindEvents();
+  remote.url = DEFAULT_API_URL;
+  remote.apiKey = DEFAULT_API_KEY;
+  remote.autoSync = true;
+  saveRemoteConfig();
   renderAll();
   applyAuthState();
   if (auth.token && remote.url && remote.autoSync) {
@@ -4033,6 +4036,7 @@ function clearAuth() {
 function defaultRemoteConfig() {
   return {
     url: "",
+    apiKey: "",
     autoSync: false,
     lastSyncAt: null,
     lastError: ""
