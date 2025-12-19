@@ -3,7 +3,7 @@
 const STORAGE_KEY = "meu-node-rebuild-v1";
 const REMOTE_KEY = "meu-node-remote-v1";
 const DEFAULT_API_URL = "https://meu-node.onrender.com";
-const DEFAULT_API_KEY = "meu-node-2025-abc123";
+const DEFAULT_API_KEY = "sua-chave";
 
 const STATUS_ORDER = ["todo", "doing", "done"];
 const STATUS_LABELS = {
@@ -103,6 +103,8 @@ let remote = normalizeRemote(loadRemoteConfig());
 const sync = { timer: null, busy: false, pending: false, lastPushedHash: "" };
 const commandState = { open: false, index: 0, filtered: [], previousFocus: null };
 let openMenu = null;
+const SAVE_DEBOUNCE_MS = 250;
+let saveTimer = null;
 
 function init() {
   bindEvents();
@@ -119,7 +121,7 @@ function init() {
 function bindEvents() {
   el.globalSearch.addEventListener("input", () => {
     state.ui.search = el.globalSearch.value;
-    saveState();
+    saveStateDebounced();
     renderMain();
   });
 
@@ -164,7 +166,7 @@ function bindEvents() {
     }
     item.title = el.itemTitle.value;
     touchItem(item);
-    saveState();
+    saveStateDebounced();
     renderMain();
   });
 
@@ -234,7 +236,7 @@ function bindEvents() {
     }
     item.notes = el.itemNotes.value;
     touchItem(item);
-    saveState();
+    saveStateDebounced();
   });
 
   if (el.itemRecurrence) {
@@ -281,7 +283,7 @@ function bindEvents() {
     item.progress = clamp(Number(el.itemProgress.value), 0, 100);
     el.itemProgressValue.textContent = `${item.progress}%`;
     touchItem(item);
-    saveState();
+    saveStateDebounced();
     renderMain();
   });
 
@@ -305,6 +307,7 @@ function bindEvents() {
       return;
     }
     confirmWithModal("Excluir item?", () => {
+      recordDeletion("items", item.id);
       state.items = state.items.filter((entry) => entry.id !== item.id);
       state.selectedItemId = null;
       saveState();
@@ -325,6 +328,7 @@ function bindEvents() {
   document.addEventListener("keydown", handleModalKeydown);
   document.addEventListener("keydown", handleGlobalShortcuts);
   document.addEventListener("click", handleGlobalClick);
+  window.addEventListener("beforeunload", flushPendingSave);
 
   document.querySelectorAll(".toggle").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -393,6 +397,18 @@ function renderQuick() {
   el.quickType.value = state.ui.quickTypeId || "";
 }
 
+function buildCountsMap(items, key) {
+  const counts = new Map();
+  items.forEach((item) => {
+    const value = item ? item[key] : null;
+    if (!value) {
+      return;
+    }
+    counts.set(value, (counts.get(value) || 0) + 1);
+  });
+  return counts;
+}
+
 function renderSidebar() {
   renderFlowList();
   renderAreas();
@@ -422,6 +438,7 @@ function renderFlowList() {
 
 function renderAreas() {
   el.areasList.innerHTML = "";
+  const counts = buildCountsMap(state.items, "areaId");
   const allItem = createListItem({
     name: "Todas as áreas",
     count: state.items.length,
@@ -431,7 +448,7 @@ function renderAreas() {
   el.areasList.append(allItem);
 
   state.areas.forEach((area) => {
-    const count = state.items.filter((item) => item.areaId === area.id).length;
+    const count = counts.get(area.id) || 0;
     const node = createListItem({
       name: area.name,
       count,
@@ -472,6 +489,7 @@ function renderViews() {
 
 function renderTypes() {
   el.typesList.innerHTML = "";
+  const counts = buildCountsMap(state.items, "typeId");
   const allItem = createListItem({
     name: "Todos os tipos",
     count: state.items.length,
@@ -481,7 +499,7 @@ function renderTypes() {
   el.typesList.append(allItem);
 
   state.types.forEach((type) => {
-    const count = state.items.filter((item) => item.typeId === type.id).length;
+    const count = counts.get(type.id) || 0;
     const node = createListItem({
       name: type.name,
       count,
@@ -1387,7 +1405,7 @@ function renderChecklist(item, enabled) {
     text.addEventListener("input", () => {
       entry.text = text.value;
       touchItem(item);
-      saveState();
+      saveStateDebounced();
     });
 
     const remove = document.createElement("button");
@@ -1459,7 +1477,7 @@ function renderCustomFields(item, type) {
         item.custom[field.id] = input.value;
       }
       touchItem(item);
-      saveState();
+      saveStateDebounced();
     });
 
     wrapper.append(label, input);
@@ -1745,15 +1763,18 @@ function openAreaModal(area) {
     onDelete: area
       ? () => {
           confirmWithModal("Excluir área?", () => {
+            recordDeletion("areas", area.id);
             state.areas = state.areas.filter((entry) => entry.id !== area.id);
             state.items.forEach((item) => {
               if (item.areaId === area.id) {
                 item.areaId = null;
+                touchItem(item);
               }
             });
             state.views.forEach((view) => {
               if (view.filters && view.filters.areaId === area.id) {
                 view.filters.areaId = null;
+                touchEntity(view);
               }
             });
             if (state.ui.areaId === area.id) {
@@ -1956,15 +1977,18 @@ function openTypeModal(type) {
     onDelete: type
       ? () => {
           confirmWithModal("Excluir tipo?", () => {
+            recordDeletion("types", type.id);
             state.types = state.types.filter((entry) => entry.id !== type.id);
             state.items.forEach((item) => {
               if (item.typeId === type.id) {
                 item.typeId = null;
+                touchItem(item);
               }
             });
             state.views.forEach((view) => {
               if (view.filters && view.filters.typeId === type.id) {
                 view.filters.typeId = null;
+                touchEntity(view);
               }
             });
             if (state.ui.typeId === type.id) {
@@ -2120,6 +2144,7 @@ function openViewModal(view) {
     onDelete: view
       ? () => {
           confirmWithModal("Excluir visão?", () => {
+            recordDeletion("views", view.id);
             state.views = state.views.filter((entry) => entry.id !== view.id);
             if (state.ui.viewId === view.id) {
               state.ui.viewId = null;
@@ -3547,6 +3572,25 @@ function touchItem(item) {
   touchEntity(item);
 }
 
+function recordDeletion(kind, id) {
+  if (!id) {
+    return;
+  }
+  if (!state.deleted || typeof state.deleted !== "object") {
+    state.deleted = { areas: [], types: [], views: [], items: [] };
+  }
+  if (!Array.isArray(state.deleted[kind])) {
+    state.deleted[kind] = [];
+  }
+  const deletedAt = nowIso();
+  const existing = state.deleted[kind].find((entry) => entry.id === id);
+  if (existing) {
+    existing.deletedAt = deletedAt;
+    return;
+  }
+  state.deleted[kind].push({ id, deletedAt });
+}
+
 function clamp(value, min, max) {
   if (Number.isNaN(value)) {
     return min;
@@ -3629,6 +3673,12 @@ function defaultState() {
     types: [],
     views: [],
     items: [],
+    deleted: {
+      areas: [],
+      types: [],
+      views: [],
+      items: []
+    },
     selectedItemId: null,
     ui: {
       viewId: null,
@@ -3684,11 +3734,13 @@ function normalizeState(data) {
   };
   ui.selection = Array.isArray(ui.selection) ? ui.selection : [];
   ui.selectionAnchor = Number.isFinite(ui.selectionAnchor) ? ui.selectionAnchor : null;
+  const deleted = normalizeDeletedState(data.deleted);
   return {
     areas: Array.isArray(data.areas) ? data.areas.map(normalizeArea).filter(Boolean) : [],
     types: Array.isArray(data.types) ? data.types.map(normalizeType).filter(Boolean) : [],
     views: Array.isArray(data.views) ? data.views.map(normalizeView).filter(Boolean) : [],
     items: Array.isArray(data.items) ? data.items.map(normalizeItem).filter(Boolean) : [],
+    deleted,
     selectedItemId: data.selectedItemId || null,
     ui
   };
@@ -3796,6 +3848,38 @@ function normalizeView(view) {
   return normalized;
 }
 
+function normalizeDeletedList(list) {
+  if (!Array.isArray(list)) {
+    return [];
+  }
+  return list
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      const id = typeof entry.id === "string" ? entry.id : null;
+      const deletedAt = normalizeUpdatedAt(entry.deletedAt || entry.updatedAt);
+      if (!id || !deletedAt) {
+        return null;
+      }
+      return { id, deletedAt };
+    })
+    .filter(Boolean);
+}
+
+function normalizeDeletedState(data) {
+  const empty = { areas: [], types: [], views: [], items: [] };
+  if (!data || typeof data !== "object") {
+    return empty;
+  }
+  return {
+    areas: normalizeDeletedList(data.areas),
+    types: normalizeDeletedList(data.types),
+    views: normalizeDeletedList(data.views),
+    items: normalizeDeletedList(data.items)
+  };
+}
+
 function defaultRemoteConfig() {
   return {
     url: DEFAULT_API_URL,
@@ -3878,11 +3962,18 @@ function getAuthHeaders() {
 }
 
 function getSyncState(source = state) {
+  const deleted = source.deleted || {};
   return {
     areas: Array.isArray(source.areas) ? source.areas : [],
     types: Array.isArray(source.types) ? source.types : [],
     views: Array.isArray(source.views) ? source.views : [],
-    items: Array.isArray(source.items) ? source.items : []
+    items: Array.isArray(source.items) ? source.items : [],
+    deleted: {
+      areas: Array.isArray(deleted.areas) ? deleted.areas : [],
+      types: Array.isArray(deleted.types) ? deleted.types : [],
+      views: Array.isArray(deleted.views) ? deleted.views : [],
+      items: Array.isArray(deleted.items) ? deleted.items : []
+    }
   };
 }
 
@@ -3902,9 +3993,43 @@ function getUpdatedAtValue(entry) {
   return Number.isNaN(time) ? 0 : time;
 }
 
-function mergeById(localList = [], remoteList = [], options = {}) {
-  const cutoff = Number.isFinite(options.cutoff) ? options.cutoff : null;
-  const cutoffSafe = cutoff !== null ? Math.max(0, cutoff - 300000) : null;
+function getDeletedAtValue(entry) {
+  if (!entry || !entry.deletedAt) {
+    return 0;
+  }
+  const time = Date.parse(entry.deletedAt);
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function mergeDeletedMap(...lists) {
+  const map = new Map();
+  lists.forEach((list) => {
+    (Array.isArray(list) ? list : []).forEach((entry) => {
+      if (!entry || !entry.id) {
+        return;
+      }
+      const deletedAt = normalizeUpdatedAt(entry.deletedAt || entry.updatedAt);
+      if (!deletedAt) {
+        return;
+      }
+      const time = Date.parse(deletedAt);
+      if (Number.isNaN(time)) {
+        return;
+      }
+      const existing = map.get(entry.id);
+      if (!existing || time >= Date.parse(existing)) {
+        map.set(entry.id, deletedAt);
+      }
+    });
+  });
+  return map;
+}
+
+function deletedMapToList(deletedMap) {
+  return Array.from(deletedMap.entries()).map(([id, deletedAt]) => ({ id, deletedAt }));
+}
+
+function mergeEntitySet(localList = [], remoteList = [], localDeleted = [], remoteDeleted = []) {
   const map = new Map();
   localList.forEach((entry) => {
     if (entry && entry.id) {
@@ -3922,50 +4047,83 @@ function mergeById(localList = [], remoteList = [], options = {}) {
       map.set(entry.id, { remote: entry });
     }
   });
+
+  const deletedMap = mergeDeletedMap(localDeleted, remoteDeleted);
   const merged = [];
-  map.forEach(({ local, remote }) => {
+
+  map.forEach(({ local, remote }, id) => {
+    let item = null;
     if (local && !remote) {
-      if (cutoffSafe !== null && getUpdatedAtValue(local) <= cutoffSafe) {
-        return;
-      }
-      merged.push(local);
+      item = local;
+    } else if (remote && !local) {
+      item = remote;
+    } else {
+      const localTime = getUpdatedAtValue(local);
+      const remoteTime = getUpdatedAtValue(remote);
+      item = localTime || remoteTime ? (localTime >= remoteTime ? local : remote) : local || remote;
+    }
+    const deletedAt = deletedMap.get(id);
+    const deletedTime = deletedAt ? getDeletedAtValue({ deletedAt }) : 0;
+    const itemTime = getUpdatedAtValue(item);
+
+    if (deletedTime && deletedTime >= itemTime) {
       return;
     }
-    if (remote && !local) {
-      if (cutoffSafe !== null && getUpdatedAtValue(remote) <= cutoffSafe) {
-        return;
-      }
-      merged.push(remote);
-      return;
+    if (deletedTime && itemTime > deletedTime) {
+      deletedMap.delete(id);
     }
-    const localTime = getUpdatedAtValue(local);
-    const remoteTime = getUpdatedAtValue(remote);
-    if (localTime || remoteTime) {
-      merged.push(localTime >= remoteTime ? local : remote);
-      return;
-    }
-    merged.push(local);
+    merged.push(item);
   });
-  return merged;
+
+  return { items: merged, deleted: deletedMapToList(deletedMap) };
 }
 
-function mergeStates(localState, remoteState, options = {}) {
+function mergeStates(localState, remoteState) {
   const localData = getSyncState(localState);
   const remoteData = getSyncState(remoteState);
+  const areas = mergeEntitySet(
+    localData.areas,
+    remoteData.areas,
+    localData.deleted.areas,
+    remoteData.deleted.areas
+  );
+  const types = mergeEntitySet(
+    localData.types,
+    remoteData.types,
+    localData.deleted.types,
+    remoteData.deleted.types
+  );
+  const views = mergeEntitySet(
+    localData.views,
+    remoteData.views,
+    localData.deleted.views,
+    remoteData.deleted.views
+  );
+  const items = mergeEntitySet(
+    localData.items,
+    remoteData.items,
+    localData.deleted.items,
+    remoteData.deleted.items
+  );
   return {
     ...localState,
-    areas: mergeById(localData.areas, remoteData.areas, options),
-    types: mergeById(localData.types, remoteData.types, options),
-    views: mergeById(localData.views, remoteData.views, options),
-    items: mergeById(localData.items, remoteData.items, options)
+    areas: areas.items,
+    types: types.items,
+    views: views.items,
+    items: items.items,
+    deleted: {
+      areas: areas.deleted,
+      types: types.deleted,
+      views: views.deleted,
+      items: items.deleted
+    }
   };
 }
 
 function applyRemoteState(remoteState, updatedAt) {
   const normalizedRemote = normalizeState(remoteState);
   const remoteData = getSyncState(normalizedRemote);
-  const cutoff = Number.isFinite(updatedAt) ? updatedAt : remote.lastSyncAt;
-  const mergedState = normalizeSelection(mergeStates(state, normalizedRemote, { cutoff }));
+  const mergedState = normalizeSelection(mergeStates(state, normalizedRemote));
   const mergedData = getSyncState(mergedState);
   const remoteHash = hashSyncState(remoteData);
   const mergedHash = hashSyncState(mergedData);
@@ -4206,10 +4364,33 @@ function buildSyncStatus() {
 }
 
 function saveState(options = {}) {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if (!options.skipSync) {
     scheduleAutoSync();
   }
+}
+
+function saveStateDebounced(options = {}) {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+  }
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    saveState(options);
+  }, SAVE_DEBOUNCE_MS);
+}
+
+function flushPendingSave() {
+  if (!saveTimer) {
+    return;
+  }
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  saveState();
 }
 
 function showToast(message) {

@@ -16,7 +16,7 @@ services:
       - key: STATE_KEY
         value: state
       - key: API_KEY
-        value: meu-node-2025-abc123
+        value: sua-chave
       - key: DEFAULT_USER_ID
         value: single-user
       # Configure tambem:
