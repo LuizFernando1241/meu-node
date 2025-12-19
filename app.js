@@ -1183,10 +1183,7 @@ function renderTodayView(root) {
     slot.append(label);
     const slotItems = agendaItems.filter((item) => item.start === time);
     slotItems.forEach((item) => {
-      const chip = createElement("div", "calendar-item", item.title);
-      chip.draggable = true;
-      chip.addEventListener("dragstart", (event) => setDragData(event, item.kind, item.id));
-      chip.addEventListener("click", () => selectItem(item.kind, item.id));
+      const chip = createCalendarChip(item);
       slot.append(chip);
     });
     attachDropHandlers(slot, { date: getTodayKey(), time });
@@ -1348,10 +1345,7 @@ function renderWeekPlan(root) {
         matchesQuery(item.title, query)
       );
       slotItems.forEach((item) => {
-        const chip = createElement("div", "calendar-item", item.title);
-        chip.draggable = true;
-        chip.addEventListener("dragstart", (event) => setDragData(event, item.kind, item.id));
-        chip.addEventListener("click", () => selectItem(item.kind, item.id));
+        const chip = createCalendarChip(item);
         slot.append(chip);
       });
       attachDropHandlers(slot, { date: day.date, time });
@@ -2699,6 +2693,27 @@ function createMilestoneRow(project, milestone) {
   return row;
 }
 
+function createCalendarChip(item) {
+  const chip = createElement("div", "calendar-item");
+  const title = createElement("div", "", item.title);
+  const meta = createElement(
+    "div",
+    "list-meta",
+    `${formatTimeLabel(item.start)} / ${item.duration || 60}m`
+  );
+  const handle = createElement("div", "resize-handle", "||");
+  chip.append(title, meta, handle);
+  chip.draggable = true;
+  chip.addEventListener("dragstart", (event) => setDragData(event, item.kind, item.id));
+  chip.addEventListener("click", () => selectItem(item.kind, item.id));
+  handle.draggable = true;
+  handle.addEventListener("dragstart", (event) => {
+    event.stopPropagation();
+    setDragData(event, item.kind, item.id, "resize", item.start || "");
+  });
+  return chip;
+}
+
 function resetBlockForType(block) {
   block.text = "";
   block.items = [];
@@ -2905,9 +2920,10 @@ function matchesNoteSearch(note, query) {
   return haystack.includes(query);
 }
 
-function setDragData(event, kind, id) {
+function setDragData(event, kind, id, mode = "move", startTime = "") {
   if (event.dataTransfer) {
-    event.dataTransfer.setData("text/plain", `${kind}:${id}`);
+    const payload = `${mode}|${kind}|${id}|${startTime || ""}`;
+    event.dataTransfer.setData("text/plain", payload);
     event.dataTransfer.effectAllowed = "move";
   }
 }
@@ -2917,14 +2933,24 @@ function parseDragData(event) {
     return null;
   }
   const raw = event.dataTransfer.getData("text/plain");
-  if (!raw || !raw.includes(":")) {
+  if (!raw) {
     return null;
   }
-  const [kind, id] = raw.split(":");
-  if (!kind || !id) {
-    return null;
+  if (raw.includes("|")) {
+    const [mode, kind, id, start] = raw.split("|");
+    if (!mode || !kind || !id) {
+      return null;
+    }
+    return { mode, kind, id, start: start || "" };
   }
-  return { kind, id };
+  if (raw.includes(":")) {
+    const [kind, id] = raw.split(":");
+    if (!kind || !id) {
+      return null;
+    }
+    return { mode: "move", kind, id, start: "" };
+  }
+  return null;
 }
 
 function attachDropHandlers(node, { date, time }) {
@@ -2951,6 +2977,12 @@ function attachDropHandlers(node, { date, time }) {
     node.classList.remove("dropping");
     const data = parseDragData(event);
     if (!data) {
+      return;
+    }
+    if (data.mode === "resize") {
+      if (time) {
+        resizeSchedule(data.kind, data.id, data.start, time);
+      }
       return;
     }
     if (data.kind === "task") {
@@ -3002,7 +3034,13 @@ function getScheduledItems(date, time) {
   const items = [];
   state.events.forEach((eventItem) => {
     if (!eventItem.archived && eventItem.date === date && eventItem.start === time) {
-      items.push({ kind: "event", id: eventItem.id, title: eventItem.title });
+      items.push({
+        kind: "event",
+        id: eventItem.id,
+        title: eventItem.title,
+        start: eventItem.start,
+        duration: eventItem.duration
+      });
     }
   });
   state.tasks.forEach((task) => {
@@ -3013,10 +3051,43 @@ function getScheduledItems(date, time) {
       task.timeBlock.date === date &&
       task.timeBlock.start === time
     ) {
-      items.push({ kind: "task", id: task.id, title: task.title });
+      items.push({
+        kind: "task",
+        id: task.id,
+        title: task.title,
+        start: task.timeBlock.start,
+        duration: task.timeBlock.duration
+      });
     }
   });
   return items;
+}
+
+function resizeSchedule(kind, id, startTime, dropTime) {
+  const startMinutes = timeToMinutes(startTime);
+  const endMinutes = timeToMinutes(dropTime);
+  const duration = Math.max(15, endMinutes - startMinutes);
+  if (duration <= 0) {
+    return;
+  }
+  if (kind === "event") {
+    const eventItem = getEvent(id);
+    if (!eventItem) {
+      return;
+    }
+    eventItem.duration = duration;
+    touch(eventItem);
+  }
+  if (kind === "task") {
+    const task = getTask(id);
+    if (!task || !task.timeBlock) {
+      return;
+    }
+    task.timeBlock.duration = duration;
+    touch(task);
+  }
+  saveState();
+  renderAll();
 }
 
 function groupNotesByArea() {
@@ -3096,10 +3167,7 @@ function renderCalendarWeek() {
         matchesQuery(item.title, query)
       );
       items.forEach((item) => {
-        const chip = createElement("div", "calendar-item", item.title);
-        chip.draggable = true;
-        chip.addEventListener("dragstart", (event) => setDragData(event, item.kind, item.id));
-        chip.addEventListener("click", () => selectItem(item.kind, item.id));
+        const chip = createCalendarChip(item);
         slot.append(chip);
       });
       attachDropHandlers(slot, { date: day.date, time });

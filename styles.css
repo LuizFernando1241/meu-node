@@ -795,6 +795,20 @@ textarea::placeholder {
   border: 1px solid rgba(71, 60, 49, 0.12);
   background: rgba(255, 255, 255, 0.9);
   font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.resize-handle {
+  align-self: flex-start;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px dashed rgba(71, 60, 49, 0.3);
+  font-size: 10px;
+  color: var(--text-3);
+  cursor: ns-resize;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .calendar-month {
