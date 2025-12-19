@@ -29,20 +29,8 @@ const BLOCK_TYPES = [
 ];
 
 const HOURS = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00"];
-const CALENDAR_HOURS = [
-  "07:00",
-  "08:00",
-  "09:00",
-  "10:00",
-  "11:00",
-  "12:00",
-  "13:00",
-  "14:00",
-  "15:00",
-  "16:00",
-  "17:00",
-  "18:00"
-];
+const CALENDAR_START_HOUR = 7;
+const CALENDAR_END_HOUR = 18;
 
 const ROUTE_META = {
   today: { title: "Hoje", eyebrow: "Executar" },
@@ -397,7 +385,8 @@ function defaultState() {
     settings: {
       weekStartsMonday: true,
       timeFormat: "24h",
-      defaultEventDuration: 60
+      defaultEventDuration: 60,
+      timeStepMinutes: 30
     },
     meta: {
       lastReviewAt: null
@@ -696,6 +685,27 @@ function addMonths(date, months) {
   const result = new Date(date);
   result.setMonth(result.getMonth() + months);
   return result;
+}
+
+function buildTimeSlots(startHour, endHour, stepMinutes) {
+  const slots = [];
+  const start = startHour * 60;
+  const end = endHour * 60;
+  const step = Math.max(15, Number(stepMinutes) || 30);
+  for (let minutes = start; minutes <= end; minutes += step) {
+    const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
+    const mm = String(minutes % 60).padStart(2, "0");
+    slots.push(`${hh}:${mm}`);
+  }
+  return slots;
+}
+
+function getCalendarSlots() {
+  return buildTimeSlots(
+    CALENDAR_START_HOUR,
+    CALENDAR_END_HOUR,
+    state.settings.timeStepMinutes
+  );
 }
 
 function dateOnly(date) {
@@ -1337,7 +1347,7 @@ function renderWeekPlan(root) {
       column.append(createTaskRow(task, { compact: true }));
     });
 
-    HOURS.forEach((time) => {
+    getCalendarSlots().forEach((time) => {
       const slot = createElement("div", "week-slot");
       const label = createElement("div", "list-meta", time);
       slot.append(label);
@@ -3064,9 +3074,12 @@ function getScheduledItems(date, time) {
 }
 
 function resizeSchedule(kind, id, startTime, dropTime) {
+  const step = Math.max(15, Number(state.settings.timeStepMinutes) || 30);
   const startMinutes = timeToMinutes(startTime);
   const endMinutes = timeToMinutes(dropTime);
-  const duration = Math.max(15, endMinutes - startMinutes);
+  const raw = endMinutes - startMinutes;
+  const clamped = Math.max(step, raw);
+  const duration = Math.ceil(clamped / step) * step;
   if (duration <= 0) {
     return;
   }
@@ -3160,7 +3173,7 @@ function renderCalendarWeek() {
     );
     dayTasks.forEach((task) => column.append(createTaskRow(task, { compact: true })));
 
-    CALENDAR_HOURS.forEach((time) => {
+    getCalendarSlots().forEach((time) => {
       const slot = createElement("div", "week-slot");
       slot.append(createElement("div", "list-meta", time));
       const items = getScheduledItems(day.date, time).filter((item) =>
@@ -3462,6 +3475,13 @@ function openSettingsModal() {
     ],
     state.settings.timeFormat
   );
+  const stepSelect = createSelect(
+    [
+      { value: "15", label: "15 min" },
+      { value: "30", label: "30 min" }
+    ],
+    String(state.settings.timeStepMinutes)
+  );
   const durationInput = document.createElement("input");
   durationInput.type = "number";
   durationInput.min = "15";
@@ -3473,6 +3493,7 @@ function openSettingsModal() {
     body: [
       buildField("Semana inicia segunda", weekToggle),
       buildField("Formato de hora", timeSelect),
+      buildField("Passo de horario", stepSelect),
       buildField("Duracao padrao (min)", durationInput)
     ],
     saveLabel: "Salvar",
@@ -3480,6 +3501,7 @@ function openSettingsModal() {
       state.settings.weekStartsMonday = weekToggle.checked;
       state.settings.timeFormat = timeSelect.value;
       state.settings.defaultEventDuration = Math.max(15, Number(durationInput.value) || 60);
+      state.settings.timeStepMinutes = Math.max(15, Number(stepSelect.value) || 30);
       saveState();
       renderAll();
       return true;
