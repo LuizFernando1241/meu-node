@@ -2,6 +2,8 @@
 
 const STORAGE_KEY = "meu-node-rebuild-v1";
 const REMOTE_KEY = "meu-node-remote-v1";
+const DEFAULT_API_URL = "https://meu-node.onrender.com";
+const DEFAULT_API_KEY = "meu-node-2025-abc123";
 
 const STATUS_ORDER = ["todo", "doing", "done"];
 const STATUS_LABELS = {
@@ -21,18 +23,6 @@ const FLOW_VIEWS = [
 
 const el = {
   appRoot: document.getElementById("appRoot"),
-  authScreen: document.getElementById("authScreen"),
-  authTabLogin: document.getElementById("authTabLogin"),
-  authTabRegister: document.getElementById("authTabRegister"),
-  loginForm: document.getElementById("loginForm"),
-  loginEmail: document.getElementById("loginEmail"),
-  loginPassword: document.getElementById("loginPassword"),
-  registerForm: document.getElementById("registerForm"),
-  registerName: document.getElementById("registerName"),
-  registerEmail: document.getElementById("registerEmail"),
-  registerPassword: document.getElementById("registerPassword"),
-  authApiUrl: document.getElementById("authApiUrl"),
-  authMessage: document.getElementById("authMessage"),
   globalSearch: document.getElementById("globalSearch"),
   quickInput: document.getElementById("quickInput"),
   quickType: document.getElementById("quickType"),
@@ -110,21 +100,19 @@ const modalState = {
 
 let state = normalizeSelection(loadState());
 let remote = normalizeRemote(loadRemoteConfig());
-let auth = normalizeAuth(loadAuth());
-const sync = { timer: null, busy: false };
-const authUi = { tab: "login", busy: false };
+const sync = { timer: null, busy: false, pending: false, lastPushedHash: "" };
 const commandState = { open: false, index: 0, filtered: [], previousFocus: null };
 let openMenu = null;
 
 function init() {
   bindEvents();
+  applyDefaultRemoteConfig();
   // Não inicializar sincronização automaticamente por segurança.
   // remote defaults are loaded from localStorage via loadRemoteConfig().
   renderAll();
-  applyAuthState();
   // Apenas puxar estado se o usuário explicitamente configurou autoSync e URL.
-  if (auth.token && remote.url && remote.autoSync) {
-    pullState();
+  if (remote.url && remote.autoSync) {
+    pullState({ queuePush: true, pushOnEmpty: true });
   }
 }
 
@@ -151,25 +139,6 @@ function bindEvents() {
   el.newType.addEventListener("click", () => openTypeModal());
   el.newView.addEventListener("click", () => openViewModal());
   el.openSettings.addEventListener("click", () => openSettingsModal());
-
-  if (el.authTabLogin) {
-    el.authTabLogin.addEventListener("click", () => setAuthTab("login"));
-  }
-  if (el.authTabRegister) {
-    el.authTabRegister.addEventListener("click", () => setAuthTab("register"));
-  }
-  if (el.loginForm) {
-    el.loginForm.addEventListener("submit", handleLogin);
-  }
-  if (el.registerForm) {
-    el.registerForm.addEventListener("submit", handleRegister);
-  }
-  if (el.authApiUrl) {
-    el.authApiUrl.addEventListener("change", () => {
-      remote.url = el.authApiUrl.value.trim();
-      saveRemoteConfig();
-    });
-  }
 
   el.addArea.addEventListener("click", () => openAreaModal());
   el.addView.addEventListener("click", () => openViewModal());
@@ -1761,8 +1730,9 @@ function openAreaModal(area) {
       }
       if (area) {
         area.name = name;
+        touchEntity(area);
       } else {
-        const newArea = { id: uid("area"), name };
+        const newArea = { id: uid("area"), name, updatedAt: nowIso() };
         state.areas.push(newArea);
         if (!state.ui.areaId) {
           state.ui.areaId = newArea.id;
@@ -1957,6 +1927,7 @@ function openTypeModal(type) {
       const payload = {
         id: type ? type.id : uid("type"),
         name,
+        updatedAt: nowIso(),
         features: {
           status: statusToggle.input.checked,
           due: dueToggle.input.checked,
@@ -2124,6 +2095,7 @@ function openViewModal(view) {
       const payload = {
         id: view ? view.id : uid("view"),
         name,
+        updatedAt: nowIso(),
         filters,
         layout: layoutSelect.value,
         cardFields: {
@@ -2159,211 +2131,6 @@ function openViewModal(view) {
         }
       : null
   });
-}
-
-function applyAuthState() {
-  showAuthScreen(!auth.token);
-}
-
-function showAuthScreen(show) {
-  if (!el.authScreen || !el.appRoot) {
-    return;
-  }
-  setHidden(el.authScreen, !show);
-  setHidden(el.appRoot, show);
-  if (show) {
-    if (el.authApiUrl) {
-      el.authApiUrl.value = remote.url || "";
-    }
-    setAuthTab(authUi.tab);
-  }
-}
-
-function setAuthTab(tab) {
-  const next = tab === "register" ? "register" : "login";
-  authUi.tab = next;
-  const isLogin = next === "login";
-  if (el.authTabLogin) {
-    el.authTabLogin.classList.toggle("active", isLogin);
-  }
-  if (el.authTabRegister) {
-    el.authTabRegister.classList.toggle("active", !isLogin);
-  }
-  setHidden(el.loginForm, !isLogin);
-  setHidden(el.registerForm, isLogin);
-  setAuthMessage("");
-}
-
-function setAuthMessage(message, isError = false) {
-  if (!el.authMessage) {
-    return;
-  }
-  el.authMessage.textContent = message || "";
-  el.authMessage.classList.toggle("error", Boolean(isError));
-}
-
-function setAuthBusy(busy) {
-  authUi.busy = busy;
-  [el.loginForm, el.registerForm].forEach((form) => {
-    if (!form) {
-      return;
-    }
-    form.querySelectorAll("input, button").forEach((node) => {
-      node.disabled = busy;
-    });
-  });
-}
-
-function applyAuthUrl() {
-  const url = el.authApiUrl ? el.authApiUrl.value.trim() : remote.url || "";
-  if (url !== remote.url) {
-    remote.url = url;
-    saveRemoteConfig();
-  }
-  return url;
-}
-
-async function handleLogin(event) {
-  event.preventDefault();
-  if (authUi.busy) {
-    return;
-  }
-  const apiUrl = applyAuthUrl();
-  if (!apiUrl) {
-    setAuthMessage("Informe a URL da API.", true);
-    return;
-  }
-  const email = el.loginEmail ? el.loginEmail.value.trim() : "";
-  const password = el.loginPassword ? el.loginPassword.value : "";
-  if (!email || !password) {
-    setAuthMessage("Informe email e senha.", true);
-    return;
-  }
-
-  setAuthBusy(true);
-  setAuthMessage("Entrando...");
-  const result = await authRequest("/auth/login", { email, password });
-  if (!result.ok) {
-    setAuthBusy(false);
-    setAuthMessage(result.error, true);
-    return;
-  }
-  setAuthMessage("Carregando dados...");
-  await completeAuth(result.data);
-  setAuthBusy(false);
-}
-
-async function handleRegister(event) {
-  event.preventDefault();
-  if (authUi.busy) {
-    return;
-  }
-  const apiUrl = applyAuthUrl();
-  if (!apiUrl) {
-    setAuthMessage("Informe a URL da API.", true);
-    return;
-  }
-  const name = el.registerName ? el.registerName.value.trim() : "";
-  const email = el.registerEmail ? el.registerEmail.value.trim() : "";
-  const password = el.registerPassword ? el.registerPassword.value : "";
-  if (!name || !email || !password) {
-    setAuthMessage("Preencha nome, email e senha.", true);
-    return;
-  }
-
-  setAuthBusy(true);
-  setAuthMessage("Criando conta...");
-  const result = await authRequest("/auth/register", { name, email, password });
-  if (!result.ok) {
-    setAuthBusy(false);
-    setAuthMessage(result.error, true);
-    return;
-  }
-  setAuthMessage("Carregando dados...");
-  await completeAuth(result.data);
-  setAuthBusy(false);
-}
-
-async function completeAuth(data) {
-  auth = normalizeAuth({ token: data.token, user: data.user });
-  saveAuth();
-  remote.lastError = "";
-  saveRemoteConfig();
-  await syncAfterAuth();
-  showAuthScreen(false);
-}
-
-async function syncAfterAuth() {
-  if (!remote.url || !auth.token || !remote.autoSync) {
-    return;
-  }
-  const result = await pullState();
-  if (!result.ok && result.code === "empty") {
-    await pushState();
-  }
-}
-
-async function authRequest(path, payload) {
-  const url = buildApiUrl(path);
-  if (!url) {
-    return { ok: false, error: "Informe a URL da API." };
-  }
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok) {
-      const code = data && data.error ? data.error : `HTTP ${response.status}`;
-      return { ok: false, error: mapAuthError(code) };
-    }
-    if (!data || !data.token) {
-      return { ok: false, error: "Resposta inválida." };
-    }
-    return { ok: true, data };
-  } catch (error) {
-    return { ok: false, error: "Falha de rede." };
-  }
-}
-
-function mapAuthError(code) {
-  if (code === "invalid_payload") {
-    return "Preencha todos os campos.";
-  }
-  if (code === "invalid_email") {
-    return "Email inválido.";
-  }
-  if (code === "weak_password") {
-    return "Senha muito curta.";
-  }
-  if (code === "email_taken") {
-    return "Email já cadastrado.";
-  }
-  if (code === "invalid_credentials") {
-    return "Email ou senha incorretos.";
-  }
-  if (code && code.startsWith("HTTP")) {
-    return code;
-  }
-  return "Falha ao autenticar.";
-}
-
-function handleLogout() {
-  clearAuth();
-  remote.lastError = "";
-  saveRemoteConfig();
-  applyAuthState();
-  setAuthMessage("Sessão encerrada.");
-}
-
-function handleAuthFailure(message) {
-  clearAuth();
-  applyAuthState();
-  setAuthMessage(message || "Sessão expirada.", true);
 }
 
 function openSettingsModal() {
@@ -2424,21 +2191,12 @@ function openSettingsModal() {
   urlInput.placeholder = "https://sua-api.com";
   urlInput.value = remote.url || "";
 
+  const apiKeyInput = document.createElement("input");
+  apiKeyInput.type = "text";
+  apiKeyInput.placeholder = "sua-chave";
+  apiKeyInput.value = remote.apiKey || "";
+
   const autoToggle = createToggleLine("Sincronização automática", remote.autoSync);
-
-  const authStatus = document.createElement("div");
-  authStatus.className = "list-meta";
-  authStatus.textContent = auth.user
-    ? `Conectado como ${auth.user.name || auth.user.email}`
-    : "Sem login";
-
-  const authButton = document.createElement("button");
-  authButton.className = "ghost-btn";
-  authButton.textContent = auth.user ? "Sair" : "Entrar";
-
-  const authRow = document.createElement("div");
-  authRow.className = "main-actions";
-  authRow.append(authButton);
 
   const syncStatus = document.createElement("div");
   syncStatus.className = "list-meta";
@@ -2463,11 +2221,9 @@ function openSettingsModal() {
 
   function applyRemoteInputs() {
     remote.url = urlInput.value.trim();
+    remote.apiKey = apiKeyInput.value.trim();
     remote.autoSync = autoToggle.input.checked;
     saveRemoteConfig();
-    if (el.authApiUrl) {
-      el.authApiUrl.value = remote.url || "";
-    }
   }
 
   function refreshSyncStatus(message) {
@@ -2495,15 +2251,6 @@ function openSettingsModal() {
     refreshSyncStatus(result.ok ? "Dados enviados" : buildSyncStatus());
   });
 
-  authButton.addEventListener("click", () => {
-    closeModal();
-    if (auth.user) {
-      handleLogout();
-      return;
-    }
-    showAuthScreen(true);
-  });
-
   openModal({
     eyebrow: "Ajustes",
     title: "Ajustes",
@@ -2513,9 +2260,8 @@ function openSettingsModal() {
       textArea,
       syncLabel,
       buildField("API URL", urlInput),
+      buildField("API Key", apiKeyInput),
       autoToggle.wrapper,
-      authStatus,
-      authRow,
       syncStatus,
       syncRow
     ],
@@ -3790,8 +3536,15 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function touchEntity(entity) {
+  if (!entity) {
+    return;
+  }
+  entity.updatedAt = nowIso();
+}
+
 function touchItem(item) {
-  item.updatedAt = nowIso();
+  touchEntity(item);
 }
 
 function clamp(value, min, max) {
@@ -3932,13 +3685,36 @@ function normalizeState(data) {
   ui.selection = Array.isArray(ui.selection) ? ui.selection : [];
   ui.selectionAnchor = Number.isFinite(ui.selectionAnchor) ? ui.selectionAnchor : null;
   return {
-    areas: Array.isArray(data.areas) ? data.areas : [],
+    areas: Array.isArray(data.areas) ? data.areas.map(normalizeArea).filter(Boolean) : [],
     types: Array.isArray(data.types) ? data.types.map(normalizeType).filter(Boolean) : [],
     views: Array.isArray(data.views) ? data.views.map(normalizeView).filter(Boolean) : [],
     items: Array.isArray(data.items) ? data.items.map(normalizeItem).filter(Boolean) : [],
     selectedItemId: data.selectedItemId || null,
     ui
   };
+}
+
+function normalizeUpdatedAt(value) {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Number.isFinite(value)) {
+    return new Date(value).toISOString();
+  }
+  return null;
+}
+
+function normalizeArea(area) {
+  if (!area || typeof area !== "object") {
+    return null;
+  }
+  const normalized = { ...area };
+  normalized.updatedAt =
+    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
+  return normalized;
 }
 
 function normalizeItem(item) {
@@ -3968,6 +3744,8 @@ function normalizeItem(item) {
   normalized.checklist = Array.isArray(normalized.checklist) ? normalized.checklist : [];
   normalized.custom =
     normalized.custom && typeof normalized.custom === "object" ? normalized.custom : {};
+  normalized.updatedAt =
+    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
   return normalized;
 }
 
@@ -3991,6 +3769,8 @@ function normalizeType(type) {
   normalized.defaultChecklist = Array.isArray(normalized.defaultChecklist)
     ? normalized.defaultChecklist
     : [];
+  normalized.updatedAt =
+    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
   return normalized;
 }
 
@@ -4011,60 +3791,15 @@ function normalizeView(view) {
     ...defaults,
     ...((normalized.cardFields && typeof normalized.cardFields === "object") ? normalized.cardFields : {})
   };
+  normalized.updatedAt =
+    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
   return normalized;
-}
-
-function defaultAuth() {
-  return {
-    token: "",
-    user: null
-  };
-}
-
-function loadAuth() {
-  const raw = localStorage.getItem(AUTH_KEY);
-  if (!raw) {
-    return defaultAuth();
-  }
-  try {
-    return normalizeAuth(JSON.parse(raw));
-  } catch (error) {
-    return defaultAuth();
-  }
-}
-
-function normalizeAuth(data) {
-  const base = defaultAuth();
-  if (!data || typeof data !== "object") {
-    return base;
-  }
-  const token = typeof data.token === "string" ? data.token : base.token;
-  const user = data.user && typeof data.user === "object"
-    ? {
-        id: typeof data.user.id === "string" ? data.user.id : "",
-        name: typeof data.user.name === "string" ? data.user.name : "",
-        email: typeof data.user.email === "string" ? data.user.email : ""
-      }
-    : null;
-  return {
-    token,
-    user: user && user.id ? user : null
-  };
-}
-
-function saveAuth() {
-  localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
-}
-
-function clearAuth() {
-  auth = defaultAuth();
-  localStorage.removeItem(AUTH_KEY);
 }
 
 function defaultRemoteConfig() {
   return {
-    url: "",
-    apiKey: "",
+    url: DEFAULT_API_URL,
+    apiKey: DEFAULT_API_KEY,
     autoSync: false,
     lastSyncAt: null,
     lastError: ""
@@ -4090,6 +3825,7 @@ function normalizeRemote(data) {
   }
   return {
     url: typeof data.url === "string" ? data.url : base.url,
+    apiKey: typeof data.apiKey === "string" ? data.apiKey : base.apiKey,
     autoSync: Boolean(data.autoSync),
     lastSyncAt: Number.isFinite(data.lastSyncAt) ? data.lastSyncAt : base.lastSyncAt,
     lastError: typeof data.lastError === "string" ? data.lastError : base.lastError
@@ -4098,6 +3834,21 @@ function normalizeRemote(data) {
 
 function saveRemoteConfig() {
   localStorage.setItem(REMOTE_KEY, JSON.stringify(remote));
+}
+
+function applyDefaultRemoteConfig() {
+  let updated = false;
+  if (!remote.url && DEFAULT_API_URL) {
+    remote.url = DEFAULT_API_URL;
+    updated = true;
+  }
+  if (!remote.apiKey && DEFAULT_API_KEY) {
+    remote.apiKey = DEFAULT_API_KEY;
+    updated = true;
+  }
+  if (updated) {
+    saveRemoteConfig();
+  }
 }
 
 function buildApiUrl(path) {
@@ -4120,20 +3871,132 @@ function getAuthHeaders() {
   const headers = {
     "Content-Type": "application/json"
   };
-  if (auth.token) {
-    headers.Authorization = `Bearer ${auth.token}`;
+  if (remote.apiKey) {
+    headers["X-API-Key"] = remote.apiKey;
   }
   return headers;
 }
 
+function getSyncState(source = state) {
+  return {
+    areas: Array.isArray(source.areas) ? source.areas : [],
+    types: Array.isArray(source.types) ? source.types : [],
+    views: Array.isArray(source.views) ? source.views : [],
+    items: Array.isArray(source.items) ? source.items : []
+  };
+}
+
+function hashSyncState(syncState) {
+  try {
+    return JSON.stringify(syncState);
+  } catch (error) {
+    return "";
+  }
+}
+
+function getUpdatedAtValue(entry) {
+  if (!entry || !entry.updatedAt) {
+    return 0;
+  }
+  const time = Date.parse(entry.updatedAt);
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function mergeById(localList = [], remoteList = [], options = {}) {
+  const cutoff = Number.isFinite(options.cutoff) ? options.cutoff : null;
+  const cutoffSafe = cutoff !== null ? Math.max(0, cutoff - 300000) : null;
+  const map = new Map();
+  localList.forEach((entry) => {
+    if (entry && entry.id) {
+      map.set(entry.id, { local: entry });
+    }
+  });
+  remoteList.forEach((entry) => {
+    if (!entry || !entry.id) {
+      return;
+    }
+    const existing = map.get(entry.id);
+    if (existing) {
+      existing.remote = entry;
+    } else {
+      map.set(entry.id, { remote: entry });
+    }
+  });
+  const merged = [];
+  map.forEach(({ local, remote }) => {
+    if (local && !remote) {
+      if (cutoffSafe !== null && getUpdatedAtValue(local) <= cutoffSafe) {
+        return;
+      }
+      merged.push(local);
+      return;
+    }
+    if (remote && !local) {
+      if (cutoffSafe !== null && getUpdatedAtValue(remote) <= cutoffSafe) {
+        return;
+      }
+      merged.push(remote);
+      return;
+    }
+    const localTime = getUpdatedAtValue(local);
+    const remoteTime = getUpdatedAtValue(remote);
+    if (localTime || remoteTime) {
+      merged.push(localTime >= remoteTime ? local : remote);
+      return;
+    }
+    merged.push(local);
+  });
+  return merged;
+}
+
+function mergeStates(localState, remoteState, options = {}) {
+  const localData = getSyncState(localState);
+  const remoteData = getSyncState(remoteState);
+  return {
+    ...localState,
+    areas: mergeById(localData.areas, remoteData.areas, options),
+    types: mergeById(localData.types, remoteData.types, options),
+    views: mergeById(localData.views, remoteData.views, options),
+    items: mergeById(localData.items, remoteData.items, options)
+  };
+}
+
+function applyRemoteState(remoteState, updatedAt) {
+  const normalizedRemote = normalizeState(remoteState);
+  const remoteData = getSyncState(normalizedRemote);
+  const cutoff = Number.isFinite(updatedAt) ? updatedAt : remote.lastSyncAt;
+  const mergedState = normalizeSelection(mergeStates(state, normalizedRemote, { cutoff }));
+  const mergedData = getSyncState(mergedState);
+  const remoteHash = hashSyncState(remoteData);
+  const mergedHash = hashSyncState(mergedData);
+
+  state = mergedState;
+  saveState({ skipSync: true });
+  if (Number.isFinite(updatedAt)) {
+    remote.lastSyncAt = updatedAt;
+  }
+  remote.lastError = "";
+  saveRemoteConfig();
+  sync.lastPushedHash = remoteHash;
+
+  renderAll();
+
+  return { mergedHash, remoteHash, needsPush: mergedHash !== remoteHash };
+}
+
 function scheduleAutoSync() {
-  if (!remote.autoSync || !remote.url || !auth.token) {
+  if (!remote.autoSync || !remote.url || !remote.apiKey) {
     return;
   }
+  sync.pending = true;
   if (sync.timer) {
     clearTimeout(sync.timer);
   }
   sync.timer = setTimeout(() => {
+    sync.timer = null;
+    if (sync.busy) {
+      return;
+    }
     pushState({ silent: true });
   }, 1200);
 }
@@ -4145,58 +4008,90 @@ async function pushState(options = {}) {
     saveRemoteConfig();
     return { ok: false, error: remote.lastError };
   }
-  if (!auth.token) {
-    remote.lastError = "Faça login";
+  if (!remote.apiKey) {
+    remote.lastError = "Informe a API Key";
     saveRemoteConfig();
-    return { ok: false, error: remote.lastError, code: "unauthorized" };
+    return { ok: false, error: remote.lastError, code: "missing_key" };
   }
   if (sync.busy) {
+    sync.pending = true;
     return { ok: false, error: "Sincronização em andamento" };
   }
   sync.busy = true;
+  sync.pending = false;
   try {
-    const payload = { state, updatedAt: Date.now() };
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: getAuthHeaders(),
-      body: JSON.stringify(payload)
-    });
-    if (response.status === 401 || response.status === 403) {
-      remote.lastError = "Sessão expirada";
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const payloadState = getSyncState();
+      const payloadHash = hashSyncState(payloadState);
+      if (payloadHash && payloadHash === sync.lastPushedHash) {
+        return { ok: true, skipped: true };
+      }
+      const payload = { state: payloadState };
+      if (Number.isFinite(remote.lastSyncAt)) {
+        payload.baseUpdatedAt = remote.lastSyncAt;
+      }
+      const response = await fetch(url, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload)
+      });
+      if (response.status === 401 || response.status === 403) {
+        remote.lastError = "API Key inválida";
+        saveRemoteConfig();
+        return { ok: false, error: remote.lastError, code: "unauthorized" };
+      }
+      if (response.status === 409) {
+        const data = await response.json().catch(() => null);
+        if (data && data.state && typeof data.state === "object") {
+          const mergeResult = applyRemoteState(data.state, data.updatedAt);
+          if (!mergeResult.needsPush) {
+            return { ok: true, merged: true };
+          }
+          continue;
+        }
+        remote.lastError = "Conflito de sincronizacao";
+        saveRemoteConfig();
+        return { ok: false, error: remote.lastError, code: "conflict" };
+      }
+      if (!response.ok) {
+        remote.lastError = `HTTP ${response.status}`;
+        saveRemoteConfig();
+        return { ok: false, error: remote.lastError };
+      }
+      const data = await response.json().catch(() => ({}));
+      remote.lastSyncAt = Number.isFinite(data.updatedAt) ? data.updatedAt : Date.now();
+      remote.lastError = "";
       saveRemoteConfig();
-      handleAuthFailure(remote.lastError);
-      return { ok: false, error: remote.lastError, code: "unauthorized" };
+      sync.lastPushedHash = payloadHash;
+      return { ok: true };
     }
-    if (!response.ok) {
-      remote.lastError = `HTTP ${response.status}`;
-      saveRemoteConfig();
-      return { ok: false, error: remote.lastError };
-    }
-    const data = await response.json().catch(() => ({}));
-    remote.lastSyncAt = Number.isFinite(data.updatedAt) ? data.updatedAt : Date.now();
-    remote.lastError = "";
+    remote.lastError = "Conflito de sincronizacao";
     saveRemoteConfig();
-    return { ok: true };
+    sync.pending = true;
+    return { ok: false, error: remote.lastError, code: "conflict" };
   } catch (error) {
     remote.lastError = "Falha de rede";
     saveRemoteConfig();
     return { ok: false, error: remote.lastError };
   } finally {
     sync.busy = false;
+    if (sync.pending) {
+      scheduleAutoSync();
+    }
   }
 }
 
-async function pullState() {
+async function pullState(options = {}) {
   const url = buildStateUrl();
   if (!url) {
     remote.lastError = "Configure URL";
     saveRemoteConfig();
     return { ok: false, error: remote.lastError };
   }
-  if (!auth.token) {
-    remote.lastError = "Faça login";
+  if (!remote.apiKey) {
+    remote.lastError = "Informe a API Key";
     saveRemoteConfig();
-    return { ok: false, error: remote.lastError, code: "unauthorized" };
+    return { ok: false, error: remote.lastError, code: "missing_key" };
   }
   if (sync.busy) {
     return { ok: false, error: "Sincronização em andamento" };
@@ -4210,12 +4105,14 @@ async function pullState() {
     if (response.status === 404) {
       remote.lastError = "Servidor vazio";
       saveRemoteConfig();
+      if (options.pushOnEmpty) {
+        scheduleAutoSync();
+      }
       return { ok: false, error: remote.lastError, code: "empty" };
     }
     if (response.status === 401 || response.status === 403) {
-      remote.lastError = "Sessão expirada";
+      remote.lastError = "API Key inválida";
       saveRemoteConfig();
-      handleAuthFailure(remote.lastError);
       return { ok: false, error: remote.lastError, code: "unauthorized" };
     }
     if (!response.ok) {
@@ -4229,19 +4126,20 @@ async function pullState() {
       saveRemoteConfig();
       return { ok: false, error: remote.lastError };
     }
-    state = normalizeSelection(normalizeState(data.state));
-    saveState({ skipSync: true });
-    renderAll();
-    remote.lastSyncAt = Number.isFinite(data.updatedAt) ? data.updatedAt : Date.now();
-    remote.lastError = "";
-    saveRemoteConfig();
-    return { ok: true };
+    const mergeResult = applyRemoteState(data.state, data.updatedAt);
+    if (mergeResult.needsPush && options.queuePush) {
+      scheduleAutoSync();
+    }
+    return { ok: true, needsPush: mergeResult.needsPush };
   } catch (error) {
     remote.lastError = "Falha de rede";
     saveRemoteConfig();
     return { ok: false, error: remote.lastError };
   } finally {
     sync.busy = false;
+    if (sync.pending) {
+      scheduleAutoSync();
+    }
   }
 }
 
@@ -4301,8 +4199,8 @@ function buildSyncStatus() {
   if (!remote.autoSync) {
     return "Sync manual (auto-sync desativado)";
   }
-  if (!auth.token) {
-    return "Faça login para sincronizar";
+  if (!remote.apiKey) {
+    return "Informe a API Key para sincronizar";
   }
   return "Sync pronto";
 }

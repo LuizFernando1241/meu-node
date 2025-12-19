@@ -16,57 +16,6 @@
   <div class="bg-gradient"></div>
   <div class="bg-noise"></div>
 
-  <div id="authScreen" class="auth-screen hidden">
-    <div class="auth-card glass">
-      <div class="auth-header">
-        <div class="brand">
-          <div class="logo-dot"></div>
-          <div>
-            <div class="brand-title">Meu Node</div>
-            <div class="brand-sub">Entre para acessar seus dados.</div>
-          </div>
-        </div>
-      </div>
-      <div class="auth-tabs">
-        <button id="authTabLogin" class="ghost-btn auth-tab active" type="button">Entrar</button>
-        <button id="authTabRegister" class="ghost-btn auth-tab" type="button">Criar conta</button>
-      </div>
-      <form id="loginForm" class="auth-form">
-        <label class="field">
-          <span>E-mail</span>
-          <input id="loginEmail" type="email" autocomplete="email" required />
-        </label>
-        <label class="field">
-          <span>Senha</span>
-          <input id="loginPassword" type="password" autocomplete="current-password" required />
-        </label>
-        <button class="ghost-btn" type="submit">Entrar</button>
-      </form>
-      <form id="registerForm" class="auth-form hidden">
-        <label class="field">
-          <span>Nome</span>
-          <input id="registerName" type="text" autocomplete="name" required />
-        </label>
-        <label class="field">
-          <span>E-mail</span>
-          <input id="registerEmail" type="email" autocomplete="email" required />
-        </label>
-        <label class="field">
-          <span>Senha</span>
-          <input id="registerPassword" type="password" autocomplete="new-password" required />
-        </label>
-        <button class="ghost-btn" type="submit">Criar conta</button>
-      </form>
-      <div class="auth-divider"></div>
-      <label class="field">
-        <span>API URL</span>
-        <input id="authApiUrl" type="text" placeholder="https://sua-api.com" />
-      </label>
-      <div class="auth-hint">Use a URL do backend publicado.</div>
-      <div id="authMessage" class="list-meta auth-message"></div>
-    </div>
-  </div>
-
   <div class="app" id="appRoot">
     <header class="top glass">
       <div class="brand">
