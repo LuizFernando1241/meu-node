@@ -1,11 +1,15 @@
 "use strict";
 
 const STORAGE_KEY = "meu-node-v2";
-const REMOTE_KEY = "meu-node-remote-v2";
-const DEFAULT_API_URL = "https://meu-node.onrender.com";
-const DEFAULT_API_KEY = "meu-node-2025-abc123";
 const BASE_PATH = "/meu-node";
 const SAVE_DEBOUNCE_MS = 250;
+const WEEK_STARTS_MONDAY = true;
+const DEFAULT_EVENT_DURATION = 60;
+const TIME_STEP_MINUTES = 30;
+const API_BASE_URL = "https://meu-node.onrender.com/v1";
+const APP_PIN_KEY = "lifeos-app-pin";
+const DEFAULT_APP_PIN = "meu-node-2025-abc123";
+const REMOTE_DEBOUNCE_MS = 600;
 
 const STATUS_ORDER = ["todo", "doing", "done"];
 const STATUS_LABELS = {
@@ -16,7 +20,7 @@ const STATUS_LABELS = {
 
 const PRIORITY_LABELS = {
   low: "Baixa",
-  med: "Media",
+  normal: "Normal",
   high: "Alta"
 };
 
@@ -44,10 +48,8 @@ const ROUTE_META = {
   project: { title: "Projeto", eyebrow: "Detalhe" },
   notes: { title: "Notas", eyebrow: "Conhecimento" },
   note: { title: "Nota", eyebrow: "Detalhe" },
-  calendar: { title: "Calendario", eyebrow: "Agenda" },
   areas: { title: "Areas", eyebrow: "Estrutura" },
-  area: { title: "Area", eyebrow: "Detalhe" },
-  archive: { title: "Arquivo", eyebrow: "Historico" }
+  area: { title: "Area", eyebrow: "Detalhe" }
 };
 
 const el = {
@@ -56,14 +58,6 @@ const el = {
   searchClear: document.getElementById("searchClear"),
   createBtn: document.getElementById("createBtn"),
   commandBtn: document.getElementById("commandBtn"),
-  avatarToggle: document.getElementById("avatarToggle"),
-  avatarMenu: document.getElementById("avatarMenu"),
-  openSettings: document.getElementById("openSettings"),
-  exportData: document.getElementById("exportData"),
-  importData: document.getElementById("importData"),
-  moreToggle: document.getElementById("moreToggle"),
-  moreMenu: document.getElementById("moreMenu"),
-  settingsShortcut: document.getElementById("settingsShortcut"),
   countToday: document.getElementById("countToday"),
   countInbox: document.getElementById("countInbox"),
   countWeek: document.getElementById("countWeek"),
@@ -90,8 +84,7 @@ const el = {
   commandPalette: document.getElementById("commandPalette"),
   commandInput: document.getElementById("commandInput"),
   commandList: document.getElementById("commandList"),
-  toastContainer: document.getElementById("toastContainer"),
-  syncStatus: document.getElementById("syncStatus")
+  toastContainer: document.getElementById("toastContainer")
 };
 
 const modalState = {
@@ -108,22 +101,36 @@ const commandState = {
 };
 
 let state = normalizeState(loadState());
-let remote = normalizeRemote(loadRemoteConfig());
-const sync = { timer: null, busy: false, pending: false, lastPushedHash: "" };
 let saveTimer = null;
-let openMenu = null;
+let syncTimer = null;
+let syncBusy = false;
+let syncPending = false;
+let syncReady = false;
+let suppressSync = false;
+let lastSyncErrorAt = 0;
 
-function init() {
+const pendingDeletes = {
+  tasks: new Set(),
+  events: new Set(),
+  notes: new Set(),
+  projects: new Set(),
+  areas: new Set(),
+  inbox: new Set()
+};
+
+async function init() {
+  if (DEFAULT_APP_PIN && localStorage.getItem(APP_PIN_KEY) === null) {
+    localStorage.setItem(APP_PIN_KEY, DEFAULT_APP_PIN);
+  }
   bindEvents();
-  applyDefaultRemoteConfig();
   applyRouteFromLocation();
   renderAll();
-  if (remote.url && remote.apiKey && remote.autoSync) {
-    pullState({ queuePush: true, pushOnEmpty: true });
-  }
+  await loadRemoteState();
 }
 
-init();
+init().catch((error) => {
+  console.error("Failed to init app.", error);
+});
 
 function bindEvents() {
   if (el.globalSearch) {
@@ -150,48 +157,6 @@ function bindEvents() {
   }
   if (el.commandBtn) {
     el.commandBtn.addEventListener("click", openCommandPalette);
-  }
-
-  if (el.avatarToggle) {
-    el.avatarToggle.addEventListener("click", () => toggleMenu(el.avatarMenu));
-  }
-
-  if (el.openSettings) {
-    el.openSettings.addEventListener("click", () => {
-      closeAllMenus();
-      openSettingsModal();
-    });
-  }
-
-  if (el.exportData) {
-    el.exportData.addEventListener("click", () => {
-      closeAllMenus();
-      openExportModal();
-    });
-  }
-
-  if (el.importData) {
-    el.importData.addEventListener("click", () => {
-      closeAllMenus();
-      openImportModal();
-    });
-  }
-
-  if (el.moreToggle) {
-    el.moreToggle.addEventListener("click", () => {
-      toggleMenu(el.moreMenu);
-      el.moreToggle.setAttribute(
-        "aria-expanded",
-        String(!el.moreMenu.classList.contains("hidden"))
-      );
-    });
-  }
-
-  if (el.settingsShortcut) {
-    el.settingsShortcut.addEventListener("click", () => {
-      closeAllMenus();
-      openSettingsModal();
-    });
   }
 
   document.querySelectorAll("[data-route]").forEach((node) => {
@@ -270,14 +235,6 @@ function handleGlobalShortcuts(event) {
 }
 
 function handleGlobalClick(event) {
-  if (openMenu && !openMenu.contains(event.target)) {
-    openMenu.classList.add("hidden");
-    openMenu = null;
-    if (el.moreToggle) {
-      el.moreToggle.setAttribute("aria-expanded", "false");
-    }
-  }
-
   if (commandState.open && el.commandPalette) {
     const card = el.commandPalette.querySelector(".command-card");
     if (card && !card.contains(event.target)) {
@@ -290,31 +247,6 @@ function handlePopState() {
   state.ui.route = normalizePath(window.location.pathname);
   saveState();
   renderAll();
-}
-
-function toggleMenu(menu) {
-  if (!menu) {
-    return;
-  }
-  const isHidden = menu.classList.contains("hidden");
-  closeAllMenus();
-  if (isHidden) {
-    menu.classList.remove("hidden");
-    openMenu = menu;
-  }
-}
-
-function closeAllMenus() {
-  if (el.avatarMenu) {
-    el.avatarMenu.classList.add("hidden");
-  }
-  if (el.moreMenu) {
-    el.moreMenu.classList.add("hidden");
-  }
-  openMenu = null;
-  if (el.moreToggle) {
-    el.moreToggle.setAttribute("aria-expanded", "false");
-  }
 }
 
 function applyRouteFromLocation() {
@@ -407,17 +339,11 @@ function parseRoute(path) {
     }
     return { name: "notes" };
   }
-  if (parts[0] === "calendar") {
-    return { name: "calendar" };
-  }
   if (parts[0] === "areas") {
     if (parts[1]) {
       return { name: "area", id: parts[1] };
     }
     return { name: "areas" };
-  }
-  if (parts[0] === "archive") {
-    return { name: "archive" };
   }
   return null;
 }
@@ -430,15 +356,6 @@ function defaultState() {
     projects: [],
     areas: [],
     inbox: [],
-    settings: {
-      weekStartsMonday: true,
-      timeFormat: "24h",
-      defaultEventDuration: 60,
-      timeStepMinutes: 30,
-      apiUrl: DEFAULT_API_URL,
-      apiKey: DEFAULT_API_KEY,
-      autoSync: true
-    },
     meta: {
       lastReviewAt: null
     },
@@ -448,15 +365,9 @@ function defaultState() {
       selected: { kind: null, id: null },
       weekTab: "plan",
       weekOffset: 0,
-      calendarView: "week",
-      calendarWeekOffset: 0,
-      calendarMonthOffset: 0,
       projectFilter: "active",
-      projectViewMode: "list",
-      notesAreaId: null,
       notesNoteId: null,
       inboxSelection: [],
-      inboxActiveId: null,
       overdueCollapsed: true
     }
   };
@@ -483,10 +394,6 @@ function normalizeState(data) {
     ...base.ui,
     ...(data.ui || {})
   };
-  const settings = {
-    ...base.settings,
-    ...(data.settings || {})
-  };
   return {
     tasks: Array.isArray(data.tasks) ? data.tasks.map(normalizeTask).filter(Boolean) : [],
     events: Array.isArray(data.events) ? data.events.map(normalizeEvent).filter(Boolean) : [],
@@ -494,7 +401,6 @@ function normalizeState(data) {
     projects: Array.isArray(data.projects) ? data.projects.map(normalizeProject).filter(Boolean) : [],
     areas: Array.isArray(data.areas) ? data.areas.map(normalizeArea).filter(Boolean) : [],
     inbox: Array.isArray(data.inbox) ? data.inbox.map(normalizeInboxItem).filter(Boolean) : [],
-    settings,
     meta: {
       lastReviewAt: data.meta && data.meta.lastReviewAt ? data.meta.lastReviewAt : null
     },
@@ -508,8 +414,8 @@ function saveState(options = {}) {
     saveTimer = null;
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  if (!options.skipSync) {
-    scheduleAutoSync();
+  if (!options.skipRemote) {
+    scheduleRemoteSync();
   }
   if (options.render !== false) {
     renderSidebar();
@@ -526,271 +432,480 @@ function saveStateDebounced(options = {}) {
   }, SAVE_DEBOUNCE_MS);
 }
 
-function defaultRemoteConfig() {
-  return {
-    url: DEFAULT_API_URL,
-    apiKey: DEFAULT_API_KEY,
-    autoSync: true,
-    lastSyncAt: null,
-    lastError: ""
-  };
-}
-
-function loadRemoteConfig() {
-  const raw = localStorage.getItem(REMOTE_KEY);
-  if (!raw) {
-    return defaultRemoteConfig();
-  }
-  try {
-    return normalizeRemote(JSON.parse(raw));
-  } catch (error) {
-    return defaultRemoteConfig();
-  }
-}
-
-function normalizeRemote(data) {
-  const base = defaultRemoteConfig();
-  if (!data || typeof data !== "object") {
-    return base;
-  }
-  return {
-    url: typeof data.url === "string" ? data.url : base.url,
-    apiKey: typeof data.apiKey === "string" ? data.apiKey : base.apiKey,
-    autoSync: Boolean(data.autoSync),
-    lastSyncAt: Number.isFinite(data.lastSyncAt) ? data.lastSyncAt : base.lastSyncAt,
-    lastError: typeof data.lastError === "string" ? data.lastError : base.lastError
-  };
-}
-
-function saveRemoteConfig() {
-  localStorage.setItem(REMOTE_KEY, JSON.stringify(remote));
-}
-
-function applyDefaultRemoteConfig() {
-  let updated = false;
-  if (!remote.url && DEFAULT_API_URL) {
-    remote.url = DEFAULT_API_URL;
-    updated = true;
-  }
-  if (!remote.apiKey && DEFAULT_API_KEY) {
-    remote.apiKey = DEFAULT_API_KEY;
-    updated = true;
-  }
-  if (updated) {
-    saveRemoteConfig();
-  }
-  state.settings.apiUrl = remote.url;
-  state.settings.apiKey = remote.apiKey;
-  state.settings.autoSync = remote.autoSync;
-}
-
-function buildApiUrl(path) {
-  const base = (remote.url || "").trim();
-  if (!base) {
-    return "";
-  }
-  return base.replace(/\/+$/, "") + path;
-}
-
-function buildStateUrl() {
-  return buildApiUrl("/state");
-}
-
-function getAuthHeaders() {
+function getApiHeaders() {
   const headers = { "Content-Type": "application/json" };
-  if (remote.apiKey) {
-    headers["X-API-Key"] = remote.apiKey;
+  const pin = localStorage.getItem(APP_PIN_KEY);
+  if (pin) {
+    headers["X-APP-PIN"] = pin;
   }
   return headers;
 }
 
-function getSyncState(source = state) {
+async function apiRequest(path, options = {}) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options.method || "GET",
+    headers: { ...getApiHeaders(), ...(options.headers || {}) },
+    body: options.body
+  });
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const data = await response.json();
+      if (data && data.error) {
+        detail = data.error;
+      }
+    } catch (error) {
+      detail = "";
+    }
+    const message = detail ? `${response.status}: ${detail}` : `HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  if (response.status === 204) {
+    return null;
+  }
+  return response.json();
+}
+
+async function apiDelete(path) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "DELETE",
+    headers: getApiHeaders()
+  });
+  if (response.status === 404) {
+    return;
+  }
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+}
+
+function parseDateTime(value) {
+  if (!value || typeof value !== "string") {
+    return { date: "", time: "" };
+  }
+  const cleaned = value.trim();
+  const parts = cleaned.includes("T") ? cleaned.split("T") : cleaned.split(" ");
+  const date = parts[0] || "";
+  const timePart = parts[1] || "";
+  const time = timePart ? timePart.slice(0, 5) : "";
+  return { date, time };
+}
+
+function formatDateTime(date, time) {
+  if (!date || !time) {
+    return "";
+  }
+  return `${date}T${time}:00`;
+}
+
+function addMinutesToDateTime(dateStr, timeStr, minutes) {
+  if (!dateStr || !timeStr) {
+    return "";
+  }
+  const base = parseDate(dateStr);
+  if (!base) {
+    return "";
+  }
+  const [hh, mm] = timeStr.split(":").map(Number);
+  if (Number.isNaN(hh) || Number.isNaN(mm)) {
+    return "";
+  }
+  const date = new Date(
+    base.getFullYear(),
+    base.getMonth(),
+    base.getDate(),
+    hh,
+    mm,
+    0,
+    0
+  );
+  date.setMinutes(date.getMinutes() + (Number(minutes) || 0));
+  const endDate = formatDate(date);
+  const endTime = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return formatDateTime(endDate, endTime);
+}
+
+function diffMinutes(startAt, endAt) {
+  if (!startAt || !endAt) {
+    return DEFAULT_EVENT_DURATION;
+  }
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return DEFAULT_EVENT_DURATION;
+  }
+  const diff = Math.round((end - start) / 60000);
+  return Math.max(15, diff || DEFAULT_EVENT_DURATION);
+}
+
+function buildTimeBlock(scheduledAt, durationMin) {
+  const parts = parseDateTime(scheduledAt);
+  if (!parts.date || !parts.time) {
+    return null;
+  }
+  const duration = Number(durationMin);
   return {
-    tasks: source.tasks || [],
-    events: source.events || [],
-    notes: source.notes || [],
-    projects: source.projects || [],
-    areas: source.areas || [],
-    inbox: source.inbox || [],
-    settings: source.settings || {},
-    meta: source.meta || {}
+    date: parts.date,
+    start: parts.time,
+    duration: Number.isFinite(duration) ? duration : DEFAULT_EVENT_DURATION
   };
 }
 
-function hashSyncState(syncState) {
+function taskFromApi(data) {
+  if (!data) {
+    return null;
+  }
+  return normalizeTask({
+    id: data.id,
+    title: data.title,
+    status: data.status,
+    priority: data.priority,
+    dueDate: data.dueDate || "",
+    projectId: data.projectId || null,
+    areaId: data.areaId || null,
+    notes: data.notes || "",
+    focus: Boolean(data.focus),
+    timeBlock: buildTimeBlock(data.scheduledAt, data.durationMin),
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt
+  });
+}
+
+function taskToApi(task) {
+  const scheduledAt = task.timeBlock
+    ? formatDateTime(task.timeBlock.date, task.timeBlock.start)
+    : "";
+  return {
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    priority: task.priority,
+    dueDate: task.dueDate || "",
+    scheduledAt: scheduledAt || null,
+    durationMin: task.timeBlock ? Number(task.timeBlock.duration) || DEFAULT_EVENT_DURATION : null,
+    projectId: task.projectId || null,
+    areaId: task.areaId || null,
+    notes: task.notes || "",
+    focus: task.focus ? 1 : 0
+  };
+}
+
+function eventFromApi(data) {
+  if (!data) {
+    return null;
+  }
+  const startParts = parseDateTime(data.startAt);
+  const date = startParts.date || formatDate(new Date());
+  const start = startParts.time || "09:00";
+  const duration = diffMinutes(data.startAt, data.endAt);
+  return normalizeEvent({
+    id: data.id,
+    title: data.title,
+    date,
+    start,
+    duration,
+    location: data.location || "",
+    notes: data.notes || "",
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt
+  });
+}
+
+function eventToApi(event) {
+  const startAt = formatDateTime(event.date, event.start);
+  const duration = Number(event.duration) || DEFAULT_EVENT_DURATION;
+  const endAt = addMinutesToDateTime(event.date, event.start, duration);
+  return {
+    id: event.id,
+    title: event.title,
+    startAt,
+    endAt,
+    location: event.location || "",
+    notes: event.notes || ""
+  };
+}
+
+function noteFromApi(data) {
+  if (!data) {
+    return null;
+  }
+  let blocks = [];
+  if (typeof data.contentJson === "string" && data.contentJson) {
+    try {
+      const parsed = JSON.parse(data.contentJson);
+      if (Array.isArray(parsed)) {
+        blocks = parsed;
+      }
+    } catch (error) {
+      blocks = [];
+    }
+  }
+  return normalizeNote({
+    id: data.id,
+    title: data.title,
+    areaId: data.areaId || null,
+    projectId: data.projectId || null,
+    blocks,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt
+  });
+}
+
+function noteToApi(note) {
+  return {
+    id: note.id,
+    title: note.title,
+    areaId: note.areaId || null,
+    projectId: note.projectId || null,
+    contentJson: JSON.stringify(note.blocks || [])
+  };
+}
+
+function projectFromApi(data) {
+  if (!data) {
+    return null;
+  }
+  return normalizeProject({
+    id: data.id,
+    title: data.title,
+    objective: data.objective || "",
+    areaId: data.areaId || null,
+    status: data.status,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt
+  });
+}
+
+function projectToApi(project) {
+  return {
+    id: project.id,
+    title: project.title,
+    objective: project.objective || "",
+    areaId: project.areaId || null,
+    status: project.status
+  };
+}
+
+function areaFromApi(data) {
+  if (!data) {
+    return null;
+  }
+  return normalizeArea({
+    id: data.id,
+    name: data.name
+  });
+}
+
+function areaToApi(area) {
+  return {
+    id: area.id,
+    name: area.name
+  };
+}
+
+function inboxFromApi(data) {
+  if (!data) {
+    return null;
+  }
+  return normalizeInboxItem({
+    id: data.id,
+    title: data.rawText || "",
+    kind: data.inferredType || "task",
+    createdAt: data.createdAt
+  });
+}
+
+function inboxToApi(item) {
+  return {
+    id: item.id,
+    rawText: item.title || "",
+    inferredType: item.kind || "task",
+    createdAt: item.createdAt
+  };
+}
+
+async function loadRemoteState() {
   try {
-    return JSON.stringify(syncState);
+    const [areas, projects, tasks, events, notes, inbox] = await Promise.all([
+      apiRequest("/areas"),
+      apiRequest("/projects"),
+      apiRequest("/tasks"),
+      apiRequest("/events"),
+      apiRequest("/notes"),
+      apiRequest("/inbox")
+    ]);
+
+    const nextState = normalizeState({
+      areas: (areas || []).map(areaFromApi).filter(Boolean),
+      projects: (projects || []).map(projectFromApi).filter(Boolean),
+      tasks: (tasks || []).map(taskFromApi).filter(Boolean),
+      events: (events || []).map(eventFromApi).filter(Boolean),
+      notes: (notes || []).map(noteFromApi).filter(Boolean),
+      inbox: (inbox || []).map(inboxFromApi).filter(Boolean),
+      meta: state.meta,
+      ui: state.ui
+    });
+
+    suppressSync = true;
+    state = nextState;
+    saveState({ skipRemote: true });
+    suppressSync = false;
+    renderAll();
   } catch (error) {
-    return "";
+    console.error("Failed to load API data.", error);
+    showToast("Falha ao conectar na API.");
+  } finally {
+    syncReady = true;
+    if (syncPending) {
+      scheduleRemoteSync();
+    }
   }
 }
 
-function buildSyncStatus() {
-  if (!remote.url) {
-    return "Sync desativado";
-  }
-  if (remote.lastError) {
-    return `Erro: ${remote.lastError}`;
-  }
-  if (remote.lastSyncAt) {
-    return `Ultimo sync: ${new Date(remote.lastSyncAt).toLocaleString("pt-BR")}`;
-  }
-  return remote.autoSync ? "Sync ativo" : "Sync manual";
-}
-
-function refreshSyncStatus(message) {
-  if (el.syncStatus) {
-    el.syncStatus.textContent = message || buildSyncStatus();
-  }
-}
-
-function scheduleAutoSync() {
-  if (!remote.autoSync || !remote.url || !remote.apiKey) {
+function scheduleRemoteSync() {
+  syncPending = true;
+  if (!syncReady || suppressSync) {
     return;
   }
-  sync.pending = true;
-  if (sync.timer) {
-    clearTimeout(sync.timer);
+  if (syncTimer) {
+    clearTimeout(syncTimer);
   }
-  sync.timer = setTimeout(() => {
-    sync.timer = null;
-    if (sync.busy) {
+  syncTimer = setTimeout(() => {
+    syncTimer = null;
+    if (syncBusy) {
       return;
     }
-    pushState({ silent: true });
-  }, 1000);
+    flushDirty().catch((error) => {
+      console.error("Sync failed.", error);
+    });
+  }, REMOTE_DEBOUNCE_MS);
 }
 
-async function pushState(options = {}) {
-  const url = buildStateUrl();
-  if (!url) {
-    remote.lastError = "Configure URL";
-    saveRemoteConfig();
-    refreshSyncStatus();
-    return { ok: false, error: remote.lastError };
+function markDirty(item) {
+  if (!item || suppressSync) {
+    return;
   }
-  if (!remote.apiKey) {
-    remote.lastError = "Informe a API Key";
-    saveRemoteConfig();
-    refreshSyncStatus();
-    return { ok: false, error: remote.lastError };
+  item._dirty = true;
+  scheduleRemoteSync();
+}
+
+function markDeleted(kind, id) {
+  if (!id || !pendingDeletes[kind]) {
+    return;
   }
-  if (sync.busy) {
-    sync.pending = true;
-    return { ok: false, error: "Sync em andamento" };
+  pendingDeletes[kind].add(id);
+  scheduleRemoteSync();
+}
+
+async function flushDirty() {
+  if (!syncReady || suppressSync) {
+    return;
   }
-  sync.busy = true;
-  sync.pending = false;
+  if (syncBusy) {
+    syncPending = true;
+    return;
+  }
+  syncBusy = true;
+  syncPending = false;
   try {
-    const payloadState = getSyncState();
-    const payloadHash = hashSyncState(payloadState);
-    if (payloadHash && payloadHash === sync.lastPushedHash) {
-      refreshSyncStatus();
-      return { ok: true, skipped: true };
-    }
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ state: payloadState })
-    });
-    if (!response.ok) {
-      remote.lastError = `HTTP ${response.status}`;
-      saveRemoteConfig();
-      refreshSyncStatus();
-      return { ok: false, error: remote.lastError };
-    }
-    const data = await response.json().catch(() => ({}));
-    remote.lastSyncAt = Number.isFinite(data.updatedAt) ? data.updatedAt : Date.now();
-    remote.lastError = "";
-    saveRemoteConfig();
-    sync.lastPushedHash = payloadHash;
-    refreshSyncStatus();
-    return { ok: true };
+    await flushDeletes();
+    await flushList(state.areas, upsertArea);
+    await flushList(state.projects, upsertProject);
+    await flushList(state.tasks, upsertTask);
+    await flushList(state.events, upsertEvent);
+    await flushList(state.notes, upsertNote);
+    await flushList(state.inbox, upsertInbox);
   } catch (error) {
-    remote.lastError = "Falha de rede";
-    saveRemoteConfig();
-    refreshSyncStatus();
-    return { ok: false, error: remote.lastError };
+    const now = Date.now();
+    if (now - lastSyncErrorAt > 5000) {
+      lastSyncErrorAt = now;
+      showToast("Falha ao sincronizar.");
+    }
+    throw error;
   } finally {
-    sync.busy = false;
-    if (sync.pending) {
-      scheduleAutoSync();
+    syncBusy = false;
+    if (syncPending) {
+      scheduleRemoteSync();
     }
   }
 }
 
-async function pullState(options = {}) {
-  const url = buildStateUrl();
-  if (!url) {
-    remote.lastError = "Configure URL";
-    saveRemoteConfig();
-    refreshSyncStatus();
-    return { ok: false, error: remote.lastError };
+async function flushDeletes() {
+  await flushDeleteSet("tasks", pendingDeletes.tasks, (id) => apiDelete(`/tasks/${id}`));
+  await flushDeleteSet("events", pendingDeletes.events, (id) => apiDelete(`/events/${id}`));
+  await flushDeleteSet("notes", pendingDeletes.notes, (id) => apiDelete(`/notes/${id}`));
+  await flushDeleteSet("projects", pendingDeletes.projects, (id) => apiDelete(`/projects/${id}`));
+  await flushDeleteSet("areas", pendingDeletes.areas, (id) => apiDelete(`/areas/${id}`));
+  await flushDeleteSet("inbox", pendingDeletes.inbox, (id) => apiDelete(`/inbox/${id}`));
+}
+
+async function flushDeleteSet(_kind, set, action) {
+  const ids = Array.from(set);
+  for (const id of ids) {
+    await action(id);
+    set.delete(id);
   }
-  if (!remote.apiKey) {
-    remote.lastError = "Informe a API Key";
-    saveRemoteConfig();
-    refreshSyncStatus();
-    return { ok: false, error: remote.lastError };
+}
+
+async function flushList(items, upsertFn) {
+  for (const item of items) {
+    if (!item._dirty) {
+      continue;
+    }
+    const saved = await upsertFn(item);
+    if (saved) {
+      Object.assign(item, saved);
+    }
+    item._dirty = false;
   }
-  if (sync.busy) {
-    return { ok: false, error: "Sync em andamento" };
-  }
-  sync.busy = true;
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: getAuthHeaders()
-    });
-    if (response.status === 404) {
-      remote.lastError = "Servidor vazio";
-      saveRemoteConfig();
-      refreshSyncStatus();
-      if (options.pushOnEmpty) {
-        scheduleAutoSync();
-      }
-      return { ok: false, error: remote.lastError };
-    }
-    if (!response.ok) {
-      remote.lastError = `HTTP ${response.status}`;
-      saveRemoteConfig();
-      refreshSyncStatus();
-      return { ok: false, error: remote.lastError };
-    }
-    const data = await response.json().catch(() => null);
-    if (!data || !data.state || typeof data.state !== "object") {
-      remote.lastError = "Resposta invalida";
-      saveRemoteConfig();
-      refreshSyncStatus();
-      return { ok: false, error: remote.lastError };
-    }
-    const normalized = normalizeState(data.state);
-    state = normalized;
-    saveState({ skipSync: true });
-    if (Number.isFinite(data.updatedAt)) {
-      remote.lastSyncAt = data.updatedAt;
-    } else {
-      remote.lastSyncAt = Date.now();
-    }
-    remote.lastError = "";
-    saveRemoteConfig();
-    refreshSyncStatus();
-    if (options.queuePush) {
-      scheduleAutoSync();
-    }
-    renderAll();
-    return { ok: true };
-  } catch (error) {
-    remote.lastError = "Falha de rede";
-    saveRemoteConfig();
-    refreshSyncStatus();
-    return { ok: false, error: remote.lastError };
-  } finally {
-    sync.busy = false;
-    if (sync.pending) {
-      scheduleAutoSync();
-    }
-  }
+}
+
+async function upsertTask(task) {
+  const data = await apiRequest("/tasks", {
+    method: "POST",
+    body: JSON.stringify(taskToApi(task))
+  });
+  return taskFromApi(data);
+}
+
+async function upsertEvent(event) {
+  const data = await apiRequest("/events", {
+    method: "POST",
+    body: JSON.stringify(eventToApi(event))
+  });
+  return eventFromApi(data);
+}
+
+async function upsertNote(note) {
+  const data = await apiRequest("/notes", {
+    method: "POST",
+    body: JSON.stringify(noteToApi(note))
+  });
+  return noteFromApi(data);
+}
+
+async function upsertProject(project) {
+  const data = await apiRequest("/projects", {
+    method: "POST",
+    body: JSON.stringify(projectToApi(project))
+  });
+  return projectFromApi(data);
+}
+
+async function upsertArea(area) {
+  const data = await apiRequest("/areas", {
+    method: "POST",
+    body: JSON.stringify(areaToApi(area))
+  });
+  return areaFromApi(data);
+}
+
+async function upsertInbox(item) {
+  const data = await apiRequest("/inbox", {
+    method: "POST",
+    body: JSON.stringify(inboxToApi(item))
+  });
+  return inboxFromApi(data);
 }
 
 function normalizeUpdatedAt(value) {
@@ -814,22 +929,22 @@ function normalizeTask(task) {
   normalized.id = typeof normalized.id === "string" ? normalized.id : uid("task");
   normalized.title = typeof normalized.title === "string" ? normalized.title : "Nova tarefa";
   normalized.status = STATUS_ORDER.includes(normalized.status) ? normalized.status : "todo";
-  normalized.priority = ["low", "med", "high"].includes(normalized.priority)
+  normalized.priority = ["low", "normal", "high"].includes(normalized.priority)
     ? normalized.priority
-    : "med";
+    : "normal";
   normalized.dueDate = typeof normalized.dueDate === "string" ? normalized.dueDate : "";
-  normalized.dueTime = typeof normalized.dueTime === "string" ? normalized.dueTime : "";
   normalized.projectId = typeof normalized.projectId === "string" ? normalized.projectId : null;
   normalized.areaId = typeof normalized.areaId === "string" ? normalized.areaId : null;
   normalized.notes = typeof normalized.notes === "string" ? normalized.notes : "";
-  normalized.checklist = Array.isArray(normalized.checklist) ? normalized.checklist : [];
-  normalized.attachments = Array.isArray(normalized.attachments) ? normalized.attachments : [];
-  normalized.linkedNoteId =
-    typeof normalized.linkedNoteId === "string" ? normalized.linkedNoteId : null;
-  normalized.sourceNoteId =
-    typeof normalized.sourceNoteId === "string" ? normalized.sourceNoteId : null;
+  delete normalized.dueTime;
+  delete normalized.scheduledAt;
+  delete normalized.durationMin;
+  delete normalized.checklist;
+  delete normalized.attachments;
+  delete normalized.linkedNoteId;
+  delete normalized.sourceNoteId;
+  delete normalized.archived;
   normalized.focus = Boolean(normalized.focus);
-  normalized.archived = Boolean(normalized.archived);
   normalized.timeBlock =
     normalized.timeBlock && typeof normalized.timeBlock === "object"
       ? normalizeTimeBlock(normalized.timeBlock)
@@ -853,14 +968,14 @@ function normalizeEvent(event) {
   normalized.duration = Number.isFinite(normalized.duration)
     ? Math.max(15, normalized.duration)
     : 60;
-  normalized.projectId = typeof normalized.projectId === "string" ? normalized.projectId : null;
-  normalized.areaId = typeof normalized.areaId === "string" ? normalized.areaId : null;
   normalized.location = typeof normalized.location === "string" ? normalized.location : "";
   normalized.notes = typeof normalized.notes === "string" ? normalized.notes : "";
-  normalized.recurrence = ["none", "daily", "weekly", "monthly"].includes(normalized.recurrence)
-    ? normalized.recurrence
-    : "none";
-  normalized.archived = Boolean(normalized.archived);
+  delete normalized.startAt;
+  delete normalized.endAt;
+  delete normalized.projectId;
+  delete normalized.areaId;
+  delete normalized.recurrence;
+  delete normalized.archived;
   normalized.createdAt =
     normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
   normalized.updatedAt =
@@ -880,7 +995,8 @@ function normalizeNote(note) {
   normalized.blocks = Array.isArray(normalized.blocks)
     ? normalized.blocks.map(normalizeBlock).filter(Boolean)
     : [];
-  normalized.archived = Boolean(normalized.archived);
+  delete normalized.contentJson;
+  delete normalized.archived;
   normalized.createdAt =
     normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
   normalized.updatedAt =
@@ -894,14 +1010,16 @@ function normalizeProject(project) {
   }
   const normalized = { ...project };
   normalized.id = typeof normalized.id === "string" ? normalized.id : uid("project");
-  normalized.name = typeof normalized.name === "string" ? normalized.name : "Novo projeto";
+  const legacyTitle = typeof normalized.name === "string" ? normalized.name : "";
+  normalized.title = typeof normalized.title === "string" ? normalized.title : legacyTitle || "Novo projeto";
+  delete normalized.name;
+  delete normalized.notes;
+  delete normalized.milestones;
   normalized.objective = typeof normalized.objective === "string" ? normalized.objective : "";
   normalized.areaId = typeof normalized.areaId === "string" ? normalized.areaId : null;
   normalized.status = ["active", "paused", "done"].includes(normalized.status)
     ? normalized.status
     : "active";
-  normalized.notes = typeof normalized.notes === "string" ? normalized.notes : "";
-  normalized.milestones = Array.isArray(normalized.milestones) ? normalized.milestones : [];
   normalized.createdAt =
     normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
   normalized.updatedAt =
@@ -916,7 +1034,7 @@ function normalizeArea(area) {
   const normalized = { ...area };
   normalized.id = typeof normalized.id === "string" ? normalized.id : uid("area");
   normalized.name = typeof normalized.name === "string" ? normalized.name : "Nova area";
-  normalized.objective = typeof normalized.objective === "string" ? normalized.objective : "";
+  delete normalized.objective;
   normalized.createdAt =
     normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
   normalized.updatedAt =
@@ -934,6 +1052,8 @@ function normalizeInboxItem(item) {
   normalized.kind = ["task", "note", "event"].includes(normalized.kind)
     ? normalized.kind
     : "task";
+  delete normalized.rawText;
+  delete normalized.inferredType;
   normalized.createdAt =
     normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
   return normalized;
@@ -1036,7 +1156,7 @@ function getCalendarSlots() {
   return buildTimeSlots(
     CALENDAR_START_HOUR,
     CALENDAR_END_HOUR,
-    state.settings.timeStepMinutes
+    TIME_STEP_MINUTES
   );
 }
 
@@ -1080,7 +1200,7 @@ function getWeekStart(date, startsMonday) {
 
 function getWeekDays(offset = 0) {
   const base = addDays(new Date(), offset * 7);
-  const weekStart = getWeekStart(base, state.settings.weekStartsMonday);
+  const weekStart = getWeekStart(base, WEEK_STARTS_MONDAY);
   const days = [];
   for (let i = 0; i < 7; i += 1) {
     const day = addDays(weekStart, i);
@@ -1094,95 +1214,94 @@ function getWeekDays(offset = 0) {
 }
 
 function createTask(data = {}) {
-  return normalizeTask({
+  const task = normalizeTask({
     id: uid("task"),
     title: data.title || "Nova tarefa",
     status: data.status || "todo",
-    priority: data.priority || "med",
+    priority: data.priority || "normal",
     dueDate: data.dueDate || "",
-    dueTime: data.dueTime || "",
     projectId: data.projectId || null,
     areaId: data.areaId || null,
     notes: data.notes || "",
-    checklist: data.checklist || [],
-    attachments: data.attachments || [],
-    linkedNoteId: data.linkedNoteId || null,
-    sourceNoteId: data.sourceNoteId || null,
     focus: Boolean(data.focus),
-    archived: Boolean(data.archived),
     timeBlock: data.timeBlock || null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   });
+  markDirty(task);
+  return task;
 }
 
 function createEvent(data = {}) {
-  return normalizeEvent({
+  const event = normalizeEvent({
     id: uid("event"),
     title: data.title || "Novo evento",
     date: data.date || formatDate(new Date()),
     start: data.start || "09:00",
-    duration: Number.isFinite(data.duration) ? data.duration : state.settings.defaultEventDuration,
-    projectId: data.projectId || null,
-    areaId: data.areaId || null,
+    duration: Number.isFinite(data.duration) ? data.duration : DEFAULT_EVENT_DURATION,
     location: data.location || "",
     notes: data.notes || "",
-    recurrence: data.recurrence || "none",
-    archived: Boolean(data.archived),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   });
+  markDirty(event);
+  return event;
 }
 
 function createNote(data = {}) {
-  return normalizeNote({
+  const note = normalizeNote({
     id: uid("note"),
     title: data.title || "Nova nota",
     areaId: data.areaId || null,
     projectId: data.projectId || null,
     blocks: Array.isArray(data.blocks) ? data.blocks : [],
-    archived: Boolean(data.archived),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   });
+  markDirty(note);
+  return note;
 }
 
 function createProject(data = {}) {
-  return normalizeProject({
+  const project = normalizeProject({
     id: uid("project"),
-    name: data.name || "Novo projeto",
+    title: data.title || "Novo projeto",
     objective: data.objective || "",
     areaId: data.areaId || null,
     status: data.status || "active",
-    notes: data.notes || "",
-    milestones: Array.isArray(data.milestones) ? data.milestones : [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   });
+  markDirty(project);
+  return project;
 }
 
 function createArea(data = {}) {
-  return normalizeArea({
+  const area = normalizeArea({
     id: uid("area"),
     name: data.name || "Nova area",
-    objective: data.objective || "",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   });
+  markDirty(area);
+  return area;
 }
 
 function createInboxItem(title) {
-  return normalizeInboxItem({
+  const item = normalizeInboxItem({
     id: uid("cap"),
     title: title || "Captura",
     kind: suggestInboxKind(title),
     createdAt: new Date().toISOString()
   });
+  markDirty(item);
+  return item;
 }
 
 function touch(item) {
   if (item) {
     item.updatedAt = new Date().toISOString();
+    markDirty(item);
   }
 }
 
@@ -1267,7 +1386,7 @@ function getTodayKey() {
 function getOverdueTasks() {
   const today = dateOnly(new Date());
   return state.tasks.filter((task) => {
-    if (task.archived || task.status === "done" || !task.dueDate) {
+    if (task.status === "done" || !task.dueDate) {
       return false;
     }
     const due = parseDate(task.dueDate);
@@ -1278,7 +1397,7 @@ function getOverdueTasks() {
 function getTodayTasks() {
   const today = getTodayKey();
   return state.tasks.filter((task) => {
-    if (task.archived || task.status === "done") {
+    if (task.status === "done") {
       return false;
     }
     return task.dueDate === today;
@@ -1289,7 +1408,7 @@ function getNextDaysTasks(days = 7) {
   const today = dateOnly(new Date());
   const end = addDays(today, days - 1); // -1 para incluir o último dia no intervalo
   return state.tasks.filter((task) => {
-    if (task.archived || task.status === "done" || !task.dueDate) {
+    if (task.status === "done" || !task.dueDate) {
       return false;
     }
     const due = parseDate(task.dueDate);
@@ -1300,7 +1419,7 @@ function getNextDaysTasks(days = 7) {
 function getAgendaItems(dateKey) {
   const items = [];
   state.events.forEach((event) => {
-    if (!event.archived && event.date === dateKey) {
+    if (event.date === dateKey) {
       items.push({
         kind: "event",
         id: event.id,
@@ -1311,7 +1430,7 @@ function getAgendaItems(dateKey) {
     }
   });
   state.tasks.forEach((task) => {
-    if (task.archived || task.status === "done" || !task.timeBlock) {
+    if (task.status === "done" || !task.timeBlock) {
       return;
     }
     if (task.timeBlock.date === dateKey) {
@@ -1329,7 +1448,7 @@ function getAgendaItems(dateKey) {
 }
 
 function countFocusTasks() {
-  return state.tasks.filter((task) => task.focus && !task.archived && task.status !== "done").length;
+  return state.tasks.filter((task) => task.focus && task.status !== "done").length;
 }
 
 function isFirstRun() {
@@ -1374,7 +1493,6 @@ function renderSidebar() {
   setCount(el.countWeek, getNextDaysTasks(7).length);
   setCount(el.countProjects, state.projects.filter((project) => project.status === "active").length);
   setCount(el.countNotes, state.notes.length);
-  refreshSyncStatus();
 }
 
 function renderPageHeader() {
@@ -1414,14 +1532,10 @@ function renderMain() {
     renderNotesView(el.viewRoot);
   } else if (route.name === "note") {
     renderNotesView(el.viewRoot, route.id);
-  } else if (route.name === "calendar") {
-    renderCalendarView(el.viewRoot);
   } else if (route.name === "areas") {
     renderAreasView(el.viewRoot);
   } else if (route.name === "area") {
     renderAreaDetail(el.viewRoot, route.id);
-  } else if (route.name === "archive") {
-    renderArchiveView(el.viewRoot);
   } else {
     const empty = createElement("div", "empty", "Rota não encontrada.");
     el.viewRoot.append(empty);
@@ -1464,15 +1578,6 @@ function renderPageActions(route, container) {
   if (route.name === "notes" || route.name === "note") {
     container.append(createButton("Nova nota", "primary-btn", () => openNoteModal({})));
   }
-  if (route.name === "calendar") {
-    container.append(
-      createButton("Semana -", "ghost-btn", () => shiftCalendarWeek(-1)),
-      createButton("Semana +", "ghost-btn", () => shiftCalendarWeek(1)),
-      createButton("Mes -", "ghost-btn", () => shiftCalendarMonth(-1)),
-      createButton("Mes +", "ghost-btn", () => shiftCalendarMonth(1)),
-      createButton("Novo evento", "primary-btn", () => openEventModal({}))
-    );
-  }
   if (route.name === "areas") {
     container.append(createButton("Nova area", "primary-btn", openAreaModal));
   }
@@ -1504,7 +1609,6 @@ function renderTodayView(root) {
   const focusSection = createSection("Foco do dia", "Ate 3 itens");
   const focusTasks = state.tasks.filter(
     (task) =>
-      !task.archived &&
       task.status !== "done" &&
       task.focus &&
       matchesTaskSearch(task, query)
@@ -1678,7 +1782,7 @@ function renderWeekPlan(root) {
     attachDropHandlers(column, { date: day.date, time: null });
 
     const dayTasks = state.tasks.filter((task) => {
-      if (task.archived || task.status === "done") {
+      if (task.status === "done") {
         return false;
       }
       return task.dueDate === day.date && !task.timeBlock && matchesTaskSearch(task, query);
@@ -1708,7 +1812,7 @@ function renderWeekPlan(root) {
 
   const side = createElement("div", "week-tasks");
   const weekTasks = state.tasks.filter((task) => {
-    if (task.archived || task.status === "done") {
+    if (task.status === "done") {
       return false;
     }
     return (
@@ -1736,7 +1840,6 @@ function renderWeekReview(root) {
       title: "Sem projeto/area",
       items: state.tasks.filter(
         (task) =>
-          !task.archived &&
           task.status !== "done" &&
           !task.projectId &&
           !task.areaId
@@ -1784,7 +1887,7 @@ function renderProjectsView(root) {
   const projects = state.projects.filter(
     (project) =>
       project.status === state.ui.projectFilter &&
-      matchesQuery(`${project.name} ${project.objective}`, query)
+      matchesQuery(`${project.title} ${project.objective}`, query)
   );
   if (!projects.length) {
     list.append(createElement("div", "empty", "Sem projetos neste filtro."));
@@ -1806,19 +1909,11 @@ function renderProjectDetail(root, projectId) {
     return;
   }
 
-  const viewToggle = createElement("div", "week-tabs");
-  const listBtn = createButton("Lista", "tab-btn", () => setProjectViewMode("list"));
-  const kanbanBtn = createButton("Kanban", "tab-btn", () => setProjectViewMode("kanban"));
-  listBtn.classList.toggle("active", state.ui.projectViewMode !== "kanban");
-  kanbanBtn.classList.toggle("active", state.ui.projectViewMode === "kanban");
-  viewToggle.append(listBtn, kanbanBtn);
-  root.append(viewToggle);
-
   const summary = createSection("Resumo", "");
-  const nameInput = document.createElement("input");
-  nameInput.value = project.name;
-  nameInput.addEventListener("input", () => {
-    project.name = nameInput.value;
+  const titleInput = document.createElement("input");
+  titleInput.value = project.title;
+  titleInput.addEventListener("input", () => {
+    project.title = titleInput.value;
     touch(project);
     saveStateDebounced();
     renderSidebar();
@@ -1852,7 +1947,7 @@ function renderProjectDetail(root, projectId) {
     saveState();
   });
   summary.body.append(
-    buildField("Nome", nameInput),
+    buildField("Titulo", titleInput),
     buildField("Objetivo", objectiveInput),
     buildField("Status", statusSelect),
     buildField("Area", areaSelect)
@@ -1861,7 +1956,7 @@ function renderProjectDetail(root, projectId) {
 
   const nextStep = createSection("Proximo passo", "");
   const nextTask = state.tasks.find(
-    (task) => task.projectId === project.id && task.status !== "done" && !task.archived
+    (task) => task.projectId === project.id && task.status !== "done"
   );
   if (nextTask) {
     nextStep.body.append(createTaskRow(nextTask));
@@ -1887,66 +1982,45 @@ function renderProjectDetail(root, projectId) {
     }
   });
   tasksSection.body.append(buildField("Nova tarefa", quickInput));
-  if (state.ui.projectViewMode === "kanban") {
-    tasksSection.body.append(renderProjectKanban(project));
-  } else {
-    STATUS_ORDER.forEach((status) => {
-      const group = createElement("div", "section");
-      const header = createElement("div", "section-header");
-      header.append(
-        createElement("div", "section-title", STATUS_LABELS[status]),
-        createElement("div", "list-meta", "")
-      );
-      group.append(header);
-      const tasks = state.tasks.filter(
-        (task) =>
-          task.projectId === project.id &&
-          !task.archived &&
-          task.status === status
-      );
-      if (!tasks.length) {
-        group.append(createElement("div", "list-meta", "Sem tarefas."));
-      } else {
-        tasks.forEach((task) => group.append(createTaskRow(task)));
-      }
-      tasksSection.body.append(group);
-    });
-  }
+  STATUS_ORDER.forEach((status) => {
+    const group = createElement("div", "section");
+    const header = createElement("div", "section-header");
+    header.append(
+      createElement("div", "section-title", STATUS_LABELS[status]),
+      createElement("div", "list-meta", "")
+    );
+    group.append(header);
+    const tasks = state.tasks.filter(
+      (task) => task.projectId === project.id && task.status === status
+    );
+    if (!tasks.length) {
+      group.append(createElement("div", "list-meta", "Sem tarefas."));
+    } else {
+      tasks.forEach((task) => group.append(createTaskRow(task)));
+    }
+    tasksSection.body.append(group);
+  });
   root.append(tasksSection.section);
 
   const notesSection = createSection("Notas do projeto", "");
-  const notesArea = document.createElement("textarea");
-  notesArea.rows = 4;
-  notesArea.value = project.notes || "";
-  notesArea.addEventListener("input", () => {
-    project.notes = notesArea.value;
-    touch(project);
-    saveStateDebounced();
-  });
-  notesSection.body.append(notesArea);
-  root.append(notesSection.section);
+  const noteActions = createElement("div", "card-actions");
+  noteActions.append(
+    createButton("Nova nota", "ghost-btn", () => openNoteModal({ projectId: project.id }))
+  );
+  notesSection.body.append(noteActions);
 
-  const milestonesSection = createSection("Marcos", "");
-  if (!Array.isArray(project.milestones) || !project.milestones.length) {
-    milestonesSection.body.append(createElement("div", "list-meta", "Sem marcos."));
+  const projectNotes = state.notes.filter((note) => note.projectId === project.id);
+  if (!projectNotes.length) {
+    notesSection.body.append(createElement("div", "list-meta", "Sem notas ainda."));
   } else {
-    project.milestones.forEach((milestone) => {
-      milestonesSection.body.append(createMilestoneRow(project, milestone));
+    projectNotes.forEach((note) => {
+      const item = createElement("div", "task-row");
+      item.append(createElement("div", "task-title", note.title));
+      item.addEventListener("click", () => navigate(`/notes/${note.id}`));
+      notesSection.body.append(item);
     });
   }
-  const addMilestone = createButton("Adicionar marco", "ghost-btn", () => {
-    project.milestones.push({
-      id: uid("milestone"),
-      title: "Novo marco",
-      dueDate: "",
-      done: false
-    });
-    touch(project);
-    saveState();
-    renderMain();
-  });
-  milestonesSection.body.append(addMilestone);
-  root.append(milestonesSection.section);
+  root.append(notesSection.section);
 }
 
 function renderNotesView(root, noteId) {
@@ -2026,28 +2100,10 @@ function renderNotesView(root, noteId) {
   root.append(layout);
 }
 
-function renderCalendarView(root) {
-  const shell = createElement("div", "calendar-shell");
-  const toggle = createElement("div", "calendar-toggle");
-  const weekBtn = createButton("Semana", "tab-btn", () => setCalendarView("week"));
-  const monthBtn = createButton("Mes", "tab-btn", () => setCalendarView("month"));
-  weekBtn.classList.toggle("active", state.ui.calendarView === "week");
-  monthBtn.classList.toggle("active", state.ui.calendarView === "month");
-  toggle.append(weekBtn, monthBtn);
-  shell.append(toggle);
-
-  if (state.ui.calendarView === "month") {
-    shell.append(renderCalendarMonth());
-  } else {
-    shell.append(renderCalendarWeek());
-  }
-  root.append(shell);
-}
-
 function renderAreasView(root) {
   const list = createElement("div", "areas-grid");
   const query = (state.ui.search || "").trim().toLowerCase();
-  const areas = state.areas.filter((area) => matchesQuery(`${area.name} ${area.objective}`, query));
+  const areas = state.areas.filter((area) => matchesQuery(area.name, query));
   if (!areas.length) {
     list.append(createElement("div", "empty", "Nenhuma area criada."));
   } else {
@@ -2080,19 +2136,7 @@ function renderAreaDetail(root, areaId) {
     renderPageHeader();
   });
 
-  const objectiveInput = document.createElement("textarea");
-  objectiveInput.rows = 3;
-  objectiveInput.value = area.objective || "";
-  objectiveInput.addEventListener("input", () => {
-    area.objective = objectiveInput.value;
-    touch(area);
-    saveStateDebounced();
-  });
-
-  section.body.append(
-    buildField("Nome", nameInput),
-    buildField("Objetivo", objectiveInput)
-  );
+  section.body.append(buildField("Nome", nameInput));
   root.append(section.section);
 
   const projectsSection = createSection("Projetos", "");
@@ -2110,7 +2154,7 @@ function renderAreaDetail(root, areaId) {
   root.append(projectsSection.section);
 
   const tasksSection = createSection("Tarefas", "");
-  const tasks = state.tasks.filter((t) => t.areaId === area.id && !t.archived);
+  const tasks = state.tasks.filter((t) => t.areaId === area.id);
   if (!tasks.length) {
     tasksSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
   } else {
@@ -2136,7 +2180,7 @@ function openAreaModal() {
   openModal(
     "Nova area",
     "Area",
-    { name: "", objective: "" },
+    { name: "" },
     (formData) => {
       if (!formData.name.trim()) {
         showToast("Nome obrigatório");
@@ -2155,14 +2199,13 @@ function openAreaEditModal(area) {
   openModal(
     "Editar area",
     "Area",
-    { name: area.name, objective: area.objective },
+    { name: area.name },
     (formData) => {
       if (!formData.name.trim()) {
         showToast("Nome obrigatório");
         return;
       }
       area.name = formData.name;
-      area.objective = formData.objective;
       touch(area);
       saveState();
       renderAll();
@@ -2178,9 +2221,8 @@ function openTaskModal(data = {}) {
     {
       title: data.title || "",
       status: data.status || "todo",
-      priority: data.priority || "med",
+      priority: data.priority || "normal",
       dueDate: data.dueDate || "",
-      dueTime: data.dueTime || "",
       projectId: data.projectId || "",
       areaId: data.areaId || "",
       notes: data.notes || ""
@@ -2196,9 +2238,8 @@ function openTaskModal(data = {}) {
         if (task) {
           task.title = title;
           task.status = formData.status || "todo";
-          task.priority = formData.priority || "med";
+          task.priority = formData.priority || "normal";
           task.dueDate = formData.dueDate || "";
-          task.dueTime = formData.dueTime || "";
           task.projectId = formData.projectId || null;
           task.areaId = formData.areaId || null;
           task.notes = formData.notes || "";
@@ -2208,7 +2249,7 @@ function openTaskModal(data = {}) {
           showToast("Tarefa atualizada");
         }
       } else {
-        const task = createTask({ title, status: formData.status, priority: formData.priority, dueDate: formData.dueDate, dueTime: formData.dueTime, projectId: formData.projectId, areaId: formData.areaId, notes: formData.notes });
+        const task = createTask({ title, status: formData.status, priority: formData.priority, dueDate: formData.dueDate, projectId: formData.projectId, areaId: formData.areaId, notes: formData.notes });
         state.tasks.unshift(task);
         saveState();
         renderAll();
@@ -2216,9 +2257,13 @@ function openTaskModal(data = {}) {
       }
     },
     data.id ? () => {
-      if (confirm("Arquivar tarefa?")) {
-        archiveTask(getTask(data.id));
+      if (confirm("Deletar tarefa?")) {
+        state.tasks = state.tasks.filter((task) => task.id !== data.id);
+        markDeleted("tasks", data.id);
+        saveState();
         closeModal();
+        renderAll();
+        showToast("Tarefa deletada.");
       }
     } : null
   );
@@ -2265,9 +2310,13 @@ function openEventModal(data = {}) {
       }
     },
     data.id ? () => {
-      if (confirm("Arquivar evento?")) {
-        archiveEvent(getEvent(data.id));
+      if (confirm("Deletar evento?")) {
+        state.events = state.events.filter((event) => event.id !== data.id);
+        markDeleted("events", data.id);
+        saveState();
         closeModal();
+        renderAll();
+        showToast("Evento deletado.");
       }
     } : null
   );
@@ -2341,9 +2390,9 @@ function openProjectModal() {
   openModal(
     "Novo projeto",
     "Projeto",
-    { name: "", objective: "", areaId: "" },
+    { title: "", objective: "", areaId: "" },
     (formData) => {
-      if (!formData.name.trim()) {
+      if (!formData.title.trim()) {
         showToast("Nome do projeto obrigatório");
         return;
       }
@@ -2397,9 +2446,7 @@ function buildCommandList() {
     { label: "Ir para semana", action: () => navigate("/week") },
     { label: "Ir para projetos", action: () => navigate("/projects") },
     { label: "Ir para notas", action: () => navigate("/notes") },
-    { label: "Ir para calendario", action: () => navigate("/calendar") },
-    { label: "Ir para areas", action: () => navigate("/areas") },
-    { label: "Sincronizar", action: () => pushState({ silent: false }) }
+    { label: "Ir para areas", action: () => navigate("/areas") }
   ];
 
   commandState.filtered = query
@@ -2497,7 +2544,7 @@ function openModal(title, eyebrow, data, onSave, onDelete) {
       input = createSelect(
         [
           { value: "low", label: "Baixa" },
-          { value: "med", label: "Media" },
+          { value: "normal", label: "Normal" },
           { value: "high", label: "Alta" }
         ],
         value
@@ -2510,7 +2557,7 @@ function openModal(title, eyebrow, data, onSave, onDelete) {
       input = document.createElement("input");
       input.type = "date";
       input.value = value;
-    } else if (key === "start" || key === "dueTime") {
+    } else if (key === "start") {
       input = document.createElement("input");
       input.type = "time";
       input.value = value;
@@ -2594,107 +2641,6 @@ function trapTabKey(event) {
   }
 }
 
-function openSettingsModal() {
-  el.modalEyebrow.textContent = "Configuracoes";
-  el.modalTitle.textContent = "Preferencias";
-  el.modalBody.innerHTML = "";
-  el.modalDelete.classList.add("hidden");
-
-  const weekStartsMonday = document.createElement("input");
-  weekStartsMonday.type = "checkbox";
-  weekStartsMonday.checked = state.settings.weekStartsMonday;
-
-  const timeFormat = createSelect(
-    [
-      { value: "24h", label: "24h" },
-      { value: "12h", label: "12h" }
-    ],
-    state.settings.timeFormat
-  );
-
-  const apiUrl = document.createElement("input");
-  apiUrl.value = remote.url || "";
-
-  const apiKey = document.createElement("input");
-  apiKey.type = "password";
-  apiKey.value = remote.apiKey || "";
-
-  const autoSync = document.createElement("input");
-  autoSync.type = "checkbox";
-  autoSync.checked = remote.autoSync;
-
-  el.modalBody.append(
-    buildField("Semana comeca segunda", weekStartsMonday),
-    buildField("Formato de hora", timeFormat),
-    buildField("URL da API", apiUrl),
-    buildField("Chave da API", apiKey),
-    buildField("Sincronizacao automatica", autoSync)
-  );
-
-  modalState.onSave = () => {
-    state.settings.weekStartsMonday = weekStartsMonday.checked;
-    state.settings.timeFormat = timeFormat.value;
-    remote.url = apiUrl.value;
-    remote.apiKey = apiKey.value;
-    remote.autoSync = autoSync.checked;
-    saveState();
-    saveRemoteConfig();
-    renderAll();
-  };
-
-  el.modalBackdrop.classList.remove("hidden");
-}
-
-function openExportModal() {
-  const json = JSON.stringify(state, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `meu-node-export-${Date.now()}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast("Dados exportados com sucesso!");
-}
-
-function openImportModal() {
-  el.modalEyebrow.textContent = "Importar";
-  el.modalTitle.textContent = "Importar dados";
-  el.modalBody.innerHTML = "";
-  el.modalDelete.classList.add("hidden");
-
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = ".json";
-
-  const info = createElement("div", "empty", "Selecione um arquivo JSON exportado anteriormente.");
-
-  el.modalBody.append(info, input);
-
-  input.addEventListener("change", (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const imported = JSON.parse(e.target.result);
-        state = normalizeState(imported);
-        saveState();
-        closeModal();
-        renderAll();
-        showToast("Dados importados com sucesso!");
-      } catch (error) {
-        showToast("Erro ao importar arquivo!");
-      }
-    };
-    reader.readAsText(file);
-  });
-
-  modalState.onSave = null;
-  el.modalBackdrop.classList.remove("hidden");
-}
-
 function openProcessModal(item) {
   const fields = { title: item.title, kind: item.kind };
   openModal(
@@ -2775,30 +2721,6 @@ function setProjectFilter(status) {
   renderMain();
 }
 
-function setProjectViewMode(mode) {
-  state.ui.projectViewMode = mode;
-  saveState();
-  renderMain();
-}
-
-function setCalendarView(view) {
-  state.ui.calendarView = view;
-  saveState();
-  renderMain();
-}
-
-function shiftCalendarWeek(offset) {
-  state.ui.calendarWeekOffset += offset;
-  saveState();
-  renderMain();
-}
-
-function shiftCalendarMonth(offset) {
-  state.ui.calendarMonthOffset += offset;
-  saveState();
-  renderMain();
-}
-
 function attachDropHandlers(element, context) {
   element.addEventListener("dragover", (event) => {
     event.preventDefault();
@@ -2863,33 +2785,9 @@ function snoozeTask(task, days) {
   showToast(`Tarefa adiada para ${formatDate(target)}`);
 }
 
-function archiveTask(task) {
-  task.archived = true;
-  touch(task);
-  saveState();
-  renderAll();
-  showToast("Tarefa arquivada");
-}
-
-function archiveEvent(event) {
-  event.archived = true;
-  touch(event);
-  saveState();
-  renderAll();
-  showToast("Evento arquivado");
-}
-
-function archiveNote(note) {
-  note.archived = true;
-  touch(note);
-  saveState();
-  clearSelection();
-  renderAll();
-  showToast("Nota arquivada");
-}
-
 function archiveInboxItem(id) {
   state.inbox = state.inbox.filter((item) => item.id !== id);
+  markDeleted("inbox", id);
   saveState();
   renderMain();
   showToast("Item arquivado");
@@ -2897,12 +2795,14 @@ function archiveInboxItem(id) {
 
 function deleteInboxItem(id) {
   state.inbox = state.inbox.filter((item) => item.id !== id);
+  markDeleted("inbox", id);
   saveState();
   renderMain();
 }
 
 function bulkArchiveInbox(ids) {
   state.inbox = state.inbox.filter((item) => !ids.includes(item.id));
+  ids.forEach((id) => markDeleted("inbox", id));
   state.ui.inboxSelection = [];
   saveState();
   renderMain();
@@ -2910,6 +2810,7 @@ function bulkArchiveInbox(ids) {
 
 function bulkDeleteInbox(ids) {
   state.inbox = state.inbox.filter((item) => !ids.includes(item.id));
+  ids.forEach((id) => markDeleted("inbox", id));
   state.ui.inboxSelection = [];
   saveState();
   renderMain();
@@ -2939,7 +2840,7 @@ function handleInboxShortcuts(event) {
 
 function matchesTaskSearch(task, query) {
   if (!query) return true;
-  const projectName = task.projectId ? (getProject(task.projectId)?.name || "") : "";
+  const projectName = task.projectId ? (getProject(task.projectId)?.title || "") : "";
   return (
     matchesQuery(task.title, query) ||
     matchesQuery(task.notes, query) ||
@@ -2956,7 +2857,7 @@ function createAreaSelect(value) {
 }
 
 function createProjectSelect(value) {
-  const options = state.projects.map((p) => ({ value: p.id, label: p.name }));
+  const options = state.projects.map((p) => ({ value: p.id, label: p.title }));
   options.unshift({ value: "", label: "Sem projeto" });
   const select = createSelect(options, value || "");
   return select;
@@ -2984,9 +2885,7 @@ function createCalendarChip(item) {
 
 function groupNotesByArea() {
   const grouped = {};
-  state.notes
-    .filter((n) => !n.archived)
-    .forEach((note) => {
+  state.notes.forEach((note) => {
       const areaId = note.areaId || null;
       if (!grouped[areaId]) {
         grouped[areaId] = [];
@@ -2994,33 +2893,6 @@ function groupNotesByArea() {
       grouped[areaId].push(note);
     });
   return grouped;
-}
-
-function renderProjectKanban(project) {
-  const container = createElement("div", "kanban-board");
-  STATUS_ORDER.forEach((status) => {
-    const column = createElement("div", "kanban-column");
-    const header = createElement("div", "section-header");
-    header.append(
-      createElement("div", "section-title", STATUS_LABELS[status]),
-      createElement("div", "list-meta", "")
-    );
-    column.append(header);
-    const tasks = state.tasks.filter(
-      (t) => t.projectId === project.id && !t.archived && t.status === status
-    );
-    const body = createElement("div", "kanban-body");
-    tasks.forEach((task) => {
-      const card = createTaskCard(task);
-      card.draggable = true;
-      card.addEventListener("dragstart", (event) => setDragData(event, "task", task.id));
-      body.append(card);
-    });
-    attachDropHandlers(body, { status });
-    column.append(body);
-    container.append(column);
-  });
-  return container;
 }
 
 function createBlockEditor(note, block, index) {
@@ -3091,131 +2963,6 @@ function createBlockEditor(note, block, index) {
   return wrapper;
 }
 
-function createMilestoneRow(project, milestone) {
-  const row = createElement("div", "task-row");
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  checkbox.checked = milestone.done;
-  checkbox.addEventListener("change", () => {
-    milestone.done = checkbox.checked;
-    touch(project);
-    saveState();
-    renderMain();
-  });
-  const content = createElement("div", "task-content");
-  const title = createElement("div", "task-title");
-  title.textContent = milestone.title;
-  const meta = createElement("div", "list-meta");
-  meta.textContent = milestone.dueDate || "Sem data";
-  content.append(title, meta);
-  const delBtn = createButton("Deletar", "ghost-btn", () => {
-    project.milestones = project.milestones.filter((m) => m.id !== milestone.id);
-    touch(project);
-    saveState();
-    renderMain();
-  });
-  row.append(checkbox, content, delBtn);
-  return row;
-}
-
-function renderCalendarMonth() {
-  const container = createElement("div", "calendar-month");
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + state.ui.calendarMonthOffset;
-  const date = new Date(year, month, 1);
-  
-  const header = createElement("div", "month-header");
-  header.append(createElement("div", "", date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })));
-  container.append(header);
-
-  const grid = createElement("div", "month-grid");
-  const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-  for (let i = 1; i <= daysInMonth; i++) {
-    const dayDate = new Date(date.getFullYear(), date.getMonth(), i);
-    const dayCell = createElement("div", "month-day");
-    const dateStr = formatDate(dayDate);
-    dayCell.append(createElement("div", "month-date", String(i)));
-    const events = getAgendaItems(dateStr);
-    if (events.length) {
-      const eventList = createElement("div", "month-events");
-      events.slice(0, 2).forEach((evt) => {
-        eventList.append(createElement("div", "chip", evt.title));
-      });
-      dayCell.append(eventList);
-    }
-    grid.append(dayCell);
-  }
-  container.append(grid);
-  return container;
-}
-
-function renderCalendarWeek() {
-  const container = createElement("div", "calendar-week");
-  const days = getWeekDays(state.ui.calendarWeekOffset);
-  
-  const header = createElement("div", "week-header-row");
-  days.forEach((day) => {
-    const cell = createElement("div", "week-header-cell");
-    cell.append(createElement("div", "day-label", day.label));
-    header.append(cell);
-  });
-  container.append(header);
-
-  getCalendarSlots().forEach((time) => {
-    const row = createElement("div", "week-time-row");
-    const timeCell = createElement("div", "time-label");
-    timeCell.textContent = time;
-    row.append(timeCell);
-    days.forEach((day) => {
-      const cell = createElement("div", "week-cell");
-      const items = getAgendaItems(day.date).filter((item) => item.start === time);
-      items.forEach((item) => {
-        cell.append(createCalendarChip(item));
-      });
-      attachDropHandlers(cell, { date: day.date, time });
-      row.append(cell);
-    });
-    container.append(row);
-  });
-  return container;
-}
-
-function renderArchiveView(root) {
-  const archivedTasks = state.tasks.filter((t) => t.archived);
-  const archivedEvents = state.events.filter((e) => e.archived);
-  const archivedNotes = state.notes.filter((n) => n.archived);
-
-  const tasksSection = createSection("Tarefas arquivadas", `${archivedTasks.length} items`);
-  if (archivedTasks.length === 0) {
-    tasksSection.body.append(createElement("div", "list-meta", "Nenhuma tarefa arquivada."));
-  } else {
-    archivedTasks.forEach((t) => tasksSection.body.append(createTaskRow(t)));
-  }
-  root.append(tasksSection.section);
-
-  const eventsSection = createSection("Eventos arquivados", `${archivedEvents.length} items`);
-  if (archivedEvents.length === 0) {
-    eventsSection.body.append(createElement("div", "list-meta", "Nenhum evento arquivado."));
-  } else {
-    archivedEvents.forEach((e) => eventsSection.body.append(createEventRow(e)));
-  }
-  root.append(eventsSection.section);
-
-  const notesSection = createSection("Notas arquivadas", `${archivedNotes.length} items`);
-  if (archivedNotes.length === 0) {
-    notesSection.body.append(createElement("div", "list-meta", "Nenhuma nota arquivada."));
-  } else {
-    archivedNotes.forEach((n) => {
-      const item = createElement("div", "task-row");
-      item.append(createElement("div", "task-title", n.title));
-      item.addEventListener("click", () => navigate(`/notes/${n.id}`));
-      notesSection.body.append(item);
-    });
-  }
-  root.append(notesSection.section);
-}
-
 function createNotesSidePanel(note) {
   const panel = createElement("div", "notes-sidepanel");
   if (!note) {
@@ -3231,15 +2978,10 @@ function createNotesSidePanel(note) {
 
   const actions = createElement("div", "card-actions");
   actions.append(
-    createButton("Arquivar", "ghost-btn", () => {
-      if (confirm("Arquivar esta nota?")) {
-        archiveNote(note);
-        navigate("/notes");
-      }
-    }),
     createButton("Deletar", "ghost-btn danger", () => {
       if (confirm("Deletar esta nota?")) {
         state.notes = state.notes.filter((n) => n.id !== note.id);
+        markDeleted("notes", note.id);
         saveState();
         navigate("/notes");
         showToast("Nota deletada");
@@ -3255,6 +2997,7 @@ function deleteArea(areaId) {
   state.areas = state.areas.filter((a) => a.id !== areaId);
   state.projects = state.projects.map((p) => (p.areaId === areaId ? { ...p, areaId: null } : p));
   state.tasks = state.tasks.map((t) => (t.areaId === areaId ? { ...t, areaId: null } : t));
+  markDeleted("areas", areaId);
   saveState();
 }
 

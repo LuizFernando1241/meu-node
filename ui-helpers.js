@@ -123,10 +123,10 @@ function createTaskRow(task, options = {}) {
 function createProjectCard(project) {
   const card = document.createElement("div");
   card.className = "card";
-  
+
   const title = document.createElement("div");
   title.className = "card-title";
-  title.textContent = project.name;
+  title.textContent = project.title;
   card.append(title);
   
   const meta = document.createElement("div");
@@ -141,19 +141,12 @@ function createProjectCard(project) {
 function createAreaCard(area) {
   const card = document.createElement("div");
   card.className = "card";
-  
+
   const title = document.createElement("div");
   title.className = "card-title";
   title.textContent = area.name;
   card.append(title);
-  
-  if (area.objective) {
-    const meta = document.createElement("div");
-    meta.className = "list-meta";
-    meta.textContent = area.objective.slice(0, 80);
-    card.append(meta);
-  }
-  
+
   return card;
 }
 
