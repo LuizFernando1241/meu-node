@@ -231,6 +231,9 @@ function bindEvents() {
 
   document.addEventListener("keydown", handleGlobalShortcuts);
   document.addEventListener("click", handleGlobalClick);
+  // Hide details panel on mobile when scrolling/touch-moving to avoid it covering content
+  window.addEventListener("scroll", handleMobileScroll, { passive: true });
+  window.addEventListener("touchmove", handleMobileScroll, { passive: true });
   window.addEventListener("popstate", handlePopState);
 }
 
@@ -2150,6 +2153,22 @@ function setDetailsOpen(isOpen) {
   }
 }
 
+// Hide details panel on mobile view when user scrolls/touches the page.
+function handleMobileScroll() {
+  try {
+    if (window.innerWidth > 768) {
+      return;
+    }
+    if (!document.body.classList.contains("details-open")) {
+      return;
+    }
+    // keep selection but hide the panel so it doesn't cover 1/3 of the screen
+    setDetailsOpen(false);
+  } catch (e) {
+    // noop
+  }
+}
+
 function selectItem(kind, id) {
   state.ui.selected = { kind, id };
   saveState();
@@ -3630,6 +3649,7 @@ function createNotesSidePanel(note) {
   const linkedTasks = state.tasks.filter(
     (task) => task.linkedNoteId === note.id || task.sourceNoteId === note.id
   );
+  links.append(createElement("div", "section-title", "Tarefas vinculadas"));
   if (!linkedTasks.length) {
     links.body.append(createElement("div", "list-meta", "Sem tarefas vinculadas."));
   } else {
@@ -3643,6 +3663,7 @@ function createNotesSidePanel(note) {
       !entry.archived &&
       matchesNoteSearch(entry, note.title)
   );
+  backlinks.append(createElement("div", "section-title", "Notas relacionadas"));
   if (!relatedNotes.length) {
     backlinks.body.append(createElement("div", "list-meta", "Sem backlinks."));
   } else {
@@ -4389,6 +4410,7 @@ function handleCommandPaletteKeydown(event) {
   if (!commandState.open) {
     return;
   }
+
   if (event.key === "Escape") {
     event.preventDefault();
     closeCommandPalette();
