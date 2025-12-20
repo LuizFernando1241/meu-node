@@ -38,7 +38,6 @@
   </style>
 </head>
 <body>
-  <!-- Adicionar role e aria-label para melhorar acessibilidade -->
   <div class="app" id="appRoot" role="application" aria-label="Meu Node">
     <header class="topbar panel">
       <div class="brand">
@@ -87,104 +86,21 @@
 
     <main class="shell">
       <aside class="sidebar panel">
+        <!-- Certificar-se de que os botões de navegação estão presentes -->
         <div class="sidebar-section">
-          <div class="sidebar-title">Mapa geral</div>
-          <button class="nav-item" data-route="/today">
-            <span>Hoje</span>
-            <span class="nav-meta" id="countToday"></span>
-          </button>
-          <button class="nav-item" data-route="/inbox">
-            <span>Inbox</span>
-            <span class="nav-meta" id="countInbox"></span>
-          </button>
-          <button class="nav-item" data-route="/week">
-            <span>Semana</span>
-            <span class="nav-meta" id="countWeek"></span>
-          </button>
-          <button class="nav-item" data-route="/projects">
-            <span>Projetos</span>
-            <span class="nav-meta" id="countProjects"></span>
-          </button>
-          <button class="nav-item" data-route="/notes">
-            <span>Notas</span>
-            <span class="nav-meta" id="countNotes"></span>
-          </button>
-        </div>
-
-        <div class="sidebar-section">
-          <button id="moreToggle" class="nav-item nav-more" aria-expanded="false">
-            <span>Mais</span>
-            <span class="nav-meta">+</span>
-          </button>
-          <div id="moreMenu" class="submenu hidden">
-            <button class="nav-subitem" data-route="/calendar">Calendario</button>
-            <button class="nav-subitem" data-route="/areas">Areas</button>
-            <button class="nav-subitem" data-route="/archive">Arquivo</button>
-            <button id="settingsShortcut" class="nav-subitem">Configuracoes</button>
-          </div>
-        </div>
-
-        <div class="sidebar-footer">
-          <div id="syncStatus" class="list-meta">Sync local</div>
+          <button class="nav-item" data-route="/today">Hoje</button>
+          <button class="nav-item" data-route="/inbox">Inbox</button>
+          <button class="nav-item" data-route="/week">Semana</button>
+          <button class="nav-item" data-route="/projects">Projetos</button>
+          <button class="nav-item" data-route="/notes">Notas</button>
         </div>
       </aside>
 
       <section class="content panel">
-        <div class="page-header">
-          <div>
-            <div class="eyebrow" id="pageEyebrow">Rota</div>
-            <h1 id="pageTitle">Hoje</h1>
-          </div>
-          <div id="pageActions" class="page-actions"></div>
-        </div>
-        <div id="viewRoot" class="view-root"></div>
+        <div id="viewRoot" class="view-root"></div> <!-- Elemento para renderizar o conteúdo -->
       </section>
-
-      <aside id="detailsPanel" class="details panel" aria-live="polite">
-        <div class="details-header">
-          <div>
-            <div class="eyebrow">Detalhes</div>
-            <h2 id="detailsTitle">Nada selecionado</h2>
-          </div>
-          <div class="details-actions">
-            <button id="detailsToggle" class="mini-btn" aria-label="Minimizar painel de detalhes">—</button>
-            <button id="detailsClose" class="ghost-btn icon-btn" aria-label="Fechar detalhes">&times;</button>
-          </div>
-        </div>
-        <div id="detailsBody" class="details-body"></div>
-      </aside>
     </main>
-
-    <div id="detailsBackdrop" class="details-backdrop hidden" aria-hidden="true"></div>
   </div>
-
-  <div id="modalBackdrop" class="modal-backdrop hidden">
-    <div class="modal glass" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-      <div class="modal-header">
-        <div>
-          <div class="eyebrow" id="modalEyebrow">Editor</div>
-          <h2 id="modalTitle">Novo</h2>
-        </div>
-        <button id="modalClose" class="mini-btn" aria-label="Fechar">x</button>
-      </div>
-      <div id="modalBody" class="modal-body"></div>
-      <div class="modal-actions">
-        <button id="modalDelete" class="ghost-btn danger hidden">Excluir</button>
-        <button id="modalCancel" class="ghost-btn">Cancelar</button>
-        <button id="modalSave" class="primary-btn">Salvar</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="commandPalette" class="command-palette hidden" role="dialog" aria-modal="true" aria-label="Paleta de comandos">
-    <div class="command-card glass">
-      <input id="commandInput" type="search" aria-label="Buscar comandos" placeholder="Buscar comandos..." />
-      <div id="commandList" class="command-list"></div>
-    </div>
-  </div>
-
-  <div id="toastContainer" class="toast-container"></div>
-
   <script src="app.js"></script>
 </body>
 </html>

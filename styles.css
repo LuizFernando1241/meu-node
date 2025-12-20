@@ -416,7 +416,11 @@ textarea::placeholder {
 .view-root {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
+  padding: 16px;
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
 }
 
 .section {
@@ -1065,6 +1069,17 @@ body.details-open .details-backdrop {
   color: var(--text-3);
   text-align: center;
   background: rgba(255, 255, 255, 0.6);
+}
+
+/* Garantir que o conteúdo seja visível */
+.view-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
 }
 
 @keyframes fadeUp {

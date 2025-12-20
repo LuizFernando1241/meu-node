@@ -1384,7 +1384,8 @@ function renderMain() {
     navigate("/today", { replace: true });
     return;
   }
-  el.viewRoot.innerHTML = "";
+  el.viewRoot.innerHTML = ""; // Certificar-se de que o conteúdo é limpo antes de renderizar
+
   if (route.name === "today") {
     renderTodayView(el.viewRoot);
   } else if (route.name === "inbox") {
@@ -1393,20 +1394,17 @@ function renderMain() {
     renderWeekView(el.viewRoot);
   } else if (route.name === "projects") {
     renderProjectsView(el.viewRoot);
-  } else if (route.name === "project") {
-    renderProjectDetail(el.viewRoot, route.id);
   } else if (route.name === "notes") {
     renderNotesView(el.viewRoot);
-  } else if (route.name === "note") {
-    renderNotesView(el.viewRoot, route.id);
   } else if (route.name === "calendar") {
     renderCalendarView(el.viewRoot);
   } else if (route.name === "areas") {
     renderAreasView(el.viewRoot);
-  } else if (route.name === "area") {
-    renderAreaDetail(el.viewRoot, route.id);
   } else if (route.name === "archive") {
     renderArchiveView(el.viewRoot);
+  } else {
+    const empty = createElement("div", "empty", "Rota não encontrada.");
+    el.viewRoot.append(empty);
   }
 }
 
@@ -2031,77 +2029,6 @@ function renderAreasView(root) {
     areas.forEach((area) => list.append(createAreaCard(area)));
   }
   root.append(list);
-}
-
-function renderAreaDetail(root, areaId) {
-  const area = getArea(areaId);
-  if (!area) {
-    root.append(createElement("div", "empty", "Area nao encontrada."));
-    return;
-  }
-
-  const header = createSection("Resumo da area", "");
-  const nameInput = document.createElement("input");
-  nameInput.value = area.name;
-  nameInput.addEventListener("input", () => {
-    area.name = nameInput.value;
-    touch(area);
-    saveStateDebounced();
-    renderSidebar();
-  });
-  const objectiveInput = document.createElement("textarea");
-  objectiveInput.rows = 3;
-  objectiveInput.value = area.objective || "";
-  objectiveInput.addEventListener("input", () => {
-    area.objective = objectiveInput.value;
-    touch(area);
-    saveStateDebounced();
-  });
-  
-  const deleteBtn = createButton("Deletar area", "ghost-btn danger", () => {
-    if (confirm(`Tem certeza que deseja deletar "${area.name}"? Isto nao deletara seus projetos e tarefas.`)) {
-      deleteArea(area.id);
-      navigate("/areas");
-    }
-  });
-  
-  header.body.append(
-    buildField("Nome", nameInput),
-    buildField("Objetivo", objectiveInput),
-    deleteBtn
-  );
-  root.append(header.section);
-
-  const projects = state.projects.filter((project) => project.areaId === area.id);
-  const tasks = state.tasks.filter(
-    (task) =>
-      task.areaId === area.id && !task.projectId && !task.archived && task.status !== "done"
-  );
-  const notes = state.notes.filter((note) => note.areaId === area.id && !note.archived);
-
-  const projectsSection = createSection("Projetos da area", "");
-  if (!projects.length) {
-    projectsSection.body.append(createElement("div", "list-meta", "Sem projetos."));
-  } else {
-    projects.forEach((project) => projectsSection.body.append(createProjectCard(project)));
-  }
-  root.append(projectsSection.section);
-
-  const tasksSection = createSection("Tarefas sem projeto", "");
-  if (!tasks.length) {
-    tasksSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
-  } else {
-    tasks.forEach((task) => tasksSection.body.append(createTaskRow(task)));
-  }
-  root.append(tasksSection.section);
-
-  const notesSection = createSection("Notas da area", "");
-  if (!notes.length) {
-    notesSection.body.append(createElement("div", "list-meta", "Sem notas."));
-  } else {
-    notes.forEach((note) => notesSection.body.append(createNoteCard(note)));
-  }
-  root.append(notesSection.section);
 }
 
 function renderArchiveView(root) {
