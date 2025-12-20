@@ -54,6 +54,7 @@ app.get("/state", async (req, res) => {
     if (!parsed) return res.status(500).json({ error: "invalid_state" });
     res.json({ state: parsed, updatedAt: Number(row.updated_at) || Date.now() });
   } catch (error) {
+    console.error("Error in GET /state:", error);
     res.status(500).json({ error: "db_error" });
   }
 });
@@ -85,7 +86,8 @@ app.put("/state", async (req, res) => {
     await setStateRow(req.userId, incomingState, updatedAt);
     res.json({ ok: true, updatedAt });
   } catch (error) {
-    res.status(500).json({ error: "db_error" });
+    console.error("Error in PUT /state:", error);
+    res.status(500).json({ error: "db_error", message: process.env.NODE_ENV === "development" ? error.message : undefined });
   }
 });
 

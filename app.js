@@ -90,7 +90,8 @@ const el = {
   commandPalette: document.getElementById("commandPalette"),
   commandInput: document.getElementById("commandInput"),
   commandList: document.getElementById("commandList"),
-  toastContainer: document.getElementById("toastContainer")
+  toastContainer: document.getElementById("toastContainer"),
+  syncStatus: document.getElementById("syncStatus")
 };
 
 const modalState = {
@@ -981,6 +982,9 @@ function uid(prefix) {
 }
 
 function formatDate(date) {
+  if (!date || !(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return new Date().toISOString().slice(0, 10);
+  }
   return date.toISOString().slice(0, 10);
 }
 
@@ -989,11 +993,18 @@ function formatTimeLabel(time) {
 }
 
 function parseDate(value) {
-  if (!value) {
+  if (!value || typeof value !== "string") {
     return null;
   }
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
+  // Parse date safely - handle timezone issues
+  const parts = value.split("-");
+  if (parts.length !== 3) return null;
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+  if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) return null;
+  const date = new Date(year, month, day);
+  return date;
 }
 
 function addDays(date, days) {
@@ -1059,6 +1070,9 @@ function formatDayLabel(date) {
 }
 
 function getWeekStart(date, startsMonday) {
+  if (!date || !(date instanceof Date)) {
+    date = new Date();
+  }
   const day = date.getDay();
   const diff = startsMonday ? (day === 0 ? -6 : 1 - day) : -day;
   return addDays(dateOnly(date), diff);
@@ -1253,7 +1267,7 @@ function getTodayKey() {
 function getOverdueTasks() {
   const today = dateOnly(new Date());
   return state.tasks.filter((task) => {
-    if (task.archived || task.status === "done") {
+    if (task.archived || task.status === "done" || !task.dueDate) {
       return false;
     }
     const due = parseDate(task.dueDate);
@@ -1273,7 +1287,7 @@ function getTodayTasks() {
 
 function getNextDaysTasks(days = 7) {
   const today = dateOnly(new Date());
-  const end = addDays(today, days);
+  const end = addDays(today, days - 1); // -1 para incluir o último dia no intervalo
   return state.tasks.filter((task) => {
     if (task.archived || task.status === "done" || !task.dueDate) {
       return false;
@@ -2172,14 +2186,15 @@ function openTaskModal(data = {}) {
       notes: data.notes || ""
     },
     (formData) => {
-      if (!formData.title.trim()) {
+      const title = (formData.title || "").trim();
+      if (!title) {
         showToast("Titulo obrigatório");
         return;
       }
       if (data.id) {
         const task = getTask(data.id);
         if (task) {
-          task.title = formData.title;
+          task.title = title;
           task.status = formData.status || "todo";
           task.priority = formData.priority || "med";
           task.dueDate = formData.dueDate || "";
@@ -2193,7 +2208,7 @@ function openTaskModal(data = {}) {
           showToast("Tarefa atualizada");
         }
       } else {
-        const task = createTask(formData);
+        const task = createTask({ title, status: formData.status, priority: formData.priority, dueDate: formData.dueDate, dueTime: formData.dueTime, projectId: formData.projectId, areaId: formData.areaId, notes: formData.notes });
         state.tasks.unshift(task);
         saveState();
         renderAll();
@@ -2222,14 +2237,15 @@ function openEventModal(data = {}) {
       notes: data.notes || ""
     },
     (formData) => {
-      if (!formData.title.trim()) {
+      const title = (formData.title || "").trim();
+      if (!title) {
         showToast("Titulo obrigatório");
         return;
       }
       if (data.id) {
         const event = getEvent(data.id);
         if (event) {
-          event.title = formData.title;
+          event.title = title;
           event.date = formData.date || formatDate(new Date());
           event.start = formData.start || "09:00";
           event.duration = Math.max(15, Number(formData.duration) || 60);
@@ -2241,7 +2257,7 @@ function openEventModal(data = {}) {
           showToast("Evento atualizado");
         }
       } else {
-        const event = createEvent(formData);
+        const event = createEvent({ title, date: formData.date, start: formData.start, duration: formData.duration, location: formData.location, notes: formData.notes });
         state.events.push(event);
         saveState();
         renderAll();
@@ -2410,6 +2426,9 @@ function handleCommandPaletteKeydown(event) {
     closeCommandPalette();
     return;
   }
+  if (!commandState.filtered || commandState.filtered.length === 0) {
+    return; // Nenhum comando para navegar
+  }
   if (event.key === "ArrowDown") {
     event.preventDefault();
     commandState.index = (commandState.index + 1) % commandState.filtered.length;
@@ -2559,6 +2578,7 @@ function trapTabKey(event) {
   const focusable = el.modalBackdrop.querySelectorAll(
     "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"
   );
+  if (focusable.length === 0) return; // Sem elementos focáveis
   const first = focusable[0];
   const last = focusable[focusable.length - 1];
   if (event.shiftKey) {
@@ -2906,17 +2926,375 @@ function toggleInboxSelection(id) {
   renderMain();
 }
 
+function handleMobileScroll() {
+  // Hide details panel on mobile when scrolling
+  if (window.innerWidth < 769 && document.body.classList.contains("details-open")) {
+    // Could optionally minimize on mobile scroll
+  }
+}
+
 function handleInboxShortcuts(event) {
-  // Implement shortcut handling if needed
+  // Can be extended for inbox-specific shortcuts in future
 }
 
 function matchesTaskSearch(task, query) {
   if (!query) return true;
+  const projectName = task.projectId ? (getProject(task.projectId)?.name || "") : "";
   return (
     matchesQuery(task.title, query) ||
     matchesQuery(task.notes, query) ||
-    (task.projectId && matchesQuery(getProject(task.projectId)?.name, query))
+    matchesQuery(projectName, query)
   );
+}
+
+// Funções auxiliares para renderização
+function createAreaSelect(value) {
+  const options = state.areas.map((a) => ({ value: a.id, label: a.name }));
+  options.unshift({ value: "", label: "Sem area" });
+  const select = createSelect(options, value || "");
+  return select;
+}
+
+function createProjectSelect(value) {
+  const options = state.projects.map((p) => ({ value: p.id, label: p.name }));
+  options.unshift({ value: "", label: "Sem projeto" });
+  const select = createSelect(options, value || "");
+  return select;
+}
+
+function getScheduledItems(date, time) {
+  return getAgendaItems(date).filter((item) => item.start === time);
+}
+
+function createCalendarChip(item) {
+  const chip = createElement("div", "chip");
+  chip.textContent = item.title;
+  chip.draggable = true;
+  chip.addEventListener("dragstart", (event) => setDragData(event, item.kind, item.id));
+  chip.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (item.kind === "task") {
+      selectItem("task", item.id);
+    } else if (item.kind === "event") {
+      selectItem("event", item.id);
+    }
+  });
+  return chip;
+}
+
+function groupNotesByArea() {
+  const grouped = {};
+  state.notes
+    .filter((n) => !n.archived)
+    .forEach((note) => {
+      const areaId = note.areaId || null;
+      if (!grouped[areaId]) {
+        grouped[areaId] = [];
+      }
+      grouped[areaId].push(note);
+    });
+  return grouped;
+}
+
+function renderProjectKanban(project) {
+  const container = createElement("div", "kanban-board");
+  STATUS_ORDER.forEach((status) => {
+    const column = createElement("div", "kanban-column");
+    const header = createElement("div", "section-header");
+    header.append(
+      createElement("div", "section-title", STATUS_LABELS[status]),
+      createElement("div", "list-meta", "")
+    );
+    column.append(header);
+    const tasks = state.tasks.filter(
+      (t) => t.projectId === project.id && !t.archived && t.status === status
+    );
+    const body = createElement("div", "kanban-body");
+    tasks.forEach((task) => {
+      const card = createTaskCard(task);
+      card.draggable = true;
+      card.addEventListener("dragstart", (event) => setDragData(event, "task", task.id));
+      body.append(card);
+    });
+    attachDropHandlers(body, { status });
+    column.append(body);
+    container.append(column);
+  });
+  return container;
+}
+
+function createBlockEditor(note, block, index) {
+  const wrapper = createElement("div", "block-editor");
+  const header = createElement("div", "block-header");
+  const typeSelect = createSelect(BLOCK_TYPES, block.type);
+  typeSelect.addEventListener("change", () => {
+    block.type = typeSelect.value;
+    touch(note);
+    saveState();
+    renderMain();
+  });
+  const deleteBtn = createButton("Deletar", "ghost-btn danger", () => {
+    note.blocks.splice(index, 1);
+    touch(note);
+    saveState();
+    renderMain();
+  });
+  header.append(typeSelect, deleteBtn);
+  wrapper.append(header);
+
+  const content = createElement("div", "block-content");
+  if (["text", "heading", "quote", "title"].includes(block.type)) {
+    const input = document.createElement("textarea");
+    input.rows = 3;
+    input.value = block.text || "";
+    input.addEventListener("input", () => {
+      block.text = input.value;
+      touch(note);
+      saveStateDebounced();
+    });
+    content.append(input);
+  } else if (["list", "checklist"].includes(block.type)) {
+    const itemList = createElement("div", "list-editor");
+    (block.items || []).forEach((item, idx) => {
+      const itemWrap = createElement("div", "list-item");
+      const input = document.createElement("input");
+      input.value = typeof item === "string" ? item : item.text || "";
+      input.addEventListener("input", () => {
+        if (typeof block.items[idx] === "string") {
+          block.items[idx] = input.value;
+        } else {
+          block.items[idx].text = input.value;
+        }
+        touch(note);
+        saveStateDebounced();
+      });
+      itemWrap.append(input);
+      itemList.append(itemWrap);
+    });
+    content.append(itemList);
+  } else if (block.type === "table") {
+    const tableWrap = createElement("div", "table-editor");
+    tableWrap.append(createElement("div", "list-meta", "Editar tabela..."));
+    content.append(tableWrap);
+  } else if (block.type === "embed") {
+    const input = document.createElement("input");
+    input.placeholder = "URL do embed";
+    input.value = block.url || "";
+    input.addEventListener("input", () => {
+      block.url = input.value;
+      touch(note);
+      saveStateDebounced();
+    });
+    content.append(input);
+  }
+  wrapper.append(content);
+  return wrapper;
+}
+
+function createMilestoneRow(project, milestone) {
+  const row = createElement("div", "task-row");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = milestone.done;
+  checkbox.addEventListener("change", () => {
+    milestone.done = checkbox.checked;
+    touch(project);
+    saveState();
+    renderMain();
+  });
+  const content = createElement("div", "task-content");
+  const title = createElement("div", "task-title");
+  title.textContent = milestone.title;
+  const meta = createElement("div", "list-meta");
+  meta.textContent = milestone.dueDate || "Sem data";
+  content.append(title, meta);
+  const delBtn = createButton("Deletar", "ghost-btn", () => {
+    project.milestones = project.milestones.filter((m) => m.id !== milestone.id);
+    touch(project);
+    saveState();
+    renderMain();
+  });
+  row.append(checkbox, content, delBtn);
+  return row;
+}
+
+function renderCalendarMonth() {
+  const container = createElement("div", "calendar-month");
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + state.ui.calendarMonthOffset;
+  const date = new Date(year, month, 1);
+  
+  const header = createElement("div", "month-header");
+  header.append(createElement("div", "", date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })));
+  container.append(header);
+
+  const grid = createElement("div", "month-grid");
+  const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  for (let i = 1; i <= daysInMonth; i++) {
+    const dayDate = new Date(date.getFullYear(), date.getMonth(), i);
+    const dayCell = createElement("div", "month-day");
+    const dateStr = formatDate(dayDate);
+    dayCell.append(createElement("div", "month-date", String(i)));
+    const events = getAgendaItems(dateStr);
+    if (events.length) {
+      const eventList = createElement("div", "month-events");
+      events.slice(0, 2).forEach((evt) => {
+        eventList.append(createElement("div", "chip", evt.title));
+      });
+      dayCell.append(eventList);
+    }
+    grid.append(dayCell);
+  }
+  container.append(grid);
+  return container;
+}
+
+function renderCalendarWeek() {
+  const container = createElement("div", "calendar-week");
+  const days = getWeekDays(state.ui.calendarWeekOffset);
+  
+  const header = createElement("div", "week-header-row");
+  days.forEach((day) => {
+    const cell = createElement("div", "week-header-cell");
+    cell.append(createElement("div", "day-label", day.label));
+    header.append(cell);
+  });
+  container.append(header);
+
+  getCalendarSlots().forEach((time) => {
+    const row = createElement("div", "week-time-row");
+    const timeCell = createElement("div", "time-label");
+    timeCell.textContent = time;
+    row.append(timeCell);
+    days.forEach((day) => {
+      const cell = createElement("div", "week-cell");
+      const items = getAgendaItems(day.date).filter((item) => item.start === time);
+      items.forEach((item) => {
+        cell.append(createCalendarChip(item));
+      });
+      attachDropHandlers(cell, { date: day.date, time });
+      row.append(cell);
+    });
+    container.append(row);
+  });
+  return container;
+}
+
+function renderArchiveView(root) {
+  const archivedTasks = state.tasks.filter((t) => t.archived);
+  const archivedEvents = state.events.filter((e) => e.archived);
+  const archivedNotes = state.notes.filter((n) => n.archived);
+
+  const tasksSection = createSection("Tarefas arquivadas", `${archivedTasks.length} items`);
+  if (archivedTasks.length === 0) {
+    tasksSection.body.append(createElement("div", "list-meta", "Nenhuma tarefa arquivada."));
+  } else {
+    archivedTasks.forEach((t) => tasksSection.body.append(createTaskRow(t)));
+  }
+  root.append(tasksSection.section);
+
+  const eventsSection = createSection("Eventos arquivados", `${archivedEvents.length} items`);
+  if (archivedEvents.length === 0) {
+    eventsSection.body.append(createElement("div", "list-meta", "Nenhum evento arquivado."));
+  } else {
+    archivedEvents.forEach((e) => eventsSection.body.append(createEventRow(e)));
+  }
+  root.append(eventsSection.section);
+
+  const notesSection = createSection("Notas arquivadas", `${archivedNotes.length} items`);
+  if (archivedNotes.length === 0) {
+    notesSection.body.append(createElement("div", "list-meta", "Nenhuma nota arquivada."));
+  } else {
+    archivedNotes.forEach((n) => {
+      const item = createElement("div", "task-row");
+      item.append(createElement("div", "task-title", n.title));
+      item.addEventListener("click", () => navigate(`/notes/${n.id}`));
+      notesSection.body.append(item);
+    });
+  }
+  root.append(notesSection.section);
+}
+
+function createNotesSidePanel(note) {
+  const panel = createElement("div", "notes-sidepanel");
+  if (!note) {
+    return panel;
+  }
+
+  const areaSelect = createAreaSelect(note.areaId);
+  areaSelect.addEventListener("change", () => {
+    note.areaId = areaSelect.value || null;
+    touch(note);
+    saveState();
+  });
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Arquivar", "ghost-btn", () => {
+      if (confirm("Arquivar esta nota?")) {
+        archiveNote(note);
+        navigate("/notes");
+      }
+    }),
+    createButton("Deletar", "ghost-btn danger", () => {
+      if (confirm("Deletar esta nota?")) {
+        state.notes = state.notes.filter((n) => n.id !== note.id);
+        saveState();
+        navigate("/notes");
+        showToast("Nota deletada");
+      }
+    })
+  );
+
+  panel.append(buildField("Area", areaSelect), actions);
+  return panel;
+}
+
+function deleteArea(areaId) {
+  state.areas = state.areas.filter((a) => a.id !== areaId);
+  state.projects = state.projects.map((p) => (p.areaId === areaId ? { ...p, areaId: null } : p));
+  state.tasks = state.tasks.map((t) => (t.areaId === areaId ? { ...t, areaId: null } : t));
+  saveState();
+}
+
+function selectItem(kind, id) {
+  state.ui.selected = { kind, id };
+  setDetailsOpen(true);
+  renderDetailsPanel();
+}
+
+function clearSelection() {
+  state.ui.selected = { kind: null, id: null };
+  setDetailsOpen(false);
+  renderDetailsPanel();
+}
+
+function renderDetailsPanel() {
+  const selection = getSelectedItem();
+  if (!selection.item) {
+    el.detailsPanel.innerHTML = "";
+    return;
+  }
+  
+  el.detailsTitle.textContent = selection.item.title || selection.item.name || "Detalhe";
+  el.detailsBody.innerHTML = "";
+  
+  const info = createElement("div", "details-info");
+  if (selection.kind === "task") {
+    info.append(
+      createElement("div", "detail-row", `Status: ${STATUS_LABELS[selection.item.status]}`),
+      createElement("div", "detail-row", `Prioridade: ${PRIORITY_LABELS[selection.item.priority]}`),
+      selection.item.dueDate ? createElement("div", "detail-row", `Data: ${selection.item.dueDate}`) : null
+    );
+  } else if (selection.kind === "event") {
+    info.append(
+      createElement("div", "detail-row", `Data: ${selection.item.date}`),
+      createElement("div", "detail-row", `Hora: ${selection.item.start}`),
+      createElement("div", "detail-row", `Duração: ${selection.item.duration}min`)
+    );
+  }
+  el.detailsBody.append(info);
 }
 
 function showToast(message) {
