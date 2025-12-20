@@ -1,6 +1,6 @@
 [build]
-  publish = "."
-  command = ""
+  command = "npm run build"
+  publish = "public"
 
 [[redirects]]
   from = "/*"

@@ -48,20 +48,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (!ASSET_URLS.has(url.href)) {
-    return;
-  }
-
   event.respondWith(
-    caches.match(url.href).then((cached) => {
+    caches.match(event.request).then((cached) => {
       if (cached) return cached;
       return fetch(event.request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(url.href, copy));
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
           return response;
         })
-        .catch(() => cached);
+        .catch(() => cached || caches.match("./index.html")); // Garantir fallback
     })
   );
 });

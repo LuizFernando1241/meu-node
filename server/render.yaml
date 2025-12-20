@@ -1,24 +1,8 @@
 services:
   - type: web
-    name: meu-node-api
+    name: meu-node
     env: node
+    buildCommand: "npm install"
+    startCommand: "node server/server.js"
     plan: free
-    rootDir: .
-    buildCommand: npm install
-    startCommand: npm start
-    envVars:
-      - key: NODE_VERSION
-        value: 18
-      - key: PORT
-        value: 10000
-      - key: CORS_ORIGIN
-        value: https://seu-front.netlify.app
-      - key: STATE_KEY
-        value: state
-      - key: API_KEY
-        value: sua-chave
-      - key: DEFAULT_USER_ID
-        value: single-user
-      # Configure tambem:
-      # - TURSO_URL (obrigatorio)
-      # - TURSO_AUTH_TOKEN (obrigatorio)
+    region: oregon

@@ -2145,7 +2145,7 @@ function renderDetailsPanel() {
     empty.innerHTML = "<h3>Selecione um item</h3><p>Detalhes aparecem aqui.</p>";
     el.detailsBody.append(empty);
     appendQuickCapturePanel();
-+    updateDetailsToggleButton();
+    updateDetailsToggleButton();
     return;
   }
 
@@ -2159,50 +2159,46 @@ function renderDetailsPanel() {
     renderNoteDetails(selection.item);
   }
   appendQuickCapturePanel();
-+  updateDetailsToggleButton();
+  updateDetailsToggleButton();
 }
 
-function setDetailsOpen(isOpen) {
-  document.body.classList.toggle("details-open", isOpen);
-  if (el.detailsBackdrop) {
-    el.detailsBackdrop.classList.toggle("hidden", !isOpen);
-    el.detailsBackdrop.setAttribute("aria-hidden", String(!isOpen));
-  }
-  if (el.detailsPanel) {
-    el.detailsPanel.setAttribute("aria-hidden", String(!isOpen));
-  }
-  // if panel is being closed fully, also clear minimized visual state
-  if (!isOpen) {
-    document.body.classList.remove("details-minimized");
+// Remover chamadas duplicadas em renderDetailsPanel
+function renderDetailsPanel() {
+  const selection = getSelectedItem();
+  el.detailsBody.innerHTML = "";
+
+  if (!selection.item) {
+    el.detailsTitle.textContent = "Nada selecionado";
+    setDetailsOpen(false);
+    const empty = createElement("div", "empty");
+    empty.innerHTML = "<h3>Selecione um item</h3><p>Detalhes aparecem aqui.</p>";
+    el.detailsBody.append(empty);
+    appendQuickCapturePanel();
     updateDetailsToggleButton();
+    return;
   }
+
+  setDetailsOpen(true);
+
+  if (selection.kind === "task") {
+    renderTaskDetails(selection.item);
+  } else if (selection.kind === "event") {
+    renderEventDetails(selection.item);
+  } else if (selection.kind === "note") {
+    renderNoteDetails(selection.item);
+  }
+  appendQuickCapturePanel();
+  updateDetailsToggleButton();
 }
 
-// Hide details panel on mobile view when user scrolls/touch-moving to avoid it covering content
+// Completar a lógica de handleMobileScroll
 function handleMobileScroll() {
   try {
-    if (window.innerWidth > 768) {
-      return;
-    }
-    if (!document.body.classList.contains("details-open")) {
-      return;
-    }
-    // keep selection but hide the panel so it doesn't cover 1/3 of the screen
-    setDetailsOpen(false);
+    if (window.innerWidth > 768) return; // Ignorar em telas grandes
+    if (!document.body.classList.contains("details-open")) return;
+    setDetailsOpen(false); // Fechar o painel de detalhes
   } catch (e) {
-    // noop
-  }
-}
-
-// Toggle minimized visual state (keeps the item selected but frees space)
-function toggleDetailsMinimize() {
-  const isMin = document.body.classList.toggle("details-minimized");
-  updateDetailsToggleButton();
-  // when minimizing ensure header remains visible even if previously closed
-  if (isMin && !document.body.classList.contains("details-open")) {
-    document.body.classList.add("details-open");
-    if (el.detailsBackdrop) { el.detailsBackdrop.classList.add("hidden"); el.detailsBackdrop.setAttribute("aria-hidden", "true"); }
-    if (el.detailsPanel) { el.detailsPanel.setAttribute("aria-hidden", "false"); }
+    console.error("Erro ao lidar com o scroll móvel:", e);
   }
 }
 
@@ -2211,7 +2207,10 @@ function updateDetailsToggleButton() {
   if (!el.detailsToggle) return;
   const minimized = document.body.classList.contains("details-minimized");
   el.detailsToggle.textContent = minimized ? "▴" : "—";
-  el.detailsToggle.setAttribute("aria-label", minimized ? "Restaurar painel de detalhes" : "Minimizar painel de detalhes");
+  el.detailsToggle.setAttribute(
+    "aria-label",
+    minimized ? "Restaurar painel de detalhes" : "Minimizar painel de detalhes"
+  );
 }
 
 function renderTaskDetails(task) {
@@ -3613,12 +3612,6 @@ function archiveInboxItem(id) {
   saveState();
   renderMain();
   showToast("Item arquivado");
-}
-
-function deleteInboxItem(id) {
-  state.inbox = state.inbox.filter((item) => item.id !== id);
-  saveState();
-  renderMain();
 }
 
 function deleteInboxItem(id) {

@@ -31,9 +31,14 @@ app.use(
   })
 );
 app.use(express.json({ limit: "2mb" }));
+app.use(express.static("public"));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
+});
+
+app.get("/", (req, res) => {
+  res.send("Servidor funcionando!");
 });
 
 app.use(authRequired);

@@ -38,10 +38,8 @@
   </style>
 </head>
 <body>
-  <div class="bg-aurora"></div>
-  <div class="bg-grid"></div>
-
-  <div class="app" id="appRoot">
+  <!-- Adicionar role e aria-label para melhorar acessibilidade -->
+  <div class="app" id="appRoot" role="application" aria-label="Meu Node">
     <header class="topbar panel">
       <div class="brand">
         <div class="logo-mark"></div>
@@ -54,8 +52,21 @@
       <div class="search-wrap">
         <div class="search-input">
           <span class="search-icon">/</span>
-          <input id="globalSearch" type="search" aria-label="Busca global" placeholder="Buscar tarefas, eventos, notas, projetos..." />
-          <button id="searchClear" class="icon-btn ghost-btn" aria-label="Limpar busca">&times;</button>
+          <input
+            id="globalSearch"
+            type="search"
+            aria-label="Busca global"
+            placeholder="Buscar tarefas, eventos, notas, projetos..."
+            autocomplete="off"
+          />
+          <button
+            id="searchClear"
+            class="icon-btn ghost-btn"
+            aria-label="Limpar busca"
+            title="Limpar busca"
+          >
+            &times;
+          </button>
         </div>
         <div class="search-hint">Ctrl/Cmd + K</div>
       </div>

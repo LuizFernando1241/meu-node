@@ -61,7 +61,15 @@ textarea {
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface-3);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+button:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 input:focus,
@@ -70,6 +78,11 @@ textarea:focus {
   outline: none;
   border-color: rgba(242, 106, 79, 0.7);
   box-shadow: 0 0 0 2px rgba(242, 106, 79, 0.2);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 textarea {
