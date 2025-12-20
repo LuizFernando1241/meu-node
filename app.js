@@ -69,7 +69,6 @@ const el = {
   countWeek: document.getElementById("countWeek"),
   countProjects: document.getElementById("countProjects"),
   countNotes: document.getElementById("countNotes"),
-  syncStatus: document.getElementById("syncStatus"),
   pageEyebrow: document.getElementById("pageEyebrow"),
   pageTitle: document.getElementById("pageTitle"),
   pageActions: document.getElementById("pageActions"),
@@ -2058,7 +2057,19 @@ function renderAreaDetail(root, areaId) {
     touch(area);
     saveStateDebounced();
   });
-  header.body.append(buildField("Nome", nameInput), buildField("Objetivo", objectiveInput));
+  
+  const deleteBtn = createButton("Deletar area", "ghost-btn danger", () => {
+    if (confirm(`Tem certeza que deseja deletar "${area.name}"? Isto nao deletara seus projetos e tarefas.`)) {
+      deleteArea(area.id);
+      navigate("/areas");
+    }
+  });
+  
+  header.body.append(
+    buildField("Nome", nameInput),
+    buildField("Objetivo", objectiveInput),
+    deleteBtn
+  );
   root.append(header.section);
 
   const projects = state.projects.filter((project) => project.areaId === area.id);
@@ -2134,7 +2145,7 @@ function renderDetailsPanel() {
     empty.innerHTML = "<h3>Selecione um item</h3><p>Detalhes aparecem aqui.</p>";
     el.detailsBody.append(empty);
     appendQuickCapturePanel();
-    updateDetailsToggleButton();
++    updateDetailsToggleButton();
     return;
   }
 
@@ -2148,7 +2159,7 @@ function renderDetailsPanel() {
     renderNoteDetails(selection.item);
   }
   appendQuickCapturePanel();
-  updateDetailsToggleButton();
++  updateDetailsToggleButton();
 }
 
 function setDetailsOpen(isOpen) {
@@ -2167,12 +2178,27 @@ function setDetailsOpen(isOpen) {
   }
 }
 
+// Hide details panel on mobile view when user scrolls/touches the page.
+function handleMobileScroll() {
+  try {
+    if (window.innerWidth > 768) {
+      return;
+    }
+    if (!document.body.classList.contains("details-open")) {
+      return;
+    }
+    // keep selection but hide the panel so it doesn't cover 1/3 of the screen
+    setDetailsOpen(false);
+  } catch (e) {
+    // noop
+  }
+}
+
 // Toggle minimized visual state (keeps the item selected but frees space)
 function toggleDetailsMinimize() {
   const isMin = document.body.classList.toggle("details-minimized");
   updateDetailsToggleButton();
-  // when minimizing we ensure details panel is visible state-wise
-  // but if it was fully closed, open it to show the minimized header
+  // when minimizing ensure header remains visible even if previously closed
   if (isMin && !document.body.classList.contains("details-open")) {
     document.body.classList.add("details-open");
     if (el.detailsBackdrop) { el.detailsBackdrop.classList.add("hidden"); el.detailsBackdrop.setAttribute("aria-hidden", "true"); }
@@ -2186,49 +2212,6 @@ function updateDetailsToggleButton() {
   const minimized = document.body.classList.contains("details-minimized");
   el.detailsToggle.textContent = minimized ? "▴" : "—";
   el.detailsToggle.setAttribute("aria-label", minimized ? "Restaurar painel de detalhes" : "Minimizar painel de detalhes");
-}
-
-// ensure UI reflects minimized state when rendering details
-function renderDetailsPanel() {
-  const selection = getSelectedItem();
-  el.detailsBody.innerHTML = "";
-
-  if (!selection.item) {
-    el.detailsTitle.textContent = "Nada selecionado";
-    setDetailsOpen(false);
-    const empty = createElement("div", "empty");
-    empty.innerHTML = "<h3>Selecione um item</h3><p>Detalhes aparecem aqui.</p>";
-    el.detailsBody.append(empty);
-    appendQuickCapturePanel();
-    updateDetailsToggleButton();
-    return;
-  }
-
-  setDetailsOpen(true);
-
-  if (selection.kind === "task") {
-    renderTaskDetails(selection.item);
-  } else if (selection.kind === "event") {
-    renderEventDetails(selection.item);
-  } else if (selection.kind === "note") {
-    renderNoteDetails(selection.item);
-  }
-  appendQuickCapturePanel();
-  updateDetailsToggleButton();
-}
-
-function selectItem(kind, id) {
-  state.ui.selected = { kind, id };
-  saveState();
-  renderMain();
-  renderDetailsPanel();
-}
-
-function clearSelection() {
-  state.ui.selected = { kind: null, id: null };
-  saveState();
-  renderMain();
-  renderDetailsPanel();
 }
 
 function renderTaskDetails(task) {
@@ -2682,7 +2665,7 @@ function createTaskRow(task, options = {}) {
           saveState();
           renderAll();
         }),
-        createButton(task.focus ? "Remover foco" : "Foco", "ghost-btn", (event) => {
+        createButton("Definir foco", "ghost-btn", (event) => {
           event.stopPropagation();
           toggleTaskFocus(task);
         })
@@ -2880,915 +2863,249 @@ function createAreaCard(area) {
   if (area.objective) {
     card.append(createElement("div", "card-meta", area.objective));
   }
+  
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Editar", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openAreaEditModal(area);
+    }),
+    createButton("Deletar", "ghost-btn danger", (event) => {
+      event.stopPropagation();
+      if (confirm(`Tem certeza que deseja deletar "${area.name}"?`)) {
+        deleteArea(area.id);
+      }
+    })
+  );
+  card.append(actions);
+  
   card.addEventListener("click", () => navigate(`/areas/${area.id}`));
   return card;
 }
 
-function createNoteCard(note) {
-  const card = createElement("div", "card");
-  card.append(createElement("div", "card-title", note.title));
-  const area = note.areaId ? getArea(note.areaId) : null;
-  if (area) {
-    card.append(createElement("div", "card-meta", area.name));
+function renderAreaDetail(root, areaId) {
+  const area = getArea(areaId);
+  if (!area) {
+    root.append(createElement("div", "empty", "Area nao encontrada."));
+    return;
   }
-  if (note.archived) {
-    const actions = createElement("div", "card-actions");
-    actions.append(
-      createButton("Restaurar", "ghost-btn", (event) => {
-        event.stopPropagation();
-        note.archived = false;
-        touch(note);
-        saveState();
-        renderAll();
-      })
-    );
-    card.append(actions);
-  }
-  card.addEventListener("click", () => navigate(`/notes/${note.id}`));
-  return card;
-}
 
-function createChecklistEditor(task) {
-  const wrapper = createElement("div");
-  const list = createElement("div");
-  task.checklist.forEach((item) => {
-    const row = createElement("div", "task-row");
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = Boolean(item.done);
-    checkbox.addEventListener("change", () => {
-      item.done = checkbox.checked;
-      touch(task);
-      saveState();
-    });
-    const input = document.createElement("input");
-    input.value = item.text || "";
-    input.addEventListener("input", () => {
-      item.text = input.value;
-      touch(task);
-      saveStateDebounced();
-    });
-    row.append(checkbox, input);
-    list.append(row);
+  const header = createSection("Resumo da area", "");
+  const nameInput = document.createElement("input");
+  nameInput.value = area.name;
+  nameInput.addEventListener("input", () => {
+    area.name = nameInput.value;
+    touch(area);
+    saveStateDebounced();
+    renderSidebar();
   });
-  const add = createButton("+", "ghost-btn", () => {
-    task.checklist.push({ id: uid("sub"), text: "", done: false });
-    touch(task);
-    saveState();
-    renderDetailsPanel();
-  });
-  wrapper.append(list, add);
-  return wrapper;
-}
-
-function createBlockEditor(note, block, index) {
-  const wrap = createElement("div", "block");
-  const toolbar = createElement("div", "block-toolbar");
-
-  const typeSelect = createSelect(BLOCK_TYPES, block.type);
-  typeSelect.addEventListener("change", () => {
-    block.type = typeSelect.value;
-    resetBlockForType(block);
-    touch(note);
-    saveState();
-    renderMain();
-  });
-
-  const moveUp = createButton("Cima", "ghost-btn", () => moveBlock(note, index, -1));
-  const moveDown = createButton("Baixo", "ghost-btn", () => moveBlock(note, index, 1));
-  const toTask = createButton("Converter em tarefa", "ghost-btn", () =>
-    convertBlockToTask(note, block)
-  );
-  const remove = createButton("Excluir", "ghost-btn danger", () => {
-    note.blocks.splice(index, 1);
-    touch(note);
-    saveState();
-    renderMain();
-  });
-
-  toolbar.append(typeSelect, moveUp, moveDown, toTask, remove);
-  wrap.append(toolbar);
-
-  const content = createBlockContent(note, block);
-  wrap.append(content);
-  return wrap;
-}
-
-function createBlockContent(note, block) {
-  const container = createElement("div");
-  if (["title", "heading"].includes(block.type)) {
-    const input = document.createElement("input");
-    input.value = block.text || "";
-    input.addEventListener("input", () => {
-      block.text = input.value;
-      touch(note);
-      saveStateDebounced();
-    });
-    container.append(input);
-  } else if (["text", "quote"].includes(block.type)) {
-    const input = document.createElement("textarea");
-    input.rows = 3;
-    input.value = block.text || "";
-    input.addEventListener("input", () => {
-      block.text = input.value;
-      touch(note);
-      saveStateDebounced();
-    });
-    container.append(input);
-  } else if (block.type === "list") {
-    const input = document.createElement("textarea");
-    input.rows = 3;
-    input.value = (block.items || []).join("\n");
-    input.addEventListener("input", () => {
-      block.items = input.value
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
-      touch(note);
-      saveStateDebounced();
-    });
-    container.append(input);
-  } else if (block.type === "checklist") {
-    const list = createElement("div");
-    (block.items || []).forEach((item) => {
-      const row = createElement("div", "task-row");
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = Boolean(item.done);
-      checkbox.addEventListener("change", () => {
-        item.done = checkbox.checked;
-        touch(note);
-        saveStateDebounced();
-      });
-      const input = document.createElement("input");
-      input.value = item.text || "";
-      input.addEventListener("input", () => {
-        item.text = input.value;
-        touch(note);
-        saveStateDebounced();
-      });
-      row.append(checkbox, input);
-      list.append(row);
-    });
-    const add = createButton("Adicionar item", "ghost-btn", () => {
-      block.items = block.items || [];
-      block.items.push({ id: uid("check"), text: "", done: false });
-      touch(note);
-      saveState();
-      renderMain();
-    });
-    container.append(list, add);
-  } else if (block.type === "table") {
-    const input = document.createElement("textarea");
-    input.rows = 4;
-    input.value = (block.rows || []).map((row) => row.join(" | ")).join("\n");
-    input.addEventListener("input", () => {
-      block.rows = input.value
-        .split("\n")
-        .map((line) => line.split("|").map((cell) => cell.trim()))
-        .filter((row) => row.length && row[0]);
-      touch(note);
-      saveStateDebounced();
-    });
-    container.append(input);
-  } else if (block.type === "divider") {
-    container.append(document.createElement("hr"));
-  } else if (block.type === "embed") {
-    const input = document.createElement("input");
-    input.placeholder = "https://...";
-    input.value = block.url || "";
-    input.addEventListener("input", () => {
-      block.url = input.value;
-      touch(note);
-      saveStateDebounced();
-    });
-    container.append(input);
-  }
-  return container;
-}
-
-function createMilestoneRow(project, milestone) {
-  const row = createElement("div", "task-row");
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  checkbox.checked = Boolean(milestone.done);
-  checkbox.addEventListener("change", () => {
-    milestone.done = checkbox.checked;
-    touch(project);
-    saveState();
-  });
-  const input = document.createElement("input");
-  input.value = milestone.title || "";
-  input.addEventListener("input", () => {
-    milestone.title = input.value;
-    touch(project);
+  const objectiveInput = document.createElement("textarea");
+  objectiveInput.rows = 3;
+  objectiveInput.value = area.objective || "";
+  objectiveInput.addEventListener("input", () => {
+    area.objective = objectiveInput.value;
+    touch(area);
     saveStateDebounced();
   });
-  const dateInput = document.createElement("input");
-  dateInput.type = "date";
-  dateInput.value = milestone.dueDate || "";
-  dateInput.addEventListener("change", () => {
-    milestone.dueDate = dateInput.value;
-    touch(project);
-    saveStateDebounced();
+  
+  const deleteBtn = createButton("Deletar area", "ghost-btn danger", () => {
+    if (confirm(`Tem certeza que deseja deletar "${area.name}"? Isto nao deletara seus projetos e tarefas.`)) {
+      deleteArea(area.id);
+      navigate("/areas");
+    }
   });
-  row.append(checkbox, input, dateInput);
-  return row;
-}
-
-function createCalendarChip(item) {
-  const chip = createElement("div", "calendar-item");
-  const title = createElement("div", "", item.title);
-  const meta = createElement(
-    "div",
-    "list-meta",
-    `${formatTimeLabel(item.start)} / ${item.duration || 60}m`
+  
+  header.body.append(
+    buildField("Nome", nameInput),
+    buildField("Objetivo", objectiveInput),
+    deleteBtn
   );
-  const handle = createElement("div", "resize-handle", "||");
-  chip.append(title, meta, handle);
-  chip.draggable = true;
-  chip.addEventListener("dragstart", (event) => setDragData(event, item.kind, item.id));
-  chip.addEventListener("click", () => selectItem(item.kind, item.id));
-  handle.draggable = true;
-  handle.addEventListener("dragstart", (event) => {
-    event.stopPropagation();
-    setDragData(event, item.kind, item.id, "resize", item.start || "");
-  });
-  return chip;
-}
+  root.append(header.section);
 
-function resetBlockForType(block) {
-  block.text = "";
-  block.items = [];
-  block.rows = [];
-  block.url = "";
-  if (block.type === "checklist") {
-    block.items = [];
-  }
-  if (block.type === "list") {
-    block.items = [];
-  }
-  if (block.type === "table") {
-    block.rows = [];
-  }
-  if (block.type === "embed") {
-    block.url = "";
-  }
-}
+  const projects = state.projects.filter((project) => project.areaId === area.id);
+  const tasks = state.tasks.filter(
+    (task) =>
+      task.areaId === area.id && !task.projectId && !task.archived && task.status !== "done"
+  );
+  const notes = state.notes.filter((note) => note.areaId === area.id && !note.archived);
 
-function moveBlock(note, index, direction) {
-  const target = index + direction;
-  if (target < 0 || target >= note.blocks.length) {
-    return;
-  }
-  const [block] = note.blocks.splice(index, 1);
-  note.blocks.splice(target, 0, block);
-  touch(note);
-  saveState();
-  renderMain();
-}
-
-function convertBlockToTask(note, block) {
-  const text = getBlockText(block);
-  if (!text) {
-    showToast("Bloco vazio.");
-    return;
-  }
-  const task = createTask({
-    title: text,
-    sourceNoteId: note.id,
-    linkedNoteId: note.id
-  });
-  state.tasks.unshift(task);
-  saveState();
-  showToast("Tarefa criada a partir da nota.");
-  renderMain();
-}
-
-function toggleInboxSelection(id) {
-  const selection = new Set(state.ui.inboxSelection);
-  if (selection.has(id)) {
-    selection.delete(id);
+  const projectsSection = createSection("Projetos da area", "");
+  if (!projects.length) {
+    projectsSection.body.append(createElement("div", "list-meta", "Sem projetos."));
   } else {
-    selection.add(id);
+    projects.forEach((project) => projectsSection.body.append(createProjectCard(project)));
   }
-  state.ui.inboxSelection = Array.from(selection);
-  saveState();
-  renderMain();
+  root.append(projectsSection.section);
+
+  const tasksSection = createSection("Tarefas sem projeto", "");
+  if (!tasks.length) {
+    tasksSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+  } else {
+    tasks.forEach((task) => tasksSection.body.append(createTaskRow(task)));
+  }
+  root.append(tasksSection.section);
+
+  const notesSection = createSection("Notas da area", "");
+  if (!notes.length) {
+    notesSection.body.append(createElement("div", "list-meta", "Sem notas."));
+  } else {
+    notes.forEach((note) => notesSection.body.append(createNoteCard(note)));
+  }
+  root.append(notesSection.section);
 }
 
-function bulkArchiveInbox(ids) {
-  ids.forEach((id) => archiveInboxItem(id));
-  state.ui.inboxSelection = [];
-  saveState();
-  renderMain();
+function renderArchiveView(root) {
+  const archivedTasks = state.tasks.filter((task) => task.archived);
+  const archivedEvents = state.events.filter((event) => event.archived);
+  const archivedNotes = state.notes.filter((note) => note.archived);
+
+  const taskSection = createSection("Tarefas arquivadas", "");
+  if (!archivedTasks.length) {
+    taskSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+  } else {
+    archivedTasks.forEach((task) => taskSection.body.append(createTaskRow(task)));
+  }
+  root.append(taskSection.section);
+
+  const eventSection = createSection("Eventos arquivados", "");
+  if (!archivedEvents.length) {
+    eventSection.body.append(createElement("div", "list-meta", "Sem eventos."));
+  } else {
+    archivedEvents.forEach((event) => eventSection.body.append(createEventRow(event)));
+  }
+  root.append(eventSection.section);
+
+  const noteSection = createSection("Notas arquivadas", "");
+  if (!archivedNotes.length) {
+    noteSection.body.append(createElement("div", "list-meta", "Sem notas."));
+  } else {
+    archivedNotes.forEach((note) => noteSection.body.append(createNoteCard(note)));
+  }
+  root.append(noteSection.section);
 }
 
-function bulkDeleteInbox(ids) {
-  ids.forEach((id) => deleteInboxItem(id));
-  state.ui.inboxSelection = [];
-  saveState();
-  renderMain();
-}
+function renderDetailsPanel() {
+  const selection = getSelectedItem();
+  el.detailsBody.innerHTML = "";
 
-function archiveInboxItem(id) {
-  state.inbox = state.inbox.filter((item) => item.id !== id);
-  showToast("Item arquivado.");
-  saveState();
-  renderMain();
-}
-
-function deleteInboxItem(id) {
-  state.inbox = state.inbox.filter((item) => item.id !== id);
-  showToast("Item removido.");
-  saveState();
-  renderMain();
-}
-
-function handleInboxShortcuts(event) {
-  const route = parseRoute(state.ui.route);
-  if (!route || route.name !== "inbox") {
+  if (!selection.item) {
+    el.detailsTitle.textContent = "Nada selecionado";
+    setDetailsOpen(false);
+    const empty = createElement("div", "empty");
+    empty.innerHTML = "<h3>Selecione um item</h3><p>Detalhes aparecem aqui.</p>";
+    el.detailsBody.append(empty);
+    appendQuickCapturePanel();
++    updateDetailsToggleButton();
     return;
   }
-  if (["input", "textarea", "select"].includes(document.activeElement?.tagName?.toLowerCase())) {
-    return;
+
+  setDetailsOpen(true);
+
+  if (selection.kind === "task") {
+    renderTaskDetails(selection.item);
+  } else if (selection.kind === "event") {
+    renderEventDetails(selection.item);
+  } else if (selection.kind === "note") {
+    renderNoteDetails(selection.item);
   }
-  const key = event.key.toLowerCase();
-  if (!["t", "n", "e"].includes(key)) {
-    return;
+  appendQuickCapturePanel();
++  updateDetailsToggleButton();
+}
+
+function setDetailsOpen(isOpen) {
+  document.body.classList.toggle("details-open", isOpen);
+  if (el.detailsBackdrop) {
+    el.detailsBackdrop.classList.toggle("hidden", !isOpen);
+    el.detailsBackdrop.setAttribute("aria-hidden", String(!isOpen));
   }
-  event.preventDefault();
-  const kind = key === "t" ? "task" : key === "n" ? "note" : "event";
-  if (state.ui.inboxSelection.length) {
-    openBulkProcessModal(state.ui.inboxSelection, { kind });
-    return;
+  if (el.detailsPanel) {
+    el.detailsPanel.setAttribute("aria-hidden", String(!isOpen));
   }
-  const activeId = state.ui.inboxActiveId || (state.inbox[0] ? state.inbox[0].id : null);
-  if (!activeId) {
-    return;
-  }
-  const item = state.inbox.find((entry) => entry.id === activeId);
-  if (item) {
-    openProcessModal(item, { kind });
+  // if panel is being closed fully, also clear minimized visual state
+  if (!isOpen) {
+    document.body.classList.remove("details-minimized");
+    updateDetailsToggleButton();
   }
 }
 
-function toggleTaskFocus(task) {
-  if (!task.focus && countFocusTasks() >= 3) {
-    showToast("Limite de 3 focos.");
-    return;
-  }
-  task.focus = !task.focus;
-  touch(task);
-  saveState();
-  renderMain();
-}
-
-function snoozeTask(task, days) {
-  const base = task.dueDate ? parseDate(task.dueDate) : dateOnly(new Date());
-  const next = addDays(base || new Date(), days);
-  task.dueDate = formatDate(next);
-  task.dueTime = "";
-  task.timeBlock = null;
-  touch(task);
-  saveState();
-  renderMain();
-}
-
-function archiveTask(task) {
-  task.archived = true;
-  touch(task);
-  saveState();
-  clearSelection();
-  renderMain();
-}
-
-function archiveEvent(event) {
-  event.archived = true;
-  touch(event);
-  saveState();
-  clearSelection();
-  renderMain();
-}
-
-function archiveNote(note) {
-  note.archived = true;
-  touch(note);
-  saveState();
-  clearSelection();
-  renderMain();
-}
-
-function matchesTaskSearch(task, query) {
-  if (!query) {
-    return true;
-  }
-  const project = task.projectId ? getProject(task.projectId) : null;
-  const area = task.areaId ? getArea(task.areaId) : null;
-  const haystack = [
-    task.title,
-    task.notes,
-    project ? project.name : "",
-    area ? area.name : ""
-  ]
-    .join(" ")
-    .toLowerCase();
-  return haystack.includes(query);
-}
-
-function matchesEventSearch(event, query) {
-  if (!query) {
-    return true;
-  }
-  const project = event.projectId ? getProject(event.projectId) : null;
-  const area = event.areaId ? getArea(event.areaId) : null;
-  const haystack = [
-    event.title,
-    event.notes,
-    event.location,
-    project ? project.name : "",
-    area ? area.name : ""
-  ]
-    .join(" ")
-    .toLowerCase();
-  return haystack.includes(query);
-}
-
-function matchesNoteSearch(note, query) {
-  if (!query) {
-    return true;
-  }
-  const blockText = (note.blocks || []).map((block) => getBlockText(block)).join(" ");
-  const haystack = [note.title, blockText].join(" ").toLowerCase();
-  return haystack.includes(query);
-}
-
-function setDragData(event, kind, id, mode = "move", startTime = "") {
-  if (event.dataTransfer) {
-    const payload = `${mode}|${kind}|${id}|${startTime || ""}`;
-    event.dataTransfer.setData("text/plain", payload);
-    event.dataTransfer.effectAllowed = "move";
-  }
-}
-
-function parseDragData(event) {
-  if (!event.dataTransfer) {
-    return null;
-  }
-  const raw = event.dataTransfer.getData("text/plain");
-  if (!raw) {
-    return null;
-  }
-  if (raw.includes("|")) {
-    const [mode, kind, id, start] = raw.split("|");
-    if (!mode || !kind || !id) {
-      return null;
-    }
-    return { mode, kind, id, start: start || "" };
-  }
-  if (raw.includes(":")) {
-    const [kind, id] = raw.split(":");
-    if (!kind || !id) {
-      return null;
-    }
-    return { mode: "move", kind, id, start: "" };
-  }
-  return null;
-}
-
-function attachDropHandlers(node, { date, time }) {
-  let dragDepth = 0;
-  node.addEventListener("dragover", (event) => {
-    event.preventDefault();
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = "move";
-    }
-  });
-  node.addEventListener("dragenter", () => {
-    dragDepth += 1;
-    node.classList.add("dropping");
-  });
-  node.addEventListener("dragleave", () => {
-    dragDepth = Math.max(0, dragDepth - 1);
-    if (dragDepth === 0) {
-      node.classList.remove("dropping");
-    }
-  });
-  node.addEventListener("drop", (event) => {
-    event.preventDefault();
-    dragDepth = 0;
-    node.classList.remove("dropping");
-    const data = parseDragData(event);
-    if (!data) {
+// Hide details panel on mobile view when user scrolls/touch-moving to avoid it covering content
+function handleMobileScroll() {
+  try {
+    if (window.innerWidth > 768) {
       return;
     }
-    if (data.mode === "resize") {
-      if (time) {
-        resizeSchedule(data.kind, data.id, data.start, time);
-      }
+    if (!document.body.classList.contains("details-open")) {
       return;
     }
-    if (data.kind === "task") {
-      const task = getTask(data.id);
-      if (!task) {
-        return;
-      }
-      scheduleTask(task, date, time);
-    }
-    if (data.kind === "event") {
-      const eventItem = getEvent(data.id);
-      if (!eventItem) {
-        return;
-      }
-      scheduleEvent(eventItem, date, time);
-    }
-  });
-}
-
-function scheduleTask(task, date, time) {
-  task.dueDate = date || task.dueDate;
-  if (time) {
-    task.timeBlock = {
-      date,
-      start: time,
-      duration: task.timeBlock ? task.timeBlock.duration : 60
-    };
-  } else {
-    task.timeBlock = null;
+    // keep selection but hide the panel so it doesn't cover 1/3 of the screen
+    setDetailsOpen(false);
+  } catch (e) {
+    // noop
   }
-  touch(task);
-  saveState();
-  renderAll();
 }
 
-function scheduleEvent(eventItem, date, time) {
-  if (date) {
-    eventItem.date = date;
+// Toggle minimized visual state (keeps the item selected but frees space)
+function toggleDetailsMinimize() {
+  const isMin = document.body.classList.toggle("details-minimized");
+  updateDetailsToggleButton();
+  // when minimizing ensure header remains visible even if previously closed
+  if (isMin && !document.body.classList.contains("details-open")) {
+    document.body.classList.add("details-open");
+    if (el.detailsBackdrop) { el.detailsBackdrop.classList.add("hidden"); el.detailsBackdrop.setAttribute("aria-hidden", "true"); }
+    if (el.detailsPanel) { el.detailsPanel.setAttribute("aria-hidden", "false"); }
   }
-  if (time) {
-    eventItem.start = time;
-  }
-  touch(eventItem);
-  saveState();
-  renderAll();
 }
 
-function getScheduledItems(date, time) {
-  const items = [];
-  state.events.forEach((eventItem) => {
-    if (!eventItem.archived && eventItem.date === date && eventItem.start === time) {
-      items.push({
-        kind: "event",
-        id: eventItem.id,
-        title: eventItem.title,
-        start: eventItem.start,
-        duration: eventItem.duration
-      });
-    }
-  });
-  state.tasks.forEach((task) => {
-    if (
-      !task.archived &&
-      task.status !== "done" &&
-      task.timeBlock &&
-      task.timeBlock.date === date &&
-      task.timeBlock.start === time
-    ) {
-      items.push({
-        kind: "task",
-        id: task.id,
-        title: task.title,
-        start: task.timeBlock.start,
-        duration: task.timeBlock.duration
-      });
-    }
-  });
-  return items;
+// update button label/aria according to state
+function updateDetailsToggleButton() {
+  if (!el.detailsToggle) return;
+  const minimized = document.body.classList.contains("details-minimized");
+  el.detailsToggle.textContent = minimized ? "▴" : "—";
+  el.detailsToggle.setAttribute("aria-label", minimized ? "Restaurar painel de detalhes" : "Minimizar painel de detalhes");
 }
 
-function resizeSchedule(kind, id, startTime, dropTime) {
-  const step = Math.max(15, Number(state.settings.timeStepMinutes) || 30);
-  const startMinutes = timeToMinutes(startTime);
-  const endMinutes = timeToMinutes(dropTime);
-  const raw = endMinutes - startMinutes;
-  const clamped = Math.max(step, raw);
-  const duration = Math.ceil(clamped / step) * step;
-  if (duration <= 0) {
-    return;
-  }
-  if (kind === "event") {
-    const eventItem = getEvent(id);
-    if (!eventItem) {
-      return;
-    }
-    eventItem.duration = duration;
-    touch(eventItem);
-  }
-  if (kind === "task") {
-    const task = getTask(id);
-    if (!task || !task.timeBlock) {
-      return;
-    }
-    task.timeBlock.duration = duration;
-    touch(task);
-  }
-  saveState();
-  renderAll();
-}
+function renderTaskDetails(task) {
+  el.detailsTitle.textContent = task.title || "Tarefa";
 
-function groupNotesByArea() {
-  const grouped = {};
-  state.notes
-    .filter((note) => !note.archived && matchesNoteSearch(note, state.ui.search))
-    .forEach((note) => {
-      const key = note.areaId || "";
-      if (!grouped[key]) {
-        grouped[key] = [];
-      }
-      grouped[key].push(note);
-    });
-  return grouped;
-}
-
-function setWeekTab(tab) {
-  state.ui.weekTab = tab;
-  saveState();
-  renderMain();
-}
-
-function shiftWeek(delta) {
-  state.ui.weekOffset += delta;
-  saveState();
-  renderMain();
-}
-
-function setProjectFilter(filter) {
-  state.ui.projectFilter = filter;
-  saveState();
-  renderMain();
-}
-
-function setCalendarView(view) {
-  state.ui.calendarView = view;
-  saveState();
-  renderMain();
-}
-
-function setProjectViewMode(mode) {
-  state.ui.projectViewMode = mode;
-  saveState();
-  renderMain();
-}
-
-function shiftCalendarWeek(delta) {
-  state.ui.calendarWeekOffset += delta;
-  saveState();
-  renderMain();
-}
-
-function shiftCalendarMonth(delta) {
-  state.ui.calendarMonthOffset += delta;
-  saveState();
-  renderMain();
-}
-
-function renderCalendarWeek() {
-  const wrapper = createElement("div", "calendar-week");
-  const days = getWeekDays(state.ui.calendarWeekOffset);
-  const query = (state.ui.search || "").trim().toLowerCase();
-  days.forEach((day) => {
-    const column = createElement("div", "calendar-day");
-    const header = createElement("div", "section-title", day.label);
-    column.append(header);
-    attachDropHandlers(column, { date: day.date, time: null });
-
-    const dayTasks = state.tasks.filter(
-      (task) =>
-        !task.archived &&
-        task.status !== "done" &&
-        task.dueDate === day.date &&
-        !task.timeBlock &&
-        matchesTaskSearch(task, query)
-    );
-    dayTasks.forEach((task) => column.append(createTaskRow(task, { compact: true })));
-
-    getCalendarSlots().forEach((time) => {
-      const slot = createElement("div", "week-slot");
-      slot.append(createElement("div", "list-meta", time));
-      const items = getScheduledItems(day.date, time).filter((item) =>
-        matchesQuery(item.title, query)
-      );
-      items.forEach((item) => {
-        const chip = createCalendarChip(item);
-        slot.append(chip);
-      });
-      attachDropHandlers(slot, { date: day.date, time });
-      column.append(slot);
-    });
-
-    wrapper.append(column);
-  });
-  return wrapper;
-}
-
-function renderCalendarMonth() {
-  const wrapper = createElement("div", "calendar-month");
-  const base = addMonths(new Date(), state.ui.calendarMonthOffset);
-  const monthStart = new Date(base.getFullYear(), base.getMonth(), 1);
-  const weekStart = getWeekStart(monthStart, state.settings.weekStartsMonday);
-  for (let i = 0; i < 42; i += 1) {
-    const day = addDays(weekStart, i);
-    const dayKey = formatDate(day);
-    const cell = createElement("div", "month-cell");
-    cell.append(createElement("div", "list-meta", String(day.getDate())));
-    const items = [
-      ...state.events.filter((event) => event.date === dayKey && !event.archived),
-      ...state.tasks.filter(
-        (task) =>
-          task.dueDate === dayKey && !task.archived && task.status !== "done"
-      )
-    ];
-    if (items.length) {
-      cell.append(createElement("div", "card-meta", `${items.length} itens`));
-    }
-    cell.addEventListener("click", () => {
-      openEventModal({ date: dayKey });
-    });
-    attachDropHandlers(cell, { date: dayKey, time: null });
-    wrapper.append(cell);
-  }
-  return wrapper;
-}
-
-function renderProjectKanban(project) {
-  const board = createElement("div", "kanban-grid");
-  STATUS_ORDER.forEach((status) => {
-    const column = createElement("div", "kanban-column");
-    const header = createElement("div", "section-header");
-    header.append(createElement("div", "section-title", STATUS_LABELS[status]));
-    column.append(header);
-    column.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = "move";
-      }
-    });
-    column.addEventListener("dragenter", () => column.classList.add("dropping"));
-    column.addEventListener("dragleave", () => column.classList.remove("dropping"));
-    column.addEventListener("drop", (event) => {
-      event.preventDefault();
-      column.classList.remove("dropping");
-      const data = parseDragData(event);
-      if (!data || data.kind !== "task") {
-        return;
-      }
-      const task = getTask(data.id);
-      if (!task || task.projectId !== project.id) {
-        return;
-      }
-      task.status = status;
-      touch(task);
-      saveState();
-      renderMain();
-    });
-    const tasks = state.tasks.filter(
-      (task) =>
-        task.projectId === project.id &&
-        !task.archived &&
-        task.status === status
-    );
-    if (!tasks.length) {
-      column.append(createElement("div", "list-meta", "Sem tarefas."));
-    } else {
-      tasks.forEach((task) => column.append(createKanbanCard(task)));
-    }
-    board.append(column);
-  });
-  return board;
-}
-
-function createKanbanCard(task) {
-  const card = createElement("div", "kanban-card");
-  card.append(createElement("div", "card-title", task.title));
-  const meta = [];
-  if (task.dueDate) {
-    meta.push(task.dueDate);
-  }
-  if (task.priority) {
-    meta.push(PRIORITY_LABELS[task.priority]);
-  }
-  if (meta.length) {
-    card.append(createElement("div", "card-meta", meta.join(" / ")));
-  }
-  card.draggable = true;
-  card.addEventListener("dragstart", (event) => setDragData(event, "task", task.id));
-  card.addEventListener("click", () => selectItem("task", task.id));
-  return card;
-}
-
-function createNotesSidePanel(note) {
-  const panel = createElement("div", "notes-panel");
-  if (!note) {
-    panel.append(createElement("div", "empty", "Sem nota selecionada."));
-    return panel;
-  }
-
-  const links = createSection("Links", "");
-  const linkedTasks = state.tasks.filter(
-    (task) => task.linkedNoteId === note.id || task.sourceNoteId === note.id
-  );
-  links.append(createElement("div", "section-title", "Tarefas vinculadas"));
-  if (!linkedTasks.length) {
-    links.body.append(createElement("div", "list-meta", "Sem tarefas vinculadas."));
-  } else {
-    linkedTasks.forEach((task) => links.body.append(createTaskRow(task, { compact: true })));
-  }
-
-  const backlinks = createSection("Backlinks", "");
-  const relatedNotes = state.notes.filter(
-    (entry) =>
-      entry.id !== note.id &&
-      !entry.archived &&
-      matchesNoteSearch(entry, note.title)
-  );
-  backlinks.append(createElement("div", "section-title", "Notas relacionadas"));
-  if (!relatedNotes.length) {
-    backlinks.body.append(createElement("div", "list-meta", "Sem backlinks."));
-  } else {
-    relatedNotes.forEach((entry) => backlinks.body.append(createNoteCard(entry)));
-  }
-
-  const details = createSection("Detalhes", "");
-  const area = note.areaId ? getArea(note.areaId) : null;
-  const project = note.projectId ? getProject(note.projectId) : null;
-  details.body.append(
-    createElement("div", "list-meta", `Area: ${area ? area.name : "Sem area"}`),
-    createElement("div", "list-meta", `Projeto: ${project ? project.name : "Sem projeto"}`),
-    createElement("div", "list-meta", `Criado: ${note.createdAt || "-"}`),
-    createElement("div", "list-meta", `Atualizado: ${note.updatedAt || "-"}`)
-  );
-
-  panel.append(links.section, backlinks.section, details.section);
-  return panel;
-}
-
-function createAreaSelect(selectedId) {
-  const options = [{ value: "", label: "Sem area" }].concat(
-    state.areas.map((area) => ({ value: area.id, label: area.name }))
-  );
-  return createSelect(options, selectedId || "");
-}
-
-function createProjectSelect(selectedId) {
-  const options = [{ value: "", label: "Sem projeto" }].concat(
-    state.projects.map((project) => ({ value: project.id, label: project.name }))
-  );
-  return createSelect(options, selectedId || "");
-}
-
-function createNoteSelect(selectedId) {
-  const options = [{ value: "", label: "Sem nota" }].concat(
-    state.notes.map((note) => ({ value: note.id, label: note.title }))
-  );
-  return createSelect(options, selectedId || "");
-}
-
-function openCreateChooser() {
-  const body = createElement("div", "card-actions");
-  const options = [
-    { label: "Tarefa", action: () => openTaskModal({}) },
-    { label: "Evento", action: () => openEventModal({}) },
-    { label: "Nota", action: () => openNoteModal({}) },
-    { label: "Projeto", action: () => openProjectModal({}) },
-    { label: "Area", action: () => openAreaModal({}) }
-  ];
-  options.forEach((option) => {
-    const btn = createButton(option.label, "ghost-btn", () => {
-      closeModal();
-      option.action();
-    });
-    body.append(btn);
-  });
-  openModal({
-    eyebrow: "Criar",
-    title: "O que voce quer criar?",
-    body: [body],
-    saveLabel: "Fechar",
-    onSave: () => true
-  });
-}
-
-function openTaskModal(options = {}) {
   const titleInput = document.createElement("input");
-  titleInput.value = options.title || "";
+  titleInput.value = task.title;
+  titleInput.addEventListener("input", () => {
+    task.title = titleInput.value;
+    touch(task);
+    saveStateDebounced();
+    renderMain();
+  });
+
+  const statusSelect = createSelect(
+    STATUS_ORDER.map((status) => ({ value: status, label: STATUS_LABELS[status] })),
+    task.status
+  );
+  statusSelect.addEventListener("change", () => {
+    task.status = statusSelect.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
 
   const dateInput = document.createElement("input");
   dateInput.type = "date";
-  dateInput.value = options.dueDate || "";
+  dateInput.value = task.dueDate || "";
+  dateInput.addEventListener("change", () => {
+    task.dueDate = dateInput.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
 
   const timeInput = document.createElement("input");
   timeInput.type = "time";
-  timeInput.value = options.dueTime || "";
+  timeInput.value = task.dueTime || "";
+  timeInput.addEventListener("change", () => {
+    task.dueTime = timeInput.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
 
   const prioritySelect = createSelect(
     [
@@ -3796,748 +3113,3599 @@ function openTaskModal(options = {}) {
       { value: "med", label: "Media" },
       { value: "high", label: "Alta" }
     ],
-    options.priority || "med"
+    task.priority
   );
-
-  const projectSelect = createProjectSelect(options.projectId);
-  const areaSelect = createAreaSelect(options.areaId);
-
-  openModal({
-    eyebrow: "Nova tarefa",
-    title: "Tarefa",
-    body: [
-      buildField("Titulo", titleInput),
-      buildField("Prazo", dateInput),
-      buildField("Hora", timeInput),
-      buildField("Prioridade", prioritySelect),
-      buildField("Projeto", projectSelect),
-      buildField("Area", areaSelect)
-    ],
-    saveLabel: "Criar tarefa",
-    onSave: () => {
-      const task = createTask({
-        title: titleInput.value.trim() || "Nova tarefa",
-        dueDate: dateInput.value,
-        dueTime: timeInput.value,
-        priority: prioritySelect.value,
-        projectId: projectSelect.value || null,
-        areaId: areaSelect.value || null
-      });
-      state.tasks.unshift(task);
-      state.ui.selected = { kind: "task", id: task.id };
-      saveState();
-      renderAll();
-      return true;
-    }
+  prioritySelect.addEventListener("change", () => {
+    task.priority = prioritySelect.value;
+    touch(task);
+    saveState();
   });
-}
 
-function openEventModal(options = {}) {
-  const titleInput = document.createElement("input");
-  titleInput.value = options.title || "";
+  const projectSelect = createProjectSelect(task.projectId);
+  projectSelect.addEventListener("change", () => {
+    task.projectId = projectSelect.value || null;
+    touch(task);
+    saveState();
+    renderMain();
+  });
 
-  const dateInput = document.createElement("input");
-  dateInput.type = "date";
-  dateInput.value = options.date || getTodayKey();
-
-  const timeInput = document.createElement("input");
-  timeInput.type = "time";
-  timeInput.value = options.start || "09:00";
-
-  const durationInput = document.createElement("input");
-  durationInput.type = "number";
-  durationInput.min = "15";
-  durationInput.value = options.duration || state.settings.defaultEventDuration;
-
-  const projectSelect = createProjectSelect(options.projectId);
-  const areaSelect = createAreaSelect(options.areaId);
-
-  const locationInput = document.createElement("input");
-  locationInput.value = options.location || "";
+  const areaSelect = createAreaSelect(task.areaId);
+  areaSelect.addEventListener("change", () => {
+    task.areaId = areaSelect.value || null;
+    touch(task);
+    saveState();
+    renderMain();
+  });
 
   const notesInput = document.createElement("textarea");
-  notesInput.rows = 3;
-  notesInput.value = options.notes || "";
+  notesInput.rows = 4;
+  notesInput.value = task.notes || "";
+  notesInput.addEventListener("input", () => {
+    task.notes = notesInput.value;
+    touch(task);
+    saveStateDebounced();
+  });
 
-  openModal({
-    eyebrow: "Novo evento",
-    title: "Evento",
-    body: [
-      buildField("Titulo", titleInput),
-      buildField("Data", dateInput),
-      buildField("Hora", timeInput),
-      buildField("Duracao (min)", durationInput),
-      buildField("Projeto", projectSelect),
-      buildField("Area", areaSelect),
-      buildField("Local", locationInput),
-      buildField("Notas", notesInput)
-    ],
-    saveLabel: "Criar evento",
-    onSave: () => {
-      const eventItem = createEvent({
-        title: titleInput.value.trim() || "Novo evento",
-        date: dateInput.value,
-        start: timeInput.value,
-        duration: Number(durationInput.value) || state.settings.defaultEventDuration,
-        projectId: projectSelect.value || null,
-        areaId: areaSelect.value || null,
-        location: locationInput.value,
-        notes: notesInput.value
-      });
-      state.events.unshift(eventItem);
-      state.ui.selected = { kind: "event", id: eventItem.id };
+  const linksInput = document.createElement("textarea");
+  linksInput.rows = 3;
+  linksInput.value = (task.attachments || []).join("\n");
+  linksInput.addEventListener("input", () => {
+    task.attachments = linksInput.value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    touch(task);
+    saveStateDebounced();
+  });
+
+  const noteSelect = createNoteSelect(task.linkedNoteId);
+  noteSelect.addEventListener("change", () => {
+    task.linkedNoteId = noteSelect.value || null;
+    touch(task);
+    saveState();
+  });
+
+  const checklist = createChecklistEditor(task);
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Concluir", "ghost-btn", () => {
+      task.status = "done";
+      touch(task);
       saveState();
       renderAll();
-      return true;
-    }
-  });
+    }),
+    createButton("Definir foco", "ghost-btn", () => toggleTaskFocus(task)),
+    createButton("Adiar 1 dia", "ghost-btn", () => snoozeTask(task, 1)),
+    createButton("Adiar 7 dias", "ghost-btn", () => snoozeTask(task, 7)),
+    createButton("Arquivar", "ghost-btn danger", () => archiveTask(task))
+  );
+
+  el.detailsBody.append(
+    buildField("Titulo", titleInput),
+    buildField("Status", statusSelect),
+    buildField("Prazo", dateInput),
+    buildField("Hora", timeInput),
+    buildField("Prioridade", prioritySelect),
+    buildField("Projeto", projectSelect),
+    buildField("Area", areaSelect),
+    buildField("Subtarefas", checklist),
+    buildField("Descricao", notesInput),
+    buildField("Anexos/links", linksInput),
+    buildField("Vinculo com nota", noteSelect),
+    buildField("Acoes chave", actions)
+  );
 }
 
-function openNoteModal(options = {}) {
+function renderEventDetails(event) {
+  el.detailsTitle.textContent = event.title || "Evento";
+
   const titleInput = document.createElement("input");
-  titleInput.value = options.title || "";
-
-  const areaSelect = createAreaSelect(options.areaId);
-  const projectSelect = createProjectSelect(options.projectId);
-
-  openModal({
-    eyebrow: "Nova nota",
-    title: "Nota",
-    body: [
-      buildField("Titulo", titleInput),
-      buildField("Area", areaSelect),
-      buildField("Projeto", projectSelect)
-    ],
-    saveLabel: "Criar nota",
-    onSave: () => {
-      const note = createNote({
-        title: titleInput.value.trim() || "Nova nota",
-        areaId: areaSelect.value || null,
-        projectId: projectSelect.value || null,
-        blocks: buildTemplateBlocks(options.template)
-      });
-      state.notes.unshift(note);
-      state.ui.notesNoteId = note.id;
-      saveState();
-      navigate(`/notes/${note.id}`);
-      return true;
-    }
+  titleInput.value = event.title;
+  titleInput.addEventListener("input", () => {
+    event.title = titleInput.value;
+    touch(event);
+    saveStateDebounced();
+    renderMain();
   });
-}
 
-function openProjectModal() {
-  const nameInput = document.createElement("input");
-  const objectiveInput = document.createElement("textarea");
-  objectiveInput.rows = 3;
-  const areaSelect = createAreaSelect();
-  openModal({
-    eyebrow: "Novo projeto",
-    title: "Projeto",
-    body: [
-      buildField("Nome", nameInput),
-      buildField("Objetivo", objectiveInput),
-      buildField("Area", areaSelect)
-    ],
-    saveLabel: "Criar projeto",
-    onSave: () => {
-      const project = createProject({
-        name: nameInput.value.trim() || "Novo projeto",
-        objective: objectiveInput.value,
-        areaId: areaSelect.value || null
-      });
-      state.projects.unshift(project);
-      saveState();
-      navigate(`/projects/${project.id}`);
-      return true;
-    }
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = event.date;
+  dateInput.addEventListener("change", () => {
+    event.date = dateInput.value;
+    touch(event);
+    saveState();
+    renderMain();
   });
-}
 
-function openAreaModal() {
-  const nameInput = document.createElement("input");
-  const objectiveInput = document.createElement("textarea");
-  objectiveInput.rows = 3;
-  openModal({
-    eyebrow: "Nova area",
-    title: "Area",
-    body: [buildField("Nome", nameInput), buildField("Objetivo", objectiveInput)],
-    saveLabel: "Criar area",
-    onSave: () => {
-      const area = createArea({
-        name: nameInput.value.trim() || "Nova area",
-        objective: objectiveInput.value
-      });
-      state.areas.unshift(area);
-      saveState();
-      navigate(`/areas/${area.id}`);
-      return true;
-    }
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = event.start;
+  timeInput.addEventListener("change", () => {
+    event.start = timeInput.value;
+    touch(event);
+    saveState();
+    renderMain();
   });
-}
 
-function openSettingsModal() {
-  const weekToggle = document.createElement("input");
-  weekToggle.type = "checkbox";
-  weekToggle.checked = Boolean(state.settings.weekStartsMonday);
-  const timeSelect = createSelect(
-    [
-      { value: "24h", label: "24h" },
-      { value: "12h", label: "12h" }
-    ],
-    state.settings.timeFormat
-  );
-  const stepSelect = createSelect(
-    [
-      { value: "15", label: "15 min" },
-      { value: "30", label: "30 min" }
-    ],
-    String(state.settings.timeStepMinutes)
-  );
   const durationInput = document.createElement("input");
   durationInput.type = "number";
   durationInput.min = "15";
-  durationInput.value = state.settings.defaultEventDuration;
-  const apiUrlInput = document.createElement("input");
-  apiUrlInput.value = state.settings.apiUrl || "";
-  const apiKeyInput = document.createElement("input");
-  apiKeyInput.value = state.settings.apiKey || "";
-  const autoSyncToggle = document.createElement("input");
-  autoSyncToggle.type = "checkbox";
-  autoSyncToggle.checked = Boolean(state.settings.autoSync);
-  const syncRow = createElement("div", "card-actions");
-  syncRow.append(
-    createButton("Sync agora", "ghost-btn", async () => {
-      refreshSyncStatus("Sincronizando...");
-      await pullState({ queuePush: true, pushOnEmpty: true });
-    })
+  durationInput.value = event.duration;
+  durationInput.addEventListener("change", () => {
+    event.duration = Math.max(15, Number(durationInput.value) || 15);
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const recurrenceSelect = createSelect(
+    [
+      { value: "none", label: "Sem repeticao" },
+      { value: "daily", label: "Diario" },
+      { value: "weekly", label: "Semanal" },
+      { value: "monthly", label: "Mensal" }
+    ],
+    event.recurrence
+  );
+  recurrenceSelect.addEventListener("change", () => {
+    event.recurrence = recurrenceSelect.value;
+    touch(event);
+    saveState();
+  });
+
+  const locationInput = document.createElement("input");
+  locationInput.value = event.location || "";
+  locationInput.addEventListener("input", () => {
+    event.location = locationInput.value;
+    touch(event);
+    saveStateDebounced();
+  });
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 4;
+  notesInput.value = event.notes || "";
+  notesInput.addEventListener("input", () => {
+    event.notes = notesInput.value;
+    touch(event);
+    saveStateDebounced();
+  });
+
+  const projectSelect = createProjectSelect(event.projectId);
+  projectSelect.addEventListener("change", () => {
+    event.projectId = projectSelect.value || null;
+    touch(event);
+    saveState();
+  });
+
+  const areaSelect = createAreaSelect(event.areaId);
+  areaSelect.addEventListener("change", () => {
+    event.areaId = areaSelect.value || null;
+    touch(event);
+    saveState();
+  });
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Arquivar", "ghost-btn danger", () => archiveEvent(event))
   );
 
-  openModal({
-    eyebrow: "Preferencias",
-    title: "Configuracoes",
-    body: [
-      buildField("Semana inicia segunda", weekToggle),
-      buildField("Formato de hora", timeSelect),
-      buildField("Passo de horario", stepSelect),
-      buildField("Duracao padrao (min)", durationInput),
-      buildField("API URL", apiUrlInput),
-      buildField("API Key", apiKeyInput),
-      buildField("Auto-sync", autoSyncToggle),
-      syncRow
-    ],
-    saveLabel: "Salvar",
-    onSave: () => {
-      state.settings.weekStartsMonday = weekToggle.checked;
-      state.settings.timeFormat = timeSelect.value;
-      state.settings.defaultEventDuration = Math.max(15, Number(durationInput.value) || 60);
-      state.settings.timeStepMinutes = Math.max(15, Number(stepSelect.value) || 30);
-      state.settings.apiUrl = apiUrlInput.value.trim();
-      state.settings.apiKey = apiKeyInput.value.trim();
-      state.settings.autoSync = autoSyncToggle.checked;
-      remote.url = state.settings.apiUrl;
-      remote.apiKey = state.settings.apiKey;
-      remote.autoSync = state.settings.autoSync;
-      remote.lastError = "";
-      saveRemoteConfig();
-      scheduleAutoSync();
-      saveState();
-      renderAll();
-      return true;
-    }
-  });
+  el.detailsBody.append(
+    buildField("Titulo", titleInput),
+    buildField("Data", dateInput),
+    buildField("Hora", timeInput),
+    buildField("Duracao (min)", durationInput),
+    buildField("Repeticao", recurrenceSelect),
+    buildField("Local", locationInput),
+    buildField("Projeto", projectSelect),
+    buildField("Area", areaSelect),
+    buildField("Notas", notesInput),
+    buildField("Acoes chave", actions)
+  );
 }
 
-function openExportModal() {
-  const textarea = document.createElement("textarea");
-  textarea.rows = 12;
-  textarea.value = JSON.stringify(state, null, 2);
-  const copyBtn = createButton("Copiar", "ghost-btn", async () => {
-    try {
-      await navigator.clipboard.writeText(textarea.value);
-      showToast("Dados copiados.");
-    } catch (error) {
-      showToast("Nao foi possivel copiar.");
-    }
+function renderNoteDetails(note) {
+  el.detailsTitle.textContent = note.title || "Nota";
+
+  const areaSelect = createAreaSelect(note.areaId);
+  areaSelect.addEventListener("change", () => {
+    note.areaId = areaSelect.value || null;
+    touch(note);
+    saveState();
+    renderMain();
   });
-  openModal({
-    eyebrow: "Exportar",
-    title: "Seus dados",
-    body: [textarea, copyBtn],
-    saveLabel: "Fechar",
-    onSave: () => true
+
+  const projectSelect = createProjectSelect(note.projectId);
+  projectSelect.addEventListener("change", () => {
+    note.projectId = projectSelect.value || null;
+    touch(note);
+    saveState();
+    renderMain();
   });
+
+  const backlinks = createElement("div", "card");
+  const linkedTasks = state.tasks.filter(
+    (task) => task.linkedNoteId === note.id || task.sourceNoteId === note.id
+  );
+  backlinks.append(createElement("div", "card-title", "Backlinks"));
+  if (!linkedTasks.length) {
+    backlinks.append(createElement("div", "list-meta", "Nenhuma tarefa vinculada."));
+  } else {
+    linkedTasks.forEach((task) => backlinks.append(createTaskRow(task, { compact: true })));
+  }
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Abrir nota", "ghost-btn", () => navigate(`/notes/${note.id}`)),
+    createButton("Arquivar", "ghost-btn danger", () => archiveNote(note))
+  );
+
+  el.detailsBody.append(
+    buildField("Area", areaSelect),
+    buildField("Projeto", projectSelect),
+    buildField("Links", backlinks),
+    buildField("Acoes chave", actions)
+  );
 }
 
-function openImportModal() {
-  const textarea = document.createElement("textarea");
-  textarea.rows = 12;
-  textarea.placeholder = "Cole o JSON aqui...";
-  openModal({
-    eyebrow: "Importar",
-    title: "Importar dados",
-    body: [textarea],
-    saveLabel: "Importar",
-    onSave: () => {
-      try {
-        const parsed = JSON.parse(textarea.value);
-        state = normalizeState(parsed);
-        saveState();
-        renderAll();
-        return true;
-      } catch (error) {
-        showToast("JSON invalido.");
-        return false;
+function appendQuickCapturePanel() {
+  const route = parseRoute(state.ui.route);
+  if (!route || route.name !== "today") {
+    return;
+  }
+  const section = createElement("div", "section");
+  const header = createElement("div", "section-header");
+  header.append(createElement("div", "section-title", "+ Capturar rapido"));
+  section.append(header);
+  const input = document.createElement("input");
+  input.placeholder = "Digite uma tarefa para hoje...";
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const value = input.value.trim();
+      if (!value) {
+        return;
       }
-    }
-  });
-}
-
-function buildTemplateBlocks(template) {
-  if (template === "meeting") {
-    return [
-      { id: uid("block"), type: "heading", text: "Participantes" },
-      { id: uid("block"), type: "list", items: [] },
-      { id: uid("block"), type: "heading", text: "Decisoes" },
-      { id: uid("block"), type: "list", items: [] },
-      { id: uid("block"), type: "heading", text: "Proximos passos" },
-      { id: uid("block"), type: "checklist", items: [] }
-    ];
-  }
-  if (template === "diary") {
-    return [
-      { id: uid("block"), type: "heading", text: "Resumo" },
-      { id: uid("block"), type: "text", text: "" },
-      { id: uid("block"), type: "heading", text: "Aprendizados" },
-      { id: uid("block"), type: "list", items: [] }
-    ];
-  }
-  if (template === "study") {
-    return [
-      { id: uid("block"), type: "heading", text: "Tema" },
-      { id: uid("block"), type: "text", text: "" },
-      { id: uid("block"), type: "heading", text: "Notas" },
-      { id: uid("block"), type: "list", items: [] }
-    ];
-  }
-  if (template === "monthly") {
-    return [
-      { id: uid("block"), type: "heading", text: "Objetivos do mes" },
-      { id: uid("block"), type: "checklist", items: [] },
-      { id: uid("block"), type: "heading", text: "Projetos em foco" },
-      { id: uid("block"), type: "list", items: [] }
-    ];
-  }
-  return [];
-}
-
-function openProcessModal(item, options = {}) {
-  const kindSelect = createSelect(
-    [
-      { value: "task", label: "Tarefa" },
-      { value: "note", label: "Nota" },
-      { value: "event", label: "Evento" }
-    ],
-    options.kind || item.kind
-  );
-  const titleInput = document.createElement("input");
-  titleInput.value = item.title;
-  const areaSelect = createAreaSelect();
-  const projectSelect = createProjectSelect();
-  const dateInput = document.createElement("input");
-  dateInput.type = "date";
-  const timeInput = document.createElement("input");
-  timeInput.type = "time";
-  const durationInput = document.createElement("input");
-  durationInput.type = "number";
-  durationInput.min = "15";
-  durationInput.value = state.settings.defaultEventDuration;
-
-  const extraWrap = createElement("div");
-
-  const renderFields = () => {
-    extraWrap.innerHTML = "";
-    if (kindSelect.value === "task") {
-      extraWrap.append(
-        buildField("Area", areaSelect),
-        buildField("Projeto", projectSelect),
-        buildField("Data", dateInput)
-      );
-    }
-    if (kindSelect.value === "note") {
-      extraWrap.append(buildField("Area", areaSelect), buildField("Projeto", projectSelect));
-    }
-    if (kindSelect.value === "event") {
-      extraWrap.append(
-        buildField("Area", areaSelect),
-        buildField("Projeto", projectSelect),
-        buildField("Data", dateInput),
-        buildField("Hora", timeInput),
-        buildField("Duracao (min)", durationInput)
-      );
-    }
-  };
-  kindSelect.addEventListener("change", renderFields);
-  renderFields();
-
-  openModal({
-    eyebrow: "Processar",
-    title: "Processar item",
-    body: [buildField("Tipo", kindSelect), buildField("Titulo", titleInput), extraWrap],
-    saveLabel: "Salvar",
-    onSave: () => {
-      processInboxItem(item, kindSelect.value, {
-        title: titleInput.value,
-        areaId: areaSelect.value || null,
-        projectId: projectSelect.value || null,
-        date: dateInput.value,
-        time: timeInput.value,
-        duration: Number(durationInput.value) || state.settings.defaultEventDuration
-      });
-      return true;
-    }
-  });
-}
-
-function openBulkProcessModal(ids, options = {}) {
-  const kindSelect = createSelect(
-    [
-      { value: "task", label: "Tarefa" },
-      { value: "note", label: "Nota" },
-      { value: "event", label: "Evento" }
-    ],
-    options.kind || "task"
-  );
-  const areaSelect = createAreaSelect();
-  const projectSelect = createProjectSelect();
-  const dateInput = document.createElement("input");
-  dateInput.type = "date";
-  const timeInput = document.createElement("input");
-  timeInput.type = "time";
-  const durationInput = document.createElement("input");
-  durationInput.type = "number";
-  durationInput.min = "15";
-  durationInput.value = state.settings.defaultEventDuration;
-
-  const extraWrap = createElement("div");
-  const renderFields = () => {
-    extraWrap.innerHTML = "";
-    if (kindSelect.value === "task") {
-      extraWrap.append(
-        buildField("Area", areaSelect),
-        buildField("Projeto", projectSelect),
-        buildField("Data", dateInput)
-      );
-    }
-    if (kindSelect.value === "note") {
-      extraWrap.append(buildField("Area", areaSelect), buildField("Projeto", projectSelect));
-    }
-    if (kindSelect.value === "event") {
-      extraWrap.append(
-        buildField("Area", areaSelect),
-        buildField("Projeto", projectSelect),
-        buildField("Data", dateInput),
-        buildField("Hora", timeInput),
-        buildField("Duracao (min)", durationInput)
-      );
-    }
-  };
-  kindSelect.addEventListener("change", renderFields);
-  renderFields();
-
-  openModal({
-    eyebrow: "Processar lote",
-    title: `${ids.length} itens`,
-    body: [buildField("Tipo", kindSelect), extraWrap],
-    saveLabel: "Processar",
-    onSave: () => {
-      ids.forEach((id) => {
-        const item = state.inbox.find((entry) => entry.id === id);
-        if (!item) {
-          return;
-        }
-        processInboxItem(item, kindSelect.value, {
-          title: item.title,
-          areaId: areaSelect.value || null,
-          projectId: projectSelect.value || null,
-          date: dateInput.value,
-          time: timeInput.value,
-          duration: Number(durationInput.value) || state.settings.defaultEventDuration
-        }, { silent: true });
-      });
-      state.ui.inboxSelection = [];
+      state.tasks.unshift(createTask({ title: value, dueDate: getTodayKey() }));
+      input.value = "";
       saveState();
       renderMain();
-      return true;
     }
   });
+  section.append(input);
+  el.detailsBody.append(section);
 }
 
-function processInboxItem(item, kind, data, options = {}) {
-  if (kind === "task") {
-    state.tasks.unshift(
-      createTask({
-        title: data.title || item.title,
-        dueDate: data.date || "",
-        projectId: data.projectId,
-        areaId: data.areaId
-      })
-    );
-  } else if (kind === "note") {
-    state.notes.unshift(
-      createNote({
-        title: data.title || item.title,
-        areaId: data.areaId,
-        projectId: data.projectId,
-        blocks: [
-          { id: uid("block"), type: "text", text: item.title }
-        ]
-      })
-    );
-  } else if (kind === "event") {
-    state.events.unshift(
-      createEvent({
-        title: data.title || item.title,
-        date: data.date || getTodayKey(),
-        start: data.time || "09:00",
-        duration: data.duration,
-        projectId: data.projectId,
-        areaId: data.areaId
-      })
-    );
+function createElement(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) {
+    node.className = className;
   }
-  state.inbox = state.inbox.filter((entry) => entry.id !== item.id);
-  state.ui.inboxSelection = state.ui.inboxSelection.filter((id) => id !== item.id);
-  if (!options.silent) {
-    saveState();
-    renderAll();
+  if (text !== undefined) {
+    node.textContent = text;
   }
+  return node;
 }
 
-function openModal({ eyebrow, title, body, onSave, onDelete, saveLabel }) {
-  el.modalEyebrow.textContent = eyebrow || "Editor";
-  el.modalTitle.textContent = title || "Editar";
-  el.modalBody.innerHTML = "";
-  if (Array.isArray(body)) {
-    body.forEach((node) => {
-      if (node) {
-        el.modalBody.append(node);
-      }
-    });
+function createButton(label, className, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className || "ghost-btn";
+  button.textContent = label;
+  if (onClick) {
+    button.addEventListener("click", onClick);
   }
-  el.modalSave.textContent = saveLabel || "Salvar";
-  el.modalDelete.classList.toggle("hidden", !onDelete);
-  modalState.onSave = onSave || null;
-  modalState.onDelete = onDelete || null;
-  el.modalBackdrop.classList.remove("hidden");
-  modalState.previousFocus = document.activeElement;
-  focusModal();
+  return button;
 }
 
-function closeModal() {
-  el.modalBackdrop.classList.add("hidden");
-  el.modalBody.innerHTML = "";
-  modalState.onSave = null;
-  modalState.onDelete = null;
-  const previousFocus = modalState.previousFocus;
-  modalState.previousFocus = null;
-  el.modalSave.textContent = "Salvar";
-  el.modalDelete.classList.add("hidden");
-  if (previousFocus && document.body.contains(previousFocus)) {
-    previousFocus.focus();
+function createSection(title, hint) {
+  const section = createElement("div", "section");
+  const header = createElement("div", "section-header");
+  const heading = createElement("div", "section-title", title);
+  header.append(heading);
+  if (hint) {
+    header.append(createElement("div", "section-hint", hint));
   }
+  section.append(header);
+  const body = createElement("div");
+  section.append(body);
+  return { section, body };
 }
 
-function handleModalSave() {
-  if (!modalState.onSave) {
-    closeModal();
+function buildField(label, input) {
+  const wrapper = createElement("label", "field");
+  const title = createElement("span", "", label);
+  wrapper.append(title, input);
+  return wrapper;
+}
+
+function createSelect(options, value) {
+  const select = document.createElement("select");
+  options.forEach((optionData) => {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    select.append(option);
+  });
+  select.value = value || "";
+  return select;
+}
+
+function setCount(node, count) {
+  if (!node) {
     return;
   }
-  const shouldClose = modalState.onSave();
-  if (shouldClose === false) {
-    return;
-  }
-  closeModal();
+  node.textContent = count ? String(count) : "";
 }
 
-function handleModalDelete() {
-  if (!modalState.onDelete) {
-    return;
-  }
-  const shouldClose = modalState.onDelete();
-  if (shouldClose === false) {
-    return;
-  }
-  closeModal();
-}
-
-function isModalOpen() {
-  return !el.modalBackdrop.classList.contains("hidden");
-}
-
-function focusModal() {
-  const focusable = getFocusableElements(el.modalBody);
-  const target = focusable[0] || el.modalClose;
-  if (target) {
-    target.focus();
-  }
-}
-
-function trapTabKey(event) {
-  const modal = el.modalBackdrop.querySelector(".modal");
-  const focusable = getFocusableElements(modal);
-  if (!focusable.length) {
-    event.preventDefault();
-    return;
-  }
-  const first = focusable[0];
-  const last = focusable[focusable.length - 1];
-  const active = document.activeElement;
-  if (event.shiftKey) {
-    if (active === first || !modal.contains(active)) {
+function createTaskRow(task, options = {}) {
+  const row = createElement("div", "task-row");
+  row.classList.toggle(
+    "active",
+    state.ui.selected && state.ui.selected.kind === "task" && state.ui.selected.id === task.id
+  );
+  row.draggable = !task.archived && task.status !== "done";
+  row.addEventListener("dragstart", (event) => {
+    if (!row.draggable) {
       event.preventDefault();
-      last.focus();
+      return;
     }
+    row.classList.add("dragging");
+    setDragData(event, "task", task.id);
+  });
+  row.addEventListener("dragend", () => row.classList.remove("dragging"));
+
+  const info = createElement("div");
+  info.append(createElement("div", "task-title", task.title));
+  const metaParts = [];
+  if (task.dueDate) {
+    metaParts.push(`Prazo ${task.dueDate}`);
+  }
+  if (task.dueTime) {
+    metaParts.push(task.dueTime);
+  }
+  if (task.projectId) {
+    const project = getProject(task.projectId);
+    if (project) {
+      metaParts.push(project.name);
+    }
+  }
+  if (task.areaId) {
+    const area = getArea(task.areaId);
+    if (area) {
+      metaParts.push(area.name);
+    }
+  }
+  if (task.priority) {
+    metaParts.push(PRIORITY_LABELS[task.priority] || "");
+  }
+  info.append(createElement("div", "task-meta", metaParts.filter(Boolean).join(" / ")));
+
+  row.append(info);
+
+  if (!options.compact) {
+    const actions = createElement("div", "task-actions");
+    if (task.archived) {
+      actions.append(
+        createButton("Restaurar", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.archived = false;
+          touch(task);
+          saveState();
+          renderAll();
+        })
+      );
+    } else if (task.status === "done") {
+      actions.append(
+        createButton("Reabrir", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.status = "todo";
+          touch(task);
+          saveState();
+          renderAll();
+        })
+      );
+    } else {
+      actions.append(
+        createButton("Concluir", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.status = "done";
+          touch(task);
+          saveState();
+          renderAll();
+        }),
+        createButton("Definir foco", "ghost-btn", (event) => {
+          event.stopPropagation();
+          toggleTaskFocus(task);
+        })
+      );
+    }
+    row.append(actions);
+  }
+
+  row.addEventListener("click", () => selectItem("task", task.id));
+  return row;
+}
+
+function createTaskCard(task, options = {}) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", task.title));
+  const meta = [];
+  if (task.dueDate) {
+    meta.push(`Prazo ${task.dueDate}`);
+  }
+  if (task.projectId) {
+    const project = getProject(task.projectId);
+    if (project) {
+      meta.push(project.name);
+    }
+  }
+  card.append(createElement("div", "card-meta", meta.join(" / ")));
+  if (!options.compact) {
+    card.append(
+      createButton("Ver detalhes", "ghost-btn", (event) => {
+        event.stopPropagation();
+        selectItem("task", task.id);
+      })
+    );
+  }
+  card.addEventListener("click", () => selectItem("task", task.id));
+  return card;
+}
+
+function createEventRow(event) {
+  const row = createElement("div", "event-row");
+  row.classList.toggle(
+    "active",
+    state.ui.selected && state.ui.selected.kind === "event" && state.ui.selected.id === event.id
+  );
+  row.draggable = !event.archived;
+  row.addEventListener("dragstart", (ev) => {
+    if (!row.draggable) {
+      ev.preventDefault();
+      return;
+    }
+    row.classList.add("dragging");
+    setDragData(ev, "event", event.id);
+  });
+  row.addEventListener("dragend", () => row.classList.remove("dragging"));
+
+  const info = createElement("div");
+  info.append(createElement("div", "event-title", event.title));
+  info.append(
+    createElement(
+      "div",
+      "event-meta",
+      `${event.date} - ${formatTimeLabel(event.start)}`
+    )
+  );
+  row.append(info);
+
+  const actions = createElement("div", "task-actions");
+  if (event.archived) {
+    actions.append(
+      createButton("Restaurar", "ghost-btn", (eventClick) => {
+        eventClick.stopPropagation();
+        event.archived = false;
+        touch(event);
+        saveState();
+        renderAll();
+      })
+    );
+  } else {
+    actions.append(
+      createButton("Arquivar", "ghost-btn", (eventClick) => {
+        eventClick.stopPropagation();
+        archiveEvent(event);
+      })
+    );
+  }
+  row.append(actions);
+
+  row.addEventListener("click", () => selectItem("event", event.id));
+  return row;
+}
+
+function createInboxRow(item, options = {}) {
+  const row = createElement("div", "inbox-row");
+  row.addEventListener("mouseenter", () => {
+    state.ui.inboxActiveId = item.id;
+  });
+
+  if (!options.compact) {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = state.ui.inboxSelection.includes(item.id);
+    checkbox.addEventListener("change", () => {
+      toggleInboxSelection(item.id);
+    });
+    row.append(checkbox);
+  } else {
+    row.append(createElement("div", "tag", item.kind));
+  }
+
+  const info = createElement("div");
+  info.append(createElement("div", "task-title", item.title));
+  info.append(createElement("div", "list-meta", `Sugestao: ${item.kind}`));
+  row.append(info);
+
+  const actions = createElement("div", "inbox-actions");
+  actions.append(
+    createButton("Processar", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openProcessModal(item);
+    })
+  );
+  if (!options.compact) {
+    actions.append(
+      createButton("Arquivar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        archiveInboxItem(item.id);
+      }),
+      createButton("Deletar", "ghost-btn danger", (event) => {
+        event.stopPropagation();
+        deleteInboxItem(item.id);
+      })
+    );
+  }
+  row.append(actions);
+  return row;
+}
+
+function createProjectCard(project) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", project.name));
+  if (project.objective) {
+    card.append(createElement("div", "card-meta", project.objective));
+  }
+  const tasks = state.tasks.filter((task) => task.projectId === project.id && !task.archived);
+  const done = tasks.filter((task) => task.status === "done").length;
+  const progress = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+  const progressWrap = createElement("div", "progress");
+  const bar = createElement("div", "progress-bar");
+  bar.style.width = `${progress}%`;
+  progressWrap.append(bar);
+  card.append(progressWrap);
+  const next = tasks.find((task) => task.status !== "done");
+  if (next) {
+    card.append(createElement("div", "card-meta", `Proximo: ${next.title}`));
+  }
+
+  const actions = createElement("div", "card-actions");
+  if (project.status === "active") {
+    actions.append(
+      createButton("Pausar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "paused";
+        touch(project);
+        saveState();
+        renderMain();
+      }),
+      createButton("Concluir", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "done";
+        touch(project);
+        saveState();
+        renderMain();
+      })
+    );
+  } else if (project.status === "paused") {
+    actions.append(
+      createButton("Reativar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "active";
+        touch(project);
+        saveState();
+        renderMain();
+      })
+    );
+  }
+  card.append(actions);
+
+  card.addEventListener("click", () => navigate(`/projects/${project.id}`));
+  return card;
+}
+
+function createAreaCard(area) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", area.name));
+  if (area.objective) {
+    card.append(createElement("div", "card-meta", area.objective));
+  }
+  
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Editar", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openAreaEditModal(area);
+    }),
+    createButton("Deletar", "ghost-btn danger", (event) => {
+      event.stopPropagation();
+      if (confirm(`Tem certeza que deseja deletar "${area.name}"?`)) {
+        deleteArea(area.id);
+      }
+    })
+  );
+  card.append(actions);
+  
+  card.addEventListener("click", () => navigate(`/areas/${area.id}`));
+  return card;
+}
+
+function renderAreaDetail(root, areaId) {
+  const area = getArea(areaId);
+  if (!area) {
+    root.append(createElement("div", "empty", "Area nao encontrada."));
     return;
   }
-  if (active === last) {
-    event.preventDefault();
-    first.focus();
+
+  const header = createSection("Resumo da area", "");
+  const nameInput = document.createElement("input");
+  nameInput.value = area.name;
+  nameInput.addEventListener("input", () => {
+    area.name = nameInput.value;
+    touch(area);
+    saveStateDebounced();
+    renderSidebar();
+  });
+  const objectiveInput = document.createElement("textarea");
+  objectiveInput.rows = 3;
+  objectiveInput.value = area.objective || "";
+  objectiveInput.addEventListener("input", () => {
+    area.objective = objectiveInput.value;
+    touch(area);
+    saveStateDebounced();
+  });
+  
+  const deleteBtn = createButton("Deletar area", "ghost-btn danger", () => {
+    if (confirm(`Tem certeza que deseja deletar "${area.name}"? Isto nao deletara seus projetos e tarefas.`)) {
+      deleteArea(area.id);
+      navigate("/areas");
+    }
+  });
+  
+  header.body.append(
+    buildField("Nome", nameInput),
+    buildField("Objetivo", objectiveInput),
+    deleteBtn
+  );
+  root.append(header.section);
+
+  const projects = state.projects.filter((project) => project.areaId === area.id);
+  const tasks = state.tasks.filter(
+    (task) =>
+      task.areaId === area.id && !task.projectId && !task.archived && task.status !== "done"
+  );
+  const notes = state.notes.filter((note) => note.areaId === area.id && !note.archived);
+
+  const projectsSection = createSection("Projetos da area", "");
+  if (!projects.length) {
+    projectsSection.body.append(createElement("div", "list-meta", "Sem projetos."));
+  } else {
+    projects.forEach((project) => projectsSection.body.append(createProjectCard(project)));
+  }
+  root.append(projectsSection.section);
+
+  const tasksSection = createSection("Tarefas sem projeto", "");
+  if (!tasks.length) {
+    tasksSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+  } else {
+    tasks.forEach((task) => tasksSection.body.append(createTaskRow(task)));
+  }
+  root.append(tasksSection.section);
+
+  const notesSection = createSection("Notas da area", "");
+  if (!notes.length) {
+    notesSection.body.append(createElement("div", "list-meta", "Sem notas."));
+  } else {
+    notes.forEach((note) => notesSection.body.append(createNoteCard(note)));
+  }
+  root.append(notesSection.section);
+}
+
+function renderArchiveView(root) {
+  const archivedTasks = state.tasks.filter((task) => task.archived);
+  const archivedEvents = state.events.filter((event) => event.archived);
+  const archivedNotes = state.notes.filter((note) => note.archived);
+
+  const taskSection = createSection("Tarefas arquivadas", "");
+  if (!archivedTasks.length) {
+    taskSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+  } else {
+    archivedTasks.forEach((task) => taskSection.body.append(createTaskRow(task)));
+  }
+  root.append(taskSection.section);
+
+  const eventSection = createSection("Eventos arquivados", "");
+  if (!archivedEvents.length) {
+    eventSection.body.append(createElement("div", "list-meta", "Sem eventos."));
+  } else {
+    archivedEvents.forEach((event) => eventSection.body.append(createEventRow(event)));
+  }
+  root.append(eventSection.section);
+
+  const noteSection = createSection("Notas arquivadas", "");
+  if (!archivedNotes.length) {
+    noteSection.body.append(createElement("div", "list-meta", "Sem notas."));
+  } else {
+    archivedNotes.forEach((note) => noteSection.body.append(createNoteCard(note)));
+  }
+  root.append(noteSection.section);
+}
+
+function renderDetailsPanel() {
+  const selection = getSelectedItem();
+  el.detailsBody.innerHTML = "";
+
+  if (!selection.item) {
+    el.detailsTitle.textContent = "Nada selecionado";
+    setDetailsOpen(false);
+    const empty = createElement("div", "empty");
+    empty.innerHTML = "<h3>Selecione um item</h3><p>Detalhes aparecem aqui.</p>";
+    el.detailsBody.append(empty);
+    appendQuickCapturePanel();
++    updateDetailsToggleButton();
+    return;
+  }
+
+  setDetailsOpen(true);
+
+  if (selection.kind === "task") {
+    renderTaskDetails(selection.item);
+  } else if (selection.kind === "event") {
+    renderEventDetails(selection.item);
+  } else if (selection.kind === "note") {
+    renderNoteDetails(selection.item);
+  }
+  appendQuickCapturePanel();
++  updateDetailsToggleButton();
+}
+
+function setDetailsOpen(isOpen) {
+  document.body.classList.toggle("details-open", isOpen);
+  if (el.detailsBackdrop) {
+    el.detailsBackdrop.classList.toggle("hidden", !isOpen);
+    el.detailsBackdrop.setAttribute("aria-hidden", String(!isOpen));
+  }
+  if (el.detailsPanel) {
+    el.detailsPanel.setAttribute("aria-hidden", String(!isOpen));
+  }
+  // if panel is being closed fully, also clear minimized visual state
+  if (!isOpen) {
+    document.body.classList.remove("details-minimized");
+    updateDetailsToggleButton();
   }
 }
 
-function getFocusableElements(container) {
-  if (!container) {
-    return [];
+// Hide details panel on mobile view when user scrolls/touch-moving to avoid it covering content
+function handleMobileScroll() {
+  try {
+    if (window.innerWidth > 768) {
+      return;
+    }
+    if (!document.body.classList.contains("details-open")) {
+      return;
+    }
+    // keep selection but hide the panel so it doesn't cover 1/3 of the screen
+    setDetailsOpen(false);
+  } catch (e) {
+    // noop
   }
-  const selector =
-    'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-  return Array.from(container.querySelectorAll(selector)).filter(
-    (element) => !element.classList.contains("hidden") && element.offsetParent !== null
+}
+
+// Toggle minimized visual state (keeps the item selected but frees space)
+function toggleDetailsMinimize() {
+  const isMin = document.body.classList.toggle("details-minimized");
+  updateDetailsToggleButton();
+  // when minimizing ensure header remains visible even if previously closed
+  if (isMin && !document.body.classList.contains("details-open")) {
+    document.body.classList.add("details-open");
+    if (el.detailsBackdrop) { el.detailsBackdrop.classList.add("hidden"); el.detailsBackdrop.setAttribute("aria-hidden", "true"); }
+    if (el.detailsPanel) { el.detailsPanel.setAttribute("aria-hidden", "false"); }
+  }
+}
+
+// update button label/aria according to state
+function updateDetailsToggleButton() {
+  if (!el.detailsToggle) return;
+  const minimized = document.body.classList.contains("details-minimized");
+  el.detailsToggle.textContent = minimized ? "▴" : "—";
+  el.detailsToggle.setAttribute("aria-label", minimized ? "Restaurar painel de detalhes" : "Minimizar painel de detalhes");
+}
+
+function renderTaskDetails(task) {
+  el.detailsTitle.textContent = task.title || "Tarefa";
+
+  const titleInput = document.createElement("input");
+  titleInput.value = task.title;
+  titleInput.addEventListener("input", () => {
+    task.title = titleInput.value;
+    touch(task);
+    saveStateDebounced();
+    renderMain();
+  });
+
+  const statusSelect = createSelect(
+    STATUS_ORDER.map((status) => ({ value: status, label: STATUS_LABELS[status] })),
+    task.status
+  );
+  statusSelect.addEventListener("change", () => {
+    task.status = statusSelect.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = task.dueDate || "";
+  dateInput.addEventListener("change", () => {
+    task.dueDate = dateInput.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = task.dueTime || "";
+  timeInput.addEventListener("change", () => {
+    task.dueTime = timeInput.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const prioritySelect = createSelect(
+    [
+      { value: "low", label: "Baixa" },
+      { value: "med", label: "Media" },
+      { value: "high", label: "Alta" }
+    ],
+    task.priority
+  );
+  prioritySelect.addEventListener("change", () => {
+    task.priority = prioritySelect.value;
+    touch(task);
+    saveState();
+  });
+
+  const projectSelect = createProjectSelect(task.projectId);
+  projectSelect.addEventListener("change", () => {
+    task.projectId = projectSelect.value || null;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const areaSelect = createAreaSelect(task.areaId);
+  areaSelect.addEventListener("change", () => {
+    task.areaId = areaSelect.value || null;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 4;
+  notesInput.value = task.notes || "";
+  notesInput.addEventListener("input", () => {
+    task.notes = notesInput.value;
+    touch(task);
+    saveStateDebounced();
+  });
+
+  const linksInput = document.createElement("textarea");
+  linksInput.rows = 3;
+  linksInput.value = (task.attachments || []).join("\n");
+  linksInput.addEventListener("input", () => {
+    task.attachments = linksInput.value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    touch(task);
+    saveStateDebounced();
+  });
+
+  const noteSelect = createNoteSelect(task.linkedNoteId);
+  noteSelect.addEventListener("change", () => {
+    task.linkedNoteId = noteSelect.value || null;
+    touch(task);
+    saveState();
+  });
+
+  const checklist = createChecklistEditor(task);
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Concluir", "ghost-btn", () => {
+      task.status = "done";
+      touch(task);
+      saveState();
+      renderAll();
+    }),
+    createButton("Definir foco", "ghost-btn", () => toggleTaskFocus(task)),
+    createButton("Adiar 1 dia", "ghost-btn", () => snoozeTask(task, 1)),
+    createButton("Adiar 7 dias", "ghost-btn", () => snoozeTask(task, 7)),
+    createButton("Arquivar", "ghost-btn danger", () => archiveTask(task))
+  );
+
+  el.detailsBody.append(
+    buildField("Titulo", titleInput),
+    buildField("Status", statusSelect),
+    buildField("Prazo", dateInput),
+    buildField("Hora", timeInput),
+    buildField("Prioridade", prioritySelect),
+    buildField("Projeto", projectSelect),
+    buildField("Area", areaSelect),
+    buildField("Subtarefas", checklist),
+    buildField("Descricao", notesInput),
+    buildField("Anexos/links", linksInput),
+    buildField("Vinculo com nota", noteSelect),
+    buildField("Acoes chave", actions)
   );
 }
 
-function openCommandPalette() {
-  if (!el.commandPalette || !el.commandInput || !el.commandList) {
-    return;
-  }
-  commandState.previousFocus = document.activeElement;
-  commandState.open = true;
-  el.commandPalette.classList.remove("hidden");
-  el.commandInput.value = "";
-  commandState.index = 0;
-  commandState.filtered = buildCommands();
-  renderCommandList();
-  el.commandInput.focus();
-  el.commandInput.addEventListener("input", handleCommandInput);
-}
+function renderEventDetails(event) {
+  el.detailsTitle.textContent = event.title || "Evento";
 
-function closeCommandPalette(options = {}) {
-  if (!el.commandPalette || !el.commandInput) {
-    return;
-  }
-  commandState.open = false;
-  el.commandPalette.classList.add("hidden");
-  el.commandInput.removeEventListener("input", handleCommandInput);
-  if (options.restoreFocus !== false && commandState.previousFocus) {
-    commandState.previousFocus.focus();
-  }
-  commandState.previousFocus = null;
-}
-
-function handleCommandInput() {
-  const query = el.commandInput.value.trim().toLowerCase();
-  const commands = buildCommands();
-  commandState.filtered = query
-    ? commands.filter((cmd) => cmd.label.toLowerCase().includes(query))
-    : commands;
-  commandState.index = 0;
-  renderCommandList();
-}
-
-function handleCommandPaletteKeydown(event) {
-  if (!commandState.open) {
-    return;
-  }
-
-  if (event.key === "Escape") {
-    event.preventDefault();
-    closeCommandPalette();
-    return;
-  }
-  if (event.key === "ArrowDown") {
-    event.preventDefault();
-    commandState.index = Math.min(commandState.index + 1, commandState.filtered.length - 1);
-    renderCommandList();
-    return;
-  }
-  if (event.key === "ArrowUp") {
-    event.preventDefault();
-    commandState.index = Math.max(commandState.index - 1, 0);
-    renderCommandList();
-    return;
-  }
-  if (event.key === "Enter") {
-    event.preventDefault();
-    const command = commandState.filtered[commandState.index];
-    if (command) {
-      command.action();
-      closeCommandPalette();
-    }
-  }
-}
-
-function renderCommandList() {
-  if (!el.commandList) {
-    return;
-  }
-  el.commandList.innerHTML = "";
-  if (!commandState.filtered.length) {
-    el.commandList.append(createElement("div", "list-meta", "Nenhum comando."));
-    return;
-  }
-  commandState.filtered.forEach((command, index) => {
-    const row = createElement("div", "command-item");
-    if (index === commandState.index) {
-      row.classList.add("active");
-    }
-    row.append(createElement("div", "", command.label));
-    row.append(createElement("div", "command-hint", command.hint || ""));
-    row.addEventListener("click", () => {
-      command.action();
-      closeCommandPalette();
-    });
-    el.commandList.append(row);
+  const titleInput = document.createElement("input");
+  titleInput.value = event.title;
+  titleInput.addEventListener("input", () => {
+    event.title = titleInput.value;
+    touch(event);
+    saveStateDebounced();
+    renderMain();
   });
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = event.date;
+  dateInput.addEventListener("change", () => {
+    event.date = dateInput.value;
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = event.start;
+  timeInput.addEventListener("change", () => {
+    event.start = timeInput.value;
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const durationInput = document.createElement("input");
+  durationInput.type = "number";
+  durationInput.min = "15";
+  durationInput.value = event.duration;
+  durationInput.addEventListener("change", () => {
+    event.duration = Math.max(15, Number(durationInput.value) || 15);
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const recurrenceSelect = createSelect(
+    [
+      { value: "none", label: "Sem repeticao" },
+      { value: "daily", label: "Diario" },
+      { value: "weekly", label: "Semanal" },
+      { value: "monthly", label: "Mensal" }
+    ],
+    event.recurrence
+  );
+  recurrenceSelect.addEventListener("change", () => {
+    event.recurrence = recurrenceSelect.value;
+    touch(event);
+    saveState();
+  });
+
+  const locationInput = document.createElement("input");
+  locationInput.value = event.location || "";
+  locationInput.addEventListener("input", () => {
+    event.location = locationInput.value;
+    touch(event);
+    saveStateDebounced();
+  });
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 4;
+  notesInput.value = event.notes || "";
+  notesInput.addEventListener("input", () => {
+    event.notes = notesInput.value;
+    touch(event);
+    saveStateDebounced();
+  });
+
+  const projectSelect = createProjectSelect(event.projectId);
+  projectSelect.addEventListener("change", () => {
+    event.projectId = projectSelect.value || null;
+    touch(event);
+    saveState();
+  });
+
+  const areaSelect = createAreaSelect(event.areaId);
+  areaSelect.addEventListener("change", () => {
+    event.areaId = areaSelect.value || null;
+    touch(event);
+    saveState();
+  });
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Arquivar", "ghost-btn danger", () => archiveEvent(event))
+  );
+
+  el.detailsBody.append(
+    buildField("Titulo", titleInput),
+    buildField("Data", dateInput),
+    buildField("Hora", timeInput),
+    buildField("Duracao (min)", durationInput),
+    buildField("Repeticao", recurrenceSelect),
+    buildField("Local", locationInput),
+    buildField("Projeto", projectSelect),
+    buildField("Area", areaSelect),
+    buildField("Notas", notesInput),
+    buildField("Acoes chave", actions)
+  );
 }
 
-function buildCommands() {
-  return [
-    { label: "Ir para Hoje", hint: "/today", action: () => navigate("/today") },
-    { label: "Ir para Inbox", hint: "/inbox", action: () => navigate("/inbox") },
-    { label: "Ir para Semana", hint: "/week", action: () => navigate("/week") },
-    { label: "Ir para Projetos", hint: "/projects", action: () => navigate("/projects") },
-    { label: "Ir para Notas", hint: "/notes", action: () => navigate("/notes") },
-    { label: "Ir para Calendario", hint: "/calendar", action: () => navigate("/calendar") },
-    { label: "Ir para Areas", hint: "/areas", action: () => navigate("/areas") },
-    { label: "Ir para Arquivo", hint: "/archive", action: () => navigate("/archive") },
-    { label: "Nova tarefa", hint: "Criar", action: () => openTaskModal({}) },
-    { label: "Novo evento", hint: "Criar", action: () => openEventModal({}) },
-    { label: "Nova nota", hint: "Criar", action: () => openNoteModal({}) },
-    { label: "Novo projeto", hint: "Criar", action: () => openProjectModal({}) },
-    { label: "Nova area", hint: "Criar", action: () => openAreaModal({}) },
-    { label: "Abrir configuracoes", hint: "Preferencias", action: () => openSettingsModal() }
-  ];
+function renderNoteDetails(note) {
+  el.detailsTitle.textContent = note.title || "Nota";
+
+  const areaSelect = createAreaSelect(note.areaId);
+  areaSelect.addEventListener("change", () => {
+    note.areaId = areaSelect.value || null;
+    touch(note);
+    saveState();
+    renderMain();
+  });
+
+  const projectSelect = createProjectSelect(note.projectId);
+  projectSelect.addEventListener("change", () => {
+    note.projectId = projectSelect.value || null;
+    touch(note);
+    saveState();
+    renderMain();
+  });
+
+  const backlinks = createElement("div", "card");
+  const linkedTasks = state.tasks.filter(
+    (task) => task.linkedNoteId === note.id || task.sourceNoteId === note.id
+  );
+  backlinks.append(createElement("div", "card-title", "Backlinks"));
+  if (!linkedTasks.length) {
+    backlinks.append(createElement("div", "list-meta", "Nenhuma tarefa vinculada."));
+  } else {
+    linkedTasks.forEach((task) => backlinks.append(createTaskRow(task, { compact: true })));
+  }
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Abrir nota", "ghost-btn", () => navigate(`/notes/${note.id}`)),
+    createButton("Arquivar", "ghost-btn danger", () => archiveNote(note))
+  );
+
+  el.detailsBody.append(
+    buildField("Area", areaSelect),
+    buildField("Projeto", projectSelect),
+    buildField("Links", backlinks),
+    buildField("Acoes chave", actions)
+  );
 }
 
-function showToast(message) {
-  if (!el.toastContainer) {
+function appendQuickCapturePanel() {
+  const route = parseRoute(state.ui.route);
+  if (!route || route.name !== "today") {
     return;
   }
-  const toast = createElement("div", "toast", message);
-  el.toastContainer.append(toast);
-  setTimeout(() => {
-    if (toast.parentNode) {
-      toast.parentNode.removeChild(toast);
+  const section = createElement("div", "section");
+  const header = createElement("div", "section-header");
+  header.append(createElement("div", "section-title", "+ Capturar rapido"));
+  section.append(header);
+  const input = document.createElement("input");
+  input.placeholder = "Digite uma tarefa para hoje...";
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const value = input.value.trim();
+      if (!value) {
+        return;
+      }
+      state.tasks.unshift(createTask({ title: value, dueDate: getTodayKey() }));
+      input.value = "";
+      saveState();
+      renderMain();
     }
-  }, 3000);
+  });
+  section.append(input);
+  el.detailsBody.append(section);
 }
+
+function createElement(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) {
+    node.className = className;
+  }
+  if (text !== undefined) {
+    node.textContent = text;
+  }
+  return node;
+}
+
+function createButton(label, className, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className || "ghost-btn";
+  button.textContent = label;
+  if (onClick) {
+    button.addEventListener("click", onClick);
+  }
+  return button;
+}
+
+function createSection(title, hint) {
+  const section = createElement("div", "section");
+  const header = createElement("div", "section-header");
+  const heading = createElement("div", "section-title", title);
+  header.append(heading);
+  if (hint) {
+    header.append(createElement("div", "section-hint", hint));
+  }
+  section.append(header);
+  const body = createElement("div");
+  section.append(body);
+  return { section, body };
+}
+
+function buildField(label, input) {
+  const wrapper = createElement("label", "field");
+  const title = createElement("span", "", label);
+  wrapper.append(title, input);
+  return wrapper;
+}
+
+function createSelect(options, value) {
+  const select = document.createElement("select");
+  options.forEach((optionData) => {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    select.append(option);
+  });
+  select.value = value || "";
+  return select;
+}
+
+function setCount(node, count) {
+  if (!node) {
+    return;
+  }
+  node.textContent = count ? String(count) : "";
+}
+
+function createTaskRow(task, options = {}) {
+  const row = createElement("div", "task-row");
+  row.classList.toggle(
+    "active",
+    state.ui.selected && state.ui.selected.kind === "task" && state.ui.selected.id === task.id
+  );
+  row.draggable = !task.archived && task.status !== "done";
+  row.addEventListener("dragstart", (event) => {
+    if (!row.draggable) {
+      event.preventDefault();
+      return;
+    }
+    row.classList.add("dragging");
+    setDragData(event, "task", task.id);
+  });
+  row.addEventListener("dragend", () => row.classList.remove("dragging"));
+
+  const info = createElement("div");
+  info.append(createElement("div", "task-title", task.title));
+  const metaParts = [];
+  if (task.dueDate) {
+    metaParts.push(`Prazo ${task.dueDate}`);
+  }
+  if (task.dueTime) {
+    metaParts.push(task.dueTime);
+  }
+  if (task.projectId) {
+    const project = getProject(task.projectId);
+    if (project) {
+      metaParts.push(project.name);
+    }
+  }
+  if (task.areaId) {
+    const area = getArea(task.areaId);
+    if (area) {
+      metaParts.push(area.name);
+    }
+  }
+  if (task.priority) {
+    metaParts.push(PRIORITY_LABELS[task.priority] || "");
+  }
+  info.append(createElement("div", "task-meta", metaParts.filter(Boolean).join(" / ")));
+
+  row.append(info);
+
+  if (!options.compact) {
+    const actions = createElement("div", "task-actions");
+    if (task.archived) {
+      actions.append(
+        createButton("Restaurar", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.archived = false;
+          touch(task);
+          saveState();
+          renderAll();
+        })
+      );
+    } else if (task.status === "done") {
+      actions.append(
+        createButton("Reabrir", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.status = "todo";
+          touch(task);
+          saveState();
+          renderAll();
+        })
+      );
+    } else {
+      actions.append(
+        createButton("Concluir", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.status = "done";
+          touch(task);
+          saveState();
+          renderAll();
+        }),
+        createButton("Definir foco", "ghost-btn", (event) => {
+          event.stopPropagation();
+          toggleTaskFocus(task);
+        })
+      );
+    }
+    row.append(actions);
+  }
+
+  row.addEventListener("click", () => selectItem("task", task.id));
+  return row;
+}
+
+function createTaskCard(task, options = {}) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", task.title));
+  const meta = [];
+  if (task.dueDate) {
+    meta.push(`Prazo ${task.dueDate}`);
+  }
+  if (task.projectId) {
+    const project = getProject(task.projectId);
+    if (project) {
+      meta.push(project.name);
+    }
+  }
+  card.append(createElement("div", "card-meta", meta.join(" / ")));
+  if (!options.compact) {
+    card.append(
+      createButton("Ver detalhes", "ghost-btn", (event) => {
+        event.stopPropagation();
+        selectItem("task", task.id);
+      })
+    );
+  }
+  card.addEventListener("click", () => selectItem("task", task.id));
+  return card;
+}
+
+function createEventRow(event) {
+  const row = createElement("div", "event-row");
+  row.classList.toggle(
+    "active",
+    state.ui.selected && state.ui.selected.kind === "event" && state.ui.selected.id === event.id
+  );
+  row.draggable = !event.archived;
+  row.addEventListener("dragstart", (ev) => {
+    if (!row.draggable) {
+      ev.preventDefault();
+      return;
+    }
+    row.classList.add("dragging");
+    setDragData(ev, "event", event.id);
+  });
+  row.addEventListener("dragend", () => row.classList.remove("dragging"));
+
+  const info = createElement("div");
+  info.append(createElement("div", "event-title", event.title));
+  info.append(
+    createElement(
+      "div",
+      "event-meta",
+      `${event.date} - ${formatTimeLabel(event.start)}`
+    )
+  );
+  row.append(info);
+
+  const actions = createElement("div", "task-actions");
+  if (event.archived) {
+    actions.append(
+      createButton("Restaurar", "ghost-btn", (eventClick) => {
+        eventClick.stopPropagation();
+        event.archived = false;
+        touch(event);
+        saveState();
+        renderAll();
+      })
+    );
+  } else {
+    actions.append(
+      createButton("Arquivar", "ghost-btn", (eventClick) => {
+        eventClick.stopPropagation();
+        archiveEvent(event);
+      })
+    );
+  }
+  row.append(actions);
+
+  row.addEventListener("click", () => selectItem("event", event.id));
+  return row;
+}
+
+function createInboxRow(item, options = {}) {
+  const row = createElement("div", "inbox-row");
+  row.addEventListener("mouseenter", () => {
+    state.ui.inboxActiveId = item.id;
+  });
+
+  if (!options.compact) {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = state.ui.inboxSelection.includes(item.id);
+    checkbox.addEventListener("change", () => {
+      toggleInboxSelection(item.id);
+    });
+    row.append(checkbox);
+  } else {
+    row.append(createElement("div", "tag", item.kind));
+  }
+
+  const info = createElement("div");
+  info.append(createElement("div", "task-title", item.title));
+  info.append(createElement("div", "list-meta", `Sugestao: ${item.kind}`));
+  row.append(info);
+
+  const actions = createElement("div", "inbox-actions");
+  actions.append(
+    createButton("Processar", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openProcessModal(item);
+    })
+  );
+  if (!options.compact) {
+    actions.append(
+      createButton("Arquivar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        archiveInboxItem(item.id);
+      }),
+      createButton("Deletar", "ghost-btn danger", (event) => {
+        event.stopPropagation();
+        deleteInboxItem(item.id);
+      })
+    );
+  }
+  row.append(actions);
+  return row;
+}
+
+function createProjectCard(project) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", project.name));
+  if (project.objective) {
+    card.append(createElement("div", "card-meta", project.objective));
+  }
+  const tasks = state.tasks.filter((task) => task.projectId === project.id && !task.archived);
+  const done = tasks.filter((task) => task.status === "done").length;
+  const progress = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+  const progressWrap = createElement("div", "progress");
+  const bar = createElement("div", "progress-bar");
+  bar.style.width = `${progress}%`;
+  progressWrap.append(bar);
+  card.append(progressWrap);
+  const next = tasks.find((task) => task.status !== "done");
+  if (next) {
+    card.append(createElement("div", "card-meta", `Proximo: ${next.title}`));
+  }
+
+  const actions = createElement("div", "card-actions");
+  if (project.status === "active") {
+    actions.append(
+      createButton("Pausar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "paused";
+        touch(project);
+        saveState();
+        renderMain();
+      }),
+      createButton("Concluir", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "done";
+        touch(project);
+        saveState();
+        renderMain();
+      })
+    );
+  } else if (project.status === "paused") {
+    actions.append(
+      createButton("Reativar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "active";
+        touch(project);
+        saveState();
+        renderMain();
+      })
+    );
+  }
+  card.append(actions);
+
+  card.addEventListener("click", () => navigate(`/projects/${project.id}`));
+  return card;
+}
+
+function createAreaCard(area) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", area.name));
+  if (area.objective) {
+    card.append(createElement("div", "card-meta", area.objective));
+  }
+  
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Editar", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openAreaEditModal(area);
+    }),
+    createButton("Deletar", "ghost-btn danger", (event) => {
+      event.stopPropagation();
+      if (confirm(`Tem certeza que deseja deletar "${area.name}"?`)) {
+        deleteArea(area.id);
+      }
+    })
+  );
+  card.append(actions);
+  
+  card.addEventListener("click", () => navigate(`/areas/${area.id}`));
+  return card;
+}
+
+function renderAreaDetail(root, areaId) {
+  const area = getArea(areaId);
+  if (!area) {
+    root.append(createElement("div", "empty", "Area nao encontrada."));
+    return;
+  }
+
+  const header = createSection("Resumo da area", "");
+  const nameInput = document.createElement("input");
+  nameInput.value = area.name;
+  nameInput.addEventListener("input", () => {
+    area.name = nameInput.value;
+    touch(area);
+    saveStateDebounced();
+    renderSidebar();
+  });
+  const objectiveInput = document.createElement("textarea");
+  objectiveInput.rows = 3;
+  objectiveInput.value = area.objective || "";
+  objectiveInput.addEventListener("input", () => {
+    area.objective = objectiveInput.value;
+    touch(area);
+    saveStateDebounced();
+  });
+  
+  const deleteBtn = createButton("Deletar area", "ghost-btn danger", () => {
+    if (confirm(`Tem certeza que deseja deletar "${area.name}"? Isto nao deletara seus projetos e tarefas.`)) {
+      deleteArea(area.id);
+      navigate("/areas");
+    }
+  });
+  
+  header.body.append(
+    buildField("Nome", nameInput),
+    buildField("Objetivo", objectiveInput),
+    deleteBtn
+  );
+  root.append(header.section);
+
+  const projects = state.projects.filter((project) => project.areaId === area.id);
+  const tasks = state.tasks.filter(
+    (task) =>
+      task.areaId === area.id && !task.projectId && !task.archived && task.status !== "done"
+  );
+  const notes = state.notes.filter((note) => note.areaId === area.id && !note.archived);
+
+  const projectsSection = createSection("Projetos da area", "");
+  if (!projects.length) {
+    projectsSection.body.append(createElement("div", "list-meta", "Sem projetos."));
+  } else {
+    projects.forEach((project) => projectsSection.body.append(createProjectCard(project)));
+  }
+  root.append(projectsSection.section);
+
+  const tasksSection = createSection("Tarefas sem projeto", "");
+  if (!tasks.length) {
+    tasksSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+  } else {
+    tasks.forEach((task) => tasksSection.body.append(createTaskRow(task)));
+  }
+  root.append(tasksSection.section);
+
+  const notesSection = createSection("Notas da area", "");
+  if (!notes.length) {
+    notesSection.body.append(createElement("div", "list-meta", "Sem notas."));
+  } else {
+    notes.forEach((note) => notesSection.body.append(createNoteCard(note)));
+  }
+  root.append(notesSection.section);
+}
+
+function renderArchiveView(root) {
+  const archivedTasks = state.tasks.filter((task) => task.archived);
+  const archivedEvents = state.events.filter((event) => event.archived);
+  const archivedNotes = state.notes.filter((note) => note.archived);
+
+  const taskSection = createSection("Tarefas arquivadas", "");
+  if (!archivedTasks.length) {
+    taskSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+  } else {
+    archivedTasks.forEach((task) => taskSection.body.append(createTaskRow(task)));
+  }
+  root.append(taskSection.section);
+
+  const eventSection = createSection("Eventos arquivados", "");
+  if (!archivedEvents.length) {
+    eventSection.body.append(createElement("div", "list-meta", "Sem eventos."));
+  } else {
+    archivedEvents.forEach((event) => eventSection.body.append(createEventRow(event)));
+  }
+  root.append(eventSection.section);
+
+  const noteSection = createSection("Notas arquivadas", "");
+  if (!archivedNotes.length) {
+    noteSection.body.append(createElement("div", "list-meta", "Sem notas."));
+  } else {
+    archivedNotes.forEach((note) => noteSection.body.append(createNoteCard(note)));
+  }
+  root.append(noteSection.section);
+}
+
+function renderDetailsPanel() {
+  const selection = getSelectedItem();
+  el.detailsBody.innerHTML = "";
+
+  if (!selection.item) {
+    el.detailsTitle.textContent = "Nada selecionado";
+    setDetailsOpen(false);
+    const empty = createElement("div", "empty");
+    empty.innerHTML = "<h3>Selecione um item</h3><p>Detalhes aparecem aqui.</p>";
+    el.detailsBody.append(empty);
+    appendQuickCapturePanel();
++    updateDetailsToggleButton();
+    return;
+  }
+
+  setDetailsOpen(true);
+
+  if (selection.kind === "task") {
+    renderTaskDetails(selection.item);
+  } else if (selection.kind === "event") {
+    renderEventDetails(selection.item);
+  } else if (selection.kind === "note") {
+    renderNoteDetails(selection.item);
+  }
+  appendQuickCapturePanel();
++  updateDetailsToggleButton();
+}
+
+function setDetailsOpen(isOpen) {
+  document.body.classList.toggle("details-open", isOpen);
+  if (el.detailsBackdrop) {
+    el.detailsBackdrop.classList.toggle("hidden", !isOpen);
+    el.detailsBackdrop.setAttribute("aria-hidden", String(!isOpen));
+  }
+  if (el.detailsPanel) {
+    el.detailsPanel.setAttribute("aria-hidden", String(!isOpen));
+  }
+  // if panel is being closed fully, also clear minimized visual state
+  if (!isOpen) {
+    document.body.classList.remove("details-minimized");
+    updateDetailsToggleButton();
+  }
+}
+
+// Hide details panel on mobile view when user scrolls/touch-moving to avoid it covering content
+function handleMobileScroll() {
+  try {
+    if (window.innerWidth > 768) {
+      return;
+    }
+    if (!document.body.classList.contains("details-open")) {
+      return;
+    }
+    // keep selection but hide the panel so it doesn't cover 1/3 of the screen
+    setDetailsOpen(false);
+  } catch (e) {
+    // noop
+  }
+}
+
+// Toggle minimized visual state (keeps the item selected but frees space)
+function toggleDetailsMinimize() {
+  const isMin = document.body.classList.toggle("details-minimized");
+  updateDetailsToggleButton();
+  // when minimizing ensure header remains visible even if previously closed
+  if (isMin && !document.body.classList.contains("details-open")) {
+    document.body.classList.add("details-open");
+    if (el.detailsBackdrop) { el.detailsBackdrop.classList.add("hidden"); el.detailsBackdrop.setAttribute("aria-hidden", "true"); }
+    if (el.detailsPanel) { el.detailsPanel.setAttribute("aria-hidden", "false"); }
+  }
+}
+
+// update button label/aria according to state
+function updateDetailsToggleButton() {
+  if (!el.detailsToggle) return;
+  const minimized = document.body.classList.contains("details-minimized");
+  el.detailsToggle.textContent = minimized ? "▴" : "—";
+  el.detailsToggle.setAttribute("aria-label", minimized ? "Restaurar painel de detalhes" : "Minimizar painel de detalhes");
+}
+
+function renderTaskDetails(task) {
+  el.detailsTitle.textContent = task.title || "Tarefa";
+
+  const titleInput = document.createElement("input");
+  titleInput.value = task.title;
+  titleInput.addEventListener("input", () => {
+    task.title = titleInput.value;
+    touch(task);
+    saveStateDebounced();
+    renderMain();
+  });
+
+  const statusSelect = createSelect(
+    STATUS_ORDER.map((status) => ({ value: status, label: STATUS_LABELS[status] })),
+    task.status
+  );
+  statusSelect.addEventListener("change", () => {
+    task.status = statusSelect.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = task.dueDate || "";
+  dateInput.addEventListener("change", () => {
+    task.dueDate = dateInput.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = task.dueTime || "";
+  timeInput.addEventListener("change", () => {
+    task.dueTime = timeInput.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const prioritySelect = createSelect(
+    [
+      { value: "low", label: "Baixa" },
+      { value: "med", label: "Media" },
+      { value: "high", label: "Alta" }
+    ],
+    task.priority
+  );
+  prioritySelect.addEventListener("change", () => {
+    task.priority = prioritySelect.value;
+    touch(task);
+    saveState();
+  });
+
+  const projectSelect = createProjectSelect(task.projectId);
+  projectSelect.addEventListener("change", () => {
+    task.projectId = projectSelect.value || null;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const areaSelect = createAreaSelect(task.areaId);
+  areaSelect.addEventListener("change", () => {
+    task.areaId = areaSelect.value || null;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 4;
+  notesInput.value = task.notes || "";
+  notesInput.addEventListener("input", () => {
+    task.notes = notesInput.value;
+    touch(task);
+    saveStateDebounced();
+  });
+
+  const linksInput = document.createElement("textarea");
+  linksInput.rows = 3;
+  linksInput.value = (task.attachments || []).join("\n");
+  linksInput.addEventListener("input", () => {
+    task.attachments = linksInput.value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    touch(task);
+    saveStateDebounced();
+  });
+
+  const noteSelect = createNoteSelect(task.linkedNoteId);
+  noteSelect.addEventListener("change", () => {
+    task.linkedNoteId = noteSelect.value || null;
+    touch(task);
+    saveState();
+  });
+
+  const checklist = createChecklistEditor(task);
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Concluir", "ghost-btn", () => {
+      task.status = "done";
+      touch(task);
+      saveState();
+      renderAll();
+    }),
+    createButton("Definir foco", "ghost-btn", () => toggleTaskFocus(task)),
+    createButton("Adiar 1 dia", "ghost-btn", () => snoozeTask(task, 1)),
+    createButton("Adiar 7 dias", "ghost-btn", () => snoozeTask(task, 7)),
+    createButton("Arquivar", "ghost-btn danger", () => archiveTask(task))
+  );
+
+  el.detailsBody.append(
+    buildField("Titulo", titleInput),
+    buildField("Status", statusSelect),
+    buildField("Prazo", dateInput),
+    buildField("Hora", timeInput),
+    buildField("Prioridade", prioritySelect),
+    buildField("Projeto", projectSelect),
+    buildField("Area", areaSelect),
+    buildField("Subtarefas", checklist),
+    buildField("Descricao", notesInput),
+    buildField("Anexos/links", linksInput),
+    buildField("Vinculo com nota", noteSelect),
+    buildField("Acoes chave", actions)
+  );
+}
+
+function renderEventDetails(event) {
+  el.detailsTitle.textContent = event.title || "Evento";
+
+  const titleInput = document.createElement("input");
+  titleInput.value = event.title;
+  titleInput.addEventListener("input", () => {
+    event.title = titleInput.value;
+    touch(event);
+    saveStateDebounced();
+    renderMain();
+  });
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = event.date;
+  dateInput.addEventListener("change", () => {
+    event.date = dateInput.value;
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = event.start;
+  timeInput.addEventListener("change", () => {
+    event.start = timeInput.value;
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const durationInput = document.createElement("input");
+  durationInput.type = "number";
+  durationInput.min = "15";
+  durationInput.value = event.duration;
+  durationInput.addEventListener("change", () => {
+    event.duration = Math.max(15, Number(durationInput.value) || 15);
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const recurrenceSelect = createSelect(
+    [
+      { value: "none", label: "Sem repeticao" },
+      { value: "daily", label: "Diario" },
+      { value: "weekly", label: "Semanal" },
+      { value: "monthly", label: "Mensal" }
+    ],
+    event.recurrence
+  );
+  recurrenceSelect.addEventListener("change", () => {
+    event.recurrence = recurrenceSelect.value;
+    touch(event);
+    saveState();
+  });
+
+  const locationInput = document.createElement("input");
+  locationInput.value = event.location || "";
+  locationInput.addEventListener("input", () => {
+    event.location = locationInput.value;
+    touch(event);
+    saveStateDebounced();
+  });
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 4;
+  notesInput.value = event.notes || "";
+  notesInput.addEventListener("input", () => {
+    event.notes = notesInput.value;
+    touch(event);
+    saveStateDebounced();
+  });
+
+  const projectSelect = createProjectSelect(event.projectId);
+  projectSelect.addEventListener("change", () => {
+    event.projectId = projectSelect.value || null;
+    touch(event);
+    saveState();
+  });
+
+  const areaSelect = createAreaSelect(event.areaId);
+  areaSelect.addEventListener("change", () => {
+    event.areaId = areaSelect.value || null;
+    touch(event);
+    saveState();
+  });
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Arquivar", "ghost-btn danger", () => archiveEvent(event))
+  );
+
+  el.detailsBody.append(
+    buildField("Titulo", titleInput),
+    buildField("Data", dateInput),
+    buildField("Hora", timeInput),
+    buildField("Duracao (min)", durationInput),
+    buildField("Repeticao", recurrenceSelect),
+    buildField("Local", locationInput),
+    buildField("Projeto", projectSelect),
+    buildField("Area", areaSelect),
+    buildField("Notas", notesInput),
+    buildField("Acoes chave", actions)
+  );
+}
+
+function renderNoteDetails(note) {
+  el.detailsTitle.textContent = note.title || "Nota";
+
+  const areaSelect = createAreaSelect(note.areaId);
+  areaSelect.addEventListener("change", () => {
+    note.areaId = areaSelect.value || null;
+    touch(note);
+    saveState();
+    renderMain();
+  });
+
+  const projectSelect = createProjectSelect(note.projectId);
+  projectSelect.addEventListener("change", () => {
+    note.projectId = projectSelect.value || null;
+    touch(note);
+    saveState();
+    renderMain();
+  });
+
+  const backlinks = createElement("div", "card");
+  const linkedTasks = state.tasks.filter(
+    (task) => task.linkedNoteId === note.id || task.sourceNoteId === note.id
+  );
+  backlinks.append(createElement("div", "card-title", "Backlinks"));
+  if (!linkedTasks.length) {
+    backlinks.append(createElement("div", "list-meta", "Nenhuma tarefa vinculada."));
+  } else {
+    linkedTasks.forEach((task) => backlinks.append(createTaskRow(task, { compact: true })));
+  }
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Abrir nota", "ghost-btn", () => navigate(`/notes/${note.id}`)),
+    createButton("Arquivar", "ghost-btn danger", () => archiveNote(note))
+  );
+
+  el.detailsBody.append(
+    buildField("Area", areaSelect),
+    buildField("Projeto", projectSelect),
+    buildField("Links", backlinks),
+    buildField("Acoes chave", actions)
+  );
+}
+
+function appendQuickCapturePanel() {
+  const route = parseRoute(state.ui.route);
+  if (!route || route.name !== "today") {
+    return;
+  }
+  const section = createElement("div", "section");
+  const header = createElement("div", "section-header");
+  header.append(createElement("div", "section-title", "+ Capturar rapido"));
+  section.append(header);
+  const input = document.createElement("input");
+  input.placeholder = "Digite uma tarefa para hoje...";
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const value = input.value.trim();
+      if (!value) {
+        return;
+      }
+      state.tasks.unshift(createTask({ title: value, dueDate: getTodayKey() }));
+      input.value = "";
+      saveState();
+      renderMain();
+    }
+  });
+  section.append(input);
+  el.detailsBody.append(section);
+}
+
+function createElement(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) {
+    node.className = className;
+  }
+  if (text !== undefined) {
+    node.textContent = text;
+  }
+  return node;
+}
+
+function createButton(label, className, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className || "ghost-btn";
+  button.textContent = label;
+  if (onClick) {
+    button.addEventListener("click", onClick);
+  }
+  return button;
+}
+
+function createSection(title, hint) {
+  const section = createElement("div", "section");
+  const header = createElement("div", "section-header");
+  const heading = createElement("div", "section-title", title);
+  header.append(heading);
+  if (hint) {
+    header.append(createElement("div", "section-hint", hint));
+  }
+  section.append(header);
+  const body = createElement("div");
+  section.append(body);
+  return { section, body };
+}
+
+function buildField(label, input) {
+  const wrapper = createElement("label", "field");
+  const title = createElement("span", "", label);
+  wrapper.append(title, input);
+  return wrapper;
+}
+
+function createSelect(options, value) {
+  const select = document.createElement("select");
+  options.forEach((optionData) => {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    select.append(option);
+  });
+  select.value = value || "";
+  return select;
+}
+
+function setCount(node, count) {
+  if (!node) {
+    return;
+  }
+  node.textContent = count ? String(count) : "";
+}
+
+function createTaskRow(task, options = {}) {
+  const row = createElement("div", "task-row");
+  row.classList.toggle(
+    "active",
+    state.ui.selected && state.ui.selected.kind === "task" && state.ui.selected.id === task.id
+  );
+  row.draggable = !task.archived && task.status !== "done";
+  row.addEventListener("dragstart", (event) => {
+    if (!row.draggable) {
+      event.preventDefault();
+      return;
+    }
+    row.classList.add("dragging");
+    setDragData(event, "task", task.id);
+  });
+  row.addEventListener("dragend", () => row.classList.remove("dragging"));
+
+  const info = createElement("div");
+  info.append(createElement("div", "task-title", task.title));
+  const metaParts = [];
+  if (task.dueDate) {
+    metaParts.push(`Prazo ${task.dueDate}`);
+  }
+  if (task.dueTime) {
+    metaParts.push(task.dueTime);
+  }
+  if (task.projectId) {
+    const project = getProject(task.projectId);
+    if (project) {
+      metaParts.push(project.name);
+    }
+  }
+  if (task.areaId) {
+    const area = getArea(task.areaId);
+    if (area) {
+      metaParts.push(area.name);
+    }
+  }
+  if (task.priority) {
+    metaParts.push(PRIORITY_LABELS[task.priority] || "");
+  }
+  info.append(createElement("div", "task-meta", metaParts.filter(Boolean).join(" / ")));
+
+  row.append(info);
+
+  if (!options.compact) {
+    const actions = createElement("div", "task-actions");
+    if (task.archived) {
+      actions.append(
+        createButton("Restaurar", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.archived = false;
+          touch(task);
+          saveState();
+          renderAll();
+        })
+      );
+    } else if (task.status === "done") {
+      actions.append(
+        createButton("Reabrir", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.status = "todo";
+          touch(task);
+          saveState();
+          renderAll();
+        })
+      );
+    } else {
+      actions.append(
+        createButton("Concluir", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.status = "done";
+          touch(task);
+          saveState();
+          renderAll();
+        }),
+        createButton("Definir foco", "ghost-btn", (event) => {
+          event.stopPropagation();
+          toggleTaskFocus(task);
+        })
+      );
+    }
+    row.append(actions);
+  }
+
+  row.addEventListener("click", () => selectItem("task", task.id));
+  return row;
+}
+
+function createTaskCard(task, options = {}) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", task.title));
+  const meta = [];
+  if (task.dueDate) {
+    meta.push(`Prazo ${task.dueDate}`);
+  }
+  if (task.projectId) {
+    const project = getProject(task.projectId);
+    if (project) {
+      meta.push(project.name);
+    }
+  }
+  card.append(createElement("div", "card-meta", meta.join(" / ")));
+  if (!options.compact) {
+    card.append(
+      createButton("Ver detalhes", "ghost-btn", (event) => {
+        event.stopPropagation();
+        selectItem("task", task.id);
+      })
+    );
+  }
+  card.addEventListener("click", () => selectItem("task", task.id));
+  return card;
+}
+
+function createEventRow(event) {
+  const row = createElement("div", "event-row");
+  row.classList.toggle(
+    "active",
+    state.ui.selected && state.ui.selected.kind === "event" && state.ui.selected.id === event.id
+  );
+  row.draggable = !event.archived;
+  row.addEventListener("dragstart", (ev) => {
+    if (!row.draggable) {
+      ev.preventDefault();
+      return;
+    }
+    row.classList.add("dragging");
+    setDragData(ev, "event", event.id);
+  });
+  row.addEventListener("dragend", () => row.classList.remove("dragging"));
+
+  const info = createElement("div");
+  info.append(createElement("div", "event-title", event.title));
+  info.append(
+    createElement(
+      "div",
+      "event-meta",
+      `${event.date} - ${formatTimeLabel(event.start)}`
+    )
+  );
+  row.append(info);
+
+  const actions = createElement("div", "task-actions");
+  if (event.archived) {
+    actions.append(
+      createButton("Restaurar", "ghost-btn", (eventClick) => {
+        eventClick.stopPropagation();
+        event.archived = false;
+        touch(event);
+        saveState();
+        renderAll();
+      })
+    );
+  } else {
+    actions.append(
+      createButton("Arquivar", "ghost-btn", (eventClick) => {
+        eventClick.stopPropagation();
+        archiveEvent(event);
+      })
+    );
+  }
+  row.append(actions);
+
+  row.addEventListener("click", () => selectItem("event", event.id));
+  return row;
+}
+
+function createInboxRow(item, options = {}) {
+  const row = createElement("div", "inbox-row");
+  row.addEventListener("mouseenter", () => {
+    state.ui.inboxActiveId = item.id;
+  });
+
+  if (!options.compact) {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = state.ui.inboxSelection.includes(item.id);
+    checkbox.addEventListener("change", () => {
+      toggleInboxSelection(item.id);
+    });
+    row.append(checkbox);
+  } else {
+    row.append(createElement("div", "tag", item.kind));
+  }
+
+  const info = createElement("div");
+  info.append(createElement("div", "task-title", item.title));
+  info.append(createElement("div", "list-meta", `Sugestao: ${item.kind}`));
+  row.append(info);
+
+  const actions = createElement("div", "inbox-actions");
+  actions.append(
+    createButton("Processar", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openProcessModal(item);
+    })
+  );
+  if (!options.compact) {
+    actions.append(
+      createButton("Arquivar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        archiveInboxItem(item.id);
+      }),
+      createButton("Deletar", "ghost-btn danger", (event) => {
+        event.stopPropagation();
+        deleteInboxItem(item.id);
+      })
+    );
+  }
+  row.append(actions);
+  return row;
+}
+
+function createProjectCard(project) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", project.name));
+  if (project.objective) {
+    card.append(createElement("div", "card-meta", project.objective));
+  }
+  const tasks = state.tasks.filter((task) => task.projectId === project.id && !task.archived);
+  const done = tasks.filter((task) => task.status === "done").length;
+  const progress = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+  const progressWrap = createElement("div", "progress");
+  const bar = createElement("div", "progress-bar");
+  bar.style.width = `${progress}%`;
+  progressWrap.append(bar);
+  card.append(progressWrap);
+  const next = tasks.find((task) => task.status !== "done");
+  if (next) {
+    card.append(createElement("div", "card-meta", `Proximo: ${next.title}`));
+  }
+
+  const actions = createElement("div", "card-actions");
+  if (project.status === "active") {
+    actions.append(
+      createButton("Pausar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "paused";
+        touch(project);
+        saveState();
+        renderMain();
+      }),
+      createButton("Concluir", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "done";
+        touch(project);
+        saveState();
+        renderMain();
+      })
+    );
+  } else if (project.status === "paused") {
+    actions.append(
+      createButton("Reativar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "active";
+        touch(project);
+        saveState();
+        renderMain();
+      })
+    );
+  }
+  card.append(actions);
+
+  card.addEventListener("click", () => navigate(`/projects/${project.id}`));
+  return card;
+}
+
+function createAreaCard(area) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", area.name));
+  if (area.objective) {
+    card.append(createElement("div", "card-meta", area.objective));
+  }
+  
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Editar", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openAreaEditModal(area);
+    }),
+    createButton("Deletar", "ghost-btn danger", (event) => {
+      event.stopPropagation();
+      if (confirm(`Tem certeza que deseja deletar "${area.name}"?`)) {
+        deleteArea(area.id);
+      }
+    })
+  );
+  card.append(actions);
+  
+  card.addEventListener("click", () => navigate(`/areas/${area.id}`));
+  return card;
+}
+
+function renderAreaDetail(root, areaId) {
+  const area = getArea(areaId);
+  if (!area) {
+    root.append(createElement("div", "empty", "Area nao encontrada."));
+    return;
+  }
+
+  const header = createSection("Resumo da area", "");
+  const nameInput = document.createElement("input");
+  nameInput.value = area.name;
+  nameInput.addEventListener("input", () => {
+    area.name = nameInput.value;
+    touch(area);
+    saveStateDebounced();
+    renderSidebar();
+  });
+  const objectiveInput = document.createElement("textarea");
+  objectiveInput.rows = 3;
+  objectiveInput.value = area.objective || "";
+  objectiveInput.addEventListener("input", () => {
+    area.objective = objectiveInput.value;
+    touch(area);
+    saveStateDebounced();
+  });
+  
+  const deleteBtn = createButton("Deletar area", "ghost-btn danger", () => {
+    if (confirm(`Tem certeza que deseja deletar "${area.name}"? Isto nao deletara seus projetos e tarefas.`)) {
+      deleteArea(area.id);
+      navigate("/areas");
+    }
+  });
+  
+  header.body.append(
+    buildField("Nome", nameInput),
+    buildField("Objetivo", objectiveInput),
+    deleteBtn
+  );
+  root.append(header.section);
+
+  const projects = state.projects.filter((project) => project.areaId === area.id);
+  const tasks = state.tasks.filter(
+    (task) =>
+      task.areaId === area.id && !task.projectId && !task.archived && task.status !== "done"
+  );
+  const notes = state.notes.filter((note) => note.areaId === area.id && !note.archived);
+
+  const projectsSection = createSection("Projetos da area", "");
+  if (!projects.length) {
+    projectsSection.body.append(createElement("div", "list-meta", "Sem projetos."));
+  } else {
+    projects.forEach((project) => projectsSection.body.append(createProjectCard(project)));
+  }
+  root.append(projectsSection.section);
+
+  const tasksSection = createSection("Tarefas sem projeto", "");
+  if (!tasks.length) {
+    tasksSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+  } else {
+    tasks.forEach((task) => tasksSection.body.append(createTaskRow(task)));
+  }
+  root.append(tasksSection.section);
+
+  const notesSection = createSection("Notas da area", "");
+  if (!notes.length) {
+    notesSection.body.append(createElement("div", "list-meta", "Sem notas."));
+  } else {
+    notes.forEach((note) => notesSection.body.append(createNoteCard(note)));
+  }
+  root.append(notesSection.section);
+}
+
+function renderArchiveView(root) {
+  const archivedTasks = state.tasks.filter((task) => task.archived);
+  const archivedEvents = state.events.filter((event) => event.archived);
+  const archivedNotes = state.notes.filter((note) => note.archived);
+
+  const taskSection = createSection("Tarefas arquivadas", "");
+  if (!archivedTasks.length) {
+    taskSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+  } else {
+    archivedTasks.forEach((task) => taskSection.body.append(createTaskRow(task)));
+  }
+  root.append(taskSection.section);
+
+  const eventSection = createSection("Eventos arquivados", "");
+  if (!archivedEvents.length) {
+    eventSection.body.append(createElement("div", "list-meta", "Sem eventos."));
+  } else {
+    archivedEvents.forEach((event) => eventSection.body.append(createEventRow(event)));
+  }
+  root.append(eventSection.section);
+
+  const noteSection = createSection("Notas arquivadas", "");
+  if (!archivedNotes.length) {
+    noteSection.body.append(createElement("div", "list-meta", "Sem notas."));
+  } else {
+    archivedNotes.forEach((note) => noteSection.body.append(createNoteCard(note)));
+  }
+  root.append(noteSection.section);
+}
+
+function renderDetailsPanel() {
+  const selection = getSelectedItem();
+  el.detailsBody.innerHTML = "";
+
+  if (!selection.item) {
+    el.detailsTitle.textContent = "Nada selecionado";
+    setDetailsOpen(false);
+    const empty = createElement("div", "empty");
+    empty.innerHTML = "<h3>Selecione um item</h3><p>Detalhes aparecem aqui.</p>";
+    el.detailsBody.append(empty);
+    appendQuickCapturePanel();
++    updateDetailsToggleButton();
+    return;
+  }
+
+  setDetailsOpen(true);
+
+  if (selection.kind === "task") {
+    renderTaskDetails(selection.item);
+  } else if (selection.kind === "event") {
+    renderEventDetails(selection.item);
+  } else if (selection.kind === "note") {
+    renderNoteDetails(selection.item);
+  }
+  appendQuickCapturePanel();
++  updateDetailsToggleButton();
+}
+
+function setDetailsOpen(isOpen) {
+  document.body.classList.toggle("details-open", isOpen);
+  if (el.detailsBackdrop) {
+    el.detailsBackdrop.classList.toggle("hidden", !isOpen);
+    el.detailsBackdrop.setAttribute("aria-hidden", String(!isOpen));
+  }
+  if (el.detailsPanel) {
+    el.detailsPanel.setAttribute("aria-hidden", String(!isOpen));
+  }
+  // if panel is being closed fully, also clear minimized visual state
+  if (!isOpen) {
+    document.body.classList.remove("details-minimized");
+    updateDetailsToggleButton();
+  }
+}
+
+// Hide details panel on mobile view when user scrolls/touch-moving to avoid it covering content
+function handleMobileScroll() {
+  try {
+    if (window.innerWidth > 768) {
+      return;
+    }
+    if (!document.body.classList.contains("details-open")) {
+      return;
+    }
+    // keep selection but hide the panel so it doesn't cover 1/3 of the screen
+    setDetailsOpen(false);
+  } catch (e) {
+    // noop
+  }
+}
+
+// Toggle minimized visual state (keeps the item selected but frees space)
+function toggleDetailsMinimize() {
+  const isMin = document.body.classList.toggle("details-minimized");
+  updateDetailsToggleButton();
+  // when minimizing ensure header remains visible even if previously closed
+  if (isMin && !document.body.classList.contains("details-open")) {
+    document.body.classList.add("details-open");
+    if (el.detailsBackdrop) { el.detailsBackdrop.classList.add("hidden"); el.detailsBackdrop.setAttribute("aria-hidden", "true"); }
+    if (el.detailsPanel) { el.detailsPanel.setAttribute("aria-hidden", "false"); }
+  }
+}
+
+// update button label/aria according to state
+function updateDetailsToggleButton() {
+  if (!el.detailsToggle) return;
+  const minimized = document.body.classList.contains("details-minimized");
+  el.detailsToggle.textContent = minimized ? "▴" : "—";
+  el.detailsToggle.setAttribute("aria-label", minimized ? "Restaurar painel de detalhes" : "Minimizar painel de detalhes");
+}
+
+function renderTaskDetails(task) {
+  el.detailsTitle.textContent = task.title || "Tarefa";
+
+  const titleInput = document.createElement("input");
+  titleInput.value = task.title;
+  titleInput.addEventListener("input", () => {
+    task.title = titleInput.value;
+    touch(task);
+    saveStateDebounced();
+    renderMain();
+  });
+
+  const statusSelect = createSelect(
+    STATUS_ORDER.map((status) => ({ value: status, label: STATUS_LABELS[status] })),
+    task.status
+  );
+  statusSelect.addEventListener("change", () => {
+    task.status = statusSelect.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = task.dueDate || "";
+  dateInput.addEventListener("change", () => {
+    task.dueDate = dateInput.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = task.dueTime || "";
+  timeInput.addEventListener("change", () => {
+    task.dueTime = timeInput.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const prioritySelect = createSelect(
+    [
+      { value: "low", label: "Baixa" },
+      { value: "med", label: "Media" },
+      { value: "high", label: "Alta" }
+    ],
+    task.priority
+  );
+  prioritySelect.addEventListener("change", () => {
+    task.priority = prioritySelect.value;
+    touch(task);
+    saveState();
+  });
+
+  const projectSelect = createProjectSelect(task.projectId);
+  projectSelect.addEventListener("change", () => {
+    task.projectId = projectSelect.value || null;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const areaSelect = createAreaSelect(task.areaId);
+  areaSelect.addEventListener("change", () => {
+    task.areaId = areaSelect.value || null;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 4;
+  notesInput.value = task.notes || "";
+  notesInput.addEventListener("input", () => {
+    task.notes = notesInput.value;
+    touch(task);
+    saveStateDebounced();
+  });
+
+  const linksInput = document.createElement("textarea");
+  linksInput.rows = 3;
+  linksInput.value = (task.attachments || []).join("\n");
+  linksInput.addEventListener("input", () => {
+    task.attachments = linksInput.value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    touch(task);
+    saveStateDebounced();
+  });
+
+  const noteSelect = createNoteSelect(task.linkedNoteId);
+  noteSelect.addEventListener("change", () => {
+    task.linkedNoteId = noteSelect.value || null;
+    touch(task);
+    saveState();
+  });
+
+  const checklist = createChecklistEditor(task);
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Concluir", "ghost-btn", () => {
+      task.status = "done";
+      touch(task);
+      saveState();
+      renderAll();
+    }),
+    createButton("Definir foco", "ghost-btn", () => toggleTaskFocus(task)),
+    createButton("Adiar 1 dia", "ghost-btn", () => snoozeTask(task, 1)),
+    createButton("Adiar 7 dias", "ghost-btn", () => snoozeTask(task, 7)),
+    createButton("Arquivar", "ghost-btn danger", () => archiveTask(task))
+  );
+
+  el.detailsBody.append(
+    buildField("Titulo", titleInput),
+    buildField("Status", statusSelect),
+    buildField("Prazo", dateInput),
+    buildField("Hora", timeInput),
+    buildField("Prioridade", prioritySelect),
+    buildField("Projeto", projectSelect),
+    buildField("Area", areaSelect),
+    buildField("Subtarefas", checklist),
+    buildField("Descricao", notesInput),
+    buildField("Anexos/links", linksInput),
+    buildField("Vinculo com nota", noteSelect),
+    buildField("Acoes chave", actions)
+  );
+}
+
+function renderEventDetails(event) {
+  el.detailsTitle.textContent = event.title || "Evento";
+
+  const titleInput = document.createElement("input");
+  titleInput.value = event.title;
+  titleInput.addEventListener("input", () => {
+    event.title = titleInput.value;
+    touch(event);
+    saveStateDebounced();
+    renderMain();
+  });
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = event.date;
+  dateInput.addEventListener("change", () => {
+    event.date = dateInput.value;
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = event.start;
+  timeInput.addEventListener("change", () => {
+    event.start = timeInput.value;
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const durationInput = document.createElement("input");
+  durationInput.type = "number";
+  durationInput.min = "15";
+  durationInput.value = event.duration;
+  durationInput.addEventListener("change", () => {
+    event.duration = Math.max(15, Number(durationInput.value) || 15);
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const recurrenceSelect = createSelect(
+    [
+      { value: "none", label: "Sem repeticao" },
+      { value: "daily", label: "Diario" },
+      { value: "weekly", label: "Semanal" },
+      { value: "monthly", label: "Mensal" }
+    ],
+    event.recurrence
+  );
+  recurrenceSelect.addEventListener("change", () => {
+    event.recurrence = recurrenceSelect.value;
+    touch(event);
+    saveState();
+  });
+
+  const locationInput = document.createElement("input");
+  locationInput.value = event.location || "";
+  locationInput.addEventListener("input", () => {
+    event.location = locationInput.value;
+    touch(event);
+    saveStateDebounced();
+  });
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 4;
+  notesInput.value = event.notes || "";
+  notesInput.addEventListener("input", () => {
+    event.notes = notesInput.value;
+    touch(event);
+    saveStateDebounced();
+  });
+
+  const projectSelect = createProjectSelect(event.projectId);
+  projectSelect.addEventListener("change", () => {
+    event.projectId = projectSelect.value || null;
+    touch(event);
+    saveState();
+  });
+
+  const areaSelect = createAreaSelect(event.areaId);
+  areaSelect.addEventListener("change", () => {
+    event.areaId = areaSelect.value || null;
+    touch(event);
+    saveState();
+  });
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Arquivar", "ghost-btn danger", () => archiveEvent(event))
+  );
+
+  el.detailsBody.append(
+    buildField("Titulo", titleInput),
+    buildField("Data", dateInput),
+    buildField("Hora", timeInput),
+    buildField("Duracao (min)", durationInput),
+    buildField("Repeticao", recurrenceSelect),
+    buildField("Local", locationInput),
+    buildField("Projeto", projectSelect),
+    buildField("Area", areaSelect),
+    buildField("Notas", notesInput),
+    buildField("Acoes chave", actions)
+  );
+}
+
+function renderNoteDetails(note) {
+  el.detailsTitle.textContent = note.title || "Nota";
+
+  const areaSelect = createAreaSelect(note.areaId);
+  areaSelect.addEventListener("change", () => {
+    note.areaId = areaSelect.value || null;
+    touch(note);
+    saveState();
+    renderMain();
+  });
+
+  const projectSelect = createProjectSelect(note.projectId);
+  projectSelect.addEventListener("change", () => {
+    note.projectId = projectSelect.value || null;
+    touch(note);
+    saveState();
+    renderMain();
+  });
+
+  const backlinks = createElement("div", "card");
+  const linkedTasks = state.tasks.filter(
+    (task) => task.linkedNoteId === note.id || task.sourceNoteId === note.id
+  );
+  backlinks.append(createElement("div", "card-title", "Backlinks"));
+  if (!linkedTasks.length) {
+    backlinks.append(createElement("div", "list-meta", "Nenhuma tarefa vinculada."));
+  } else {
+    linkedTasks.forEach((task) => backlinks.append(createTaskRow(task, { compact: true })));
+  }
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Abrir nota", "ghost-btn", () => navigate(`/notes/${note.id}`)),
+    createButton("Arquivar", "ghost-btn danger", () => archiveNote(note))
+  );
+
+  el.detailsBody.append(
+    buildField("Area", areaSelect),
+    buildField("Projeto", projectSelect),
+    buildField("Links", backlinks),
+    buildField("Acoes chave", actions)
+  );
+}
+
+function appendQuickCapturePanel() {
+  const route = parseRoute(state.ui.route);
+  if (!route || route.name !== "today") {
+    return;
+  }
+  const section = createElement("div", "section");
+  const header = createElement("div", "section-header");
+  header.append(createElement("div", "section-title", "+ Capturar rapido"));
+  section.append(header);
+  const input = document.createElement("input");
+  input.placeholder = "Digite uma tarefa para hoje...";
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const value = input.value.trim();
+      if (!value) {
+        return;
+      }
+      state.tasks.unshift(createTask({ title: value, dueDate: getTodayKey() }));
+      input.value = "";
+      saveState();
+      renderMain();
+    }
+  });
+  section.append(input);
+  el.detailsBody.append(section);
+}
+
+function createElement(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) {
+    node.className = className;
+  }
+  if (text !== undefined) {
+    node.textContent = text;
+  }
+  return node;
+}
+
+function createButton(label, className, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className || "ghost-btn";
+  button.textContent = label;
+  if (onClick) {
+    button.addEventListener("click", onClick);
+  }
+  return button;
+}
+
+function createSection(title, hint) {
+  const section = createElement("div", "section");
+  const header = createElement("div", "section-header");
+  const heading = createElement("div", "section-title", title);
+  header.append(heading);
+  if (hint) {
+    header.append(createElement("div", "section-hint", hint));
+  }
+  section.append(header);
+  const body = createElement("div");
+  section.append(body);
+  return { section, body };
+}
+
+function buildField(label, input) {
+  const wrapper = createElement("label", "field");
+  const title = createElement("span", "", label);
+  wrapper.append(title, input);
+  return wrapper;
+}
+
+function createSelect(options, value) {
+  const select = document.createElement("select");
+  options.forEach((optionData) => {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    select.append(option);
+  });
+  select.value = value || "";
+  return select;
+}
+
+function setCount(node, count) {
+  if (!node) {
+    return;
+  }
+  node.textContent = count ? String(count) : "";
+}
+
+function createTaskRow(task, options = {}) {
+  const row = createElement("div", "task-row");
+  row.classList.toggle(
+    "active",
+    state.ui.selected && state.ui.selected.kind === "task" && state.ui.selected.id === task.id
+  );
+  row.draggable = !task.archived && task.status !== "done";
+  row.addEventListener("dragstart", (event) => {
+    if (!row.draggable) {
+      event.preventDefault();
+      return;
+    }
+    row.classList.add("dragging");
+    setDragData(event, "task", task.id);
+  });
+  row.addEventListener("dragend", () => row.classList.remove("dragging"));
+
+  const info = createElement("div");
+  info.append(createElement("div", "task-title", task.title));
+  const metaParts = [];
+  if (task.dueDate) {
+    metaParts.push(`Prazo ${task.dueDate}`);
+  }
+  if (task.dueTime) {
+    metaParts.push(task.dueTime);
+  }
+  if (task.projectId) {
+    const project = getProject(task.projectId);
+    if (project) {
+      metaParts.push(project.name);
+    }
+  }
+  if (task.areaId) {
+    const area = getArea(task.areaId);
+    if (area) {
+      metaParts.push(area.name);
+    }
+  }
+  if (task.priority) {
+    metaParts.push(PRIORITY_LABELS[task.priority] || "");
+  }
+  info.append(createElement("div", "task-meta", metaParts.filter(Boolean).join(" / ")));
+
+  row.append(info);
+
+  if (!options.compact) {
+    const actions = createElement("div", "task-actions");
+    if (task.archived) {
+      actions.append(
+        createButton("Restaurar", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.archived = false;
+          touch(task);
+          saveState();
+          renderAll();
+        })
+      );
+    } else if (task.status === "done") {
+      actions.append(
+        createButton("Reabrir", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.status = "todo";
+          touch(task);
+          saveState();
+          renderAll();
+        })
+      );
+    } else {
+      actions.append(
+        createButton("Concluir", "ghost-btn", (event) => {
+          event.stopPropagation();
+          task.status = "done";
+          touch(task);
+          saveState();
+          renderAll();
+        }),
+        createButton("Definir foco", "ghost-btn", (event) => {
+          event.stopPropagation();
+          toggleTaskFocus(task);
+        })
+      );
+    }
+    row.append(actions);
+  }
+
+  row.addEventListener("click", () => selectItem("task", task.id));
+  return row;
+}
+
+function createTaskCard(task, options = {}) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", task.title));
+  const meta = [];
+  if (task.dueDate) {
+    meta.push(`Prazo ${task.dueDate}`);
+  }
+  if (task.projectId) {
+    const project = getProject(task.projectId);
+    if (project) {
+      meta.push(project.name);
+    }
+  }
+  card.append(createElement("div", "card-meta", meta.join(" / ")));
+  if (!options.compact) {
+    card.append(
+      createButton("Ver detalhes", "ghost-btn", (event) => {
+        event.stopPropagation();
+        selectItem("task", task.id);
+      })
+    );
+  }
+  card.addEventListener("click", () => selectItem("task", task.id));
+  return card;
+}
+
+function createEventRow(event) {
+  const row = createElement("div", "event-row");
+  row.classList.toggle(
+    "active",
+    state.ui.selected && state.ui.selected.kind === "event" && state.ui.selected.id === event.id
+  );
+  row.draggable = !event.archived;
+  row.addEventListener("dragstart", (ev) => {
+    if (!row.draggable) {
+      ev.preventDefault();
+      return;
+    }
+    row.classList.add("dragging");
+    setDragData(ev, "event", event.id);
+  });
+  row.addEventListener("dragend", () => row.classList.remove("dragging"));
+
+  const info = createElement("div");
+  info.append(createElement("div", "event-title", event.title));
+  info.append(
+    createElement(
+      "div",
+      "event-meta",
+      `${event.date} - ${formatTimeLabel(event.start)}`
+    )
+  );
+  row.append(info);
+
+  const actions = createElement("div", "task-actions");
+  if (event.archived) {
+    actions.append(
+      createButton("Restaurar", "ghost-btn", (eventClick) => {
+        eventClick.stopPropagation();
+        event.archived = false;
+        touch(event);
+        saveState();
+        renderAll();
+      })
+    );
+  } else {
+    actions.append(
+      createButton("Arquivar", "ghost-btn", (eventClick) => {
+        eventClick.stopPropagation();
+        archiveEvent(event);
+      })
+    );
+  }
+  row.append(actions);
+
+  row.addEventListener("click", () => selectItem("event", event.id));
+  return row;
+}
+
+function createInboxRow(item, options = {}) {
+  const row = createElement("div", "inbox-row");
+  row.addEventListener("mouseenter", () => {
+    state.ui.inboxActiveId = item.id;
+  });
+
+  if (!options.compact) {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = state.ui.inboxSelection.includes(item.id);
+    checkbox.addEventListener("change", () => {
+      toggleInboxSelection(item.id);
+    });
+    row.append(checkbox);
+  } else {
+    row.append(createElement("div", "tag", item.kind));
+  }
+
+  const info = createElement("div");
+  info.append(createElement("div", "task-title", item.title));
+  info.append(createElement("div", "list-meta", `Sugestao: ${item.kind}`));
+  row.append(info);
+
+  const actions = createElement("div", "inbox-actions");
+  actions.append(
+    createButton("Processar", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openProcessModal(item);
+    })
+  );
+  if (!options.compact) {
+    actions.append(
+      createButton("Arquivar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        archiveInboxItem(item.id);
+      }),
+      createButton("Deletar", "ghost-btn danger", (event) => {
+        event.stopPropagation();
+        deleteInboxItem(item.id);
+      })
+    );
+  }
+  row.append(actions);
+  return row;
+}
+
+function createProjectCard(project) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", project.name));
+  if (project.objective) {
+    card.append(createElement("div", "card-meta", project.objective));
+  }
+  const tasks = state.tasks.filter((task) => task.projectId === project.id && !task.archived);
+  const done = tasks.filter((task) => task.status === "done").length;
+  const progress = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+  const progressWrap = createElement("div", "progress");
+  const bar = createElement("div", "progress-bar");
+  bar.style.width = `${progress}%`;
+  progressWrap.append(bar);
+  card.append(progressWrap);
+  const next = tasks.find((task) => task.status !== "done");
+  if (next) {
+    card.append(createElement("div", "card-meta", `Proximo: ${next.title}`));
+  }
+
+  const actions = createElement("div", "card-actions");
+  if (project.status === "active") {
+    actions.append(
+      createButton("Pausar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "paused";
+        touch(project);
+        saveState();
+        renderMain();
+      }),
+      createButton("Concluir", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "done";
+        touch(project);
+        saveState();
+        renderMain();
+      })
+    );
+  } else if (project.status === "paused") {
+    actions.append(
+      createButton("Reativar", "ghost-btn", (event) => {
+        event.stopPropagation();
+        project.status = "active";
+        touch(project);
+        saveState();
+        renderMain();
+      })
+    );
+  }
+  card.append(actions);
+
+  card.addEventListener("click", () => navigate(`/projects/${project.id}`));
+  return card;
+}
+
+function createAreaCard(area) {
+  const card = createElement("div", "card");
+  card.append(createElement("div", "card-title", area.name));
+  if (area.objective) {
+    card.append(createElement("div", "card-meta", area.objective));
+  }
+  
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Editar", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openAreaEditModal(area);
+    }),
+    createButton("Deletar", "ghost-btn danger", (event) => {
+      event.stopPropagation();
+      if (confirm(`Tem certeza que deseja deletar "${area.name}"?`)) {
+        deleteArea(area.id);
+      }
+    })
+  );
+  card.append(actions);
+  
+  card.addEventListener("click", () => navigate(`/areas/${area.id}`));
+  return card;
+}
+
+function renderAreaDetail(root, areaId) {
+  const area = getArea(areaId);
+  if (!area) {
+    root.append(createElement("div", "empty", "Area nao encontrada."));
+    return;
+  }
+
+  const header = createSection("Resumo da area", "");
+  const nameInput = document.createElement("input");
+  nameInput.value = area.name;
+  nameInput.addEventListener("input", () => {
+    area.name = nameInput.value;
+    touch(area);
+    saveStateDebounced();
+    renderSidebar();
+  });
+  const objectiveInput = document.createElement("textarea");
+  objectiveInput.rows = 3;
+  objectiveInput.value = area.objective || "";
+  objectiveInput.addEventListener("input", () => {
+    area.objective = objectiveInput.value;
+    touch(area);
+    saveStateDebounced();
+  });
+  
+  const deleteBtn = createButton("Deletar area", "ghost-btn danger", () => {
+    if (confirm(`Tem certeza que deseja deletar "${area.name}"? Isto nao deletara seus projetos e tarefas.`)) {
+      deleteArea(area.id);
+      navigate("/areas");
+    }
+  });
+  
+  header.body.append(
+    buildField("Nome", nameInput),
+    buildField("Objetivo", objectiveInput),
+    deleteBtn
+  );
+  root.append(header.section);
+
+  const projects = state.projects.filter((project) => project.areaId === area.id);
+  const tasks = state.tasks.filter(
+    (task) =>
+      task.areaId === area.id && !task.projectId && !task.archived && task.status !== "done"
+  );
+  const notes = state.notes.filter((note) => note.areaId === area.id && !note.archived);
+
+  const projectsSection = createSection("Projetos da area", "");
+  if (!projects.length) {
+    projectsSection.body.append(createElement("div", "list-meta", "Sem projetos."));
+  } else {
+    projects.forEach((project) => projectsSection.body.append(createProjectCard(project)));
+  }
+  root.append(projectsSection.section);
+
+  const tasksSection = createSection("Tarefas sem projeto", "");
+  if (!tasks.length) {
+    tasksSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+  } else {
+    tasks.forEach((task) => tasksSection.body.append(createTaskRow(task)));
+  }
+  root.append(tasksSection.section);
+
+  const notesSection = createSection("Notas da area", "");
+  if (!notes.length) {
+    notesSection.body.append(createElement("div", "list-meta", "Sem notas."));
+  } else {
+    notes.forEach((note) => notesSection.body.append(createNoteCard(note)));
+  }
+  root.append(notesSection.section);
+}
+
+function renderArchiveView(root) {
+  const archivedTasks = state.tasks.filter((task) => task.archived);
+  const archivedEvents = state.events.filter((event) => event.archived);
+  const archivedNotes = state.notes.filter((note) => note.archived);
+
+  const taskSection = createSection("Tarefas arquivadas", "");
+  if (!archivedTasks.length) {
+    taskSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+  } else {
+    archivedTasks.forEach((task) => taskSection.body.append(createTaskRow(task)));
+  }
+  root.append(taskSection.section);
+
+  const eventSection = createSection("Eventos arquivados", "");
+  if (!archivedEvents.length) {
+    eventSection.body.append(createElement("div", "list-meta", "Sem eventos."));
+  } else {
+    archivedEvents.forEach((event) => eventSection.body.append(createEventRow(event)));
+  }
+  root.append(eventSection.section);
+
+  const noteSection = createSection("Notas arquivadas", "");
+  if (!archivedNotes.length) {
+    noteSection.body.append(createElement("div", "list-meta", "Sem notas."));
+  } else {
+    archivedNotes.forEach((note) => noteSection.body.append(createNoteCard(note)));
+  }
+  root.append(noteSection.section);
+}
+
+function renderDetailsPanel() {
+  const selection = getSelectedItem();
+  el.detailsBody.innerHTML = "";
+
+  if (!selection.item) {
+    el.detailsTitle.textContent = "Nada selecionado";
+    setDetailsOpen(false);
+    const empty = createElement("div", "empty");
+    empty.innerHTML = "<h3>Selecione um item</h3><p>Detalhes aparecem aqui.</p>";
+    el.detailsBody.append(empty);
+    appendQuickCapturePanel();
++    updateDetailsToggleButton();
+    return;
+  }
+
+  setDetailsOpen(true);
+
+  if (selection.kind === "task") {
+    renderTaskDetails(selection.item);
+  } else if (selection.kind === "event") {
+    renderEventDetails(selection.item);
+  } else if (selection.kind === "note") {
+    renderNoteDetails(selection.item);
+  }
+  appendQuickCapturePanel();
++  updateDetailsToggleButton();
+}
+
+function setDetailsOpen(isOpen) {
+  document.body.classList.toggle("details-open", isOpen);
+  if (el.detailsBackdrop) {
+    el.detailsBackdrop.classList.toggle("hidden", !isOpen);
+    el.detailsBackdrop.setAttribute("aria-hidden", String(!isOpen));
+  }
+  if (el.detailsPanel) {
+    el.detailsPanel.setAttribute("aria-hidden", String(!isOpen));
+  }
+  // if panel is being closed fully, also clear minimized visual state
+  if (!isOpen) {
+    document.body.classList.remove("details-minimized");
+    updateDetailsToggleButton();
+  }
+}
+
+// Hide details panel on mobile view when user scrolls/touch-moving to avoid it covering content
+function handleMobileScroll() {
+  try {
+    if (window.innerWidth > 768) {
+      return;
+    }
+    if (!document.body.classList.contains("details-open")) {
+      return;
+    }
+    // keep selection but hide the panel so it doesn't cover 1/3 of the screen
+    setDetailsOpen(false);
+  } catch (e) {
+    // noop
+  }
+}
+
+// Toggle minimized visual state (keeps the item selected but frees space)
+function toggleDetailsMinimize() {
+  const isMin = document.body.classList.toggle("details-minimized");
+  updateDetailsToggleButton();
+  // when minimizing ensure header remains visible even if previously closed
+  if (isMin && !document.body.classList.contains("details-open")) {
+    document.body.classList.add("details-open");
+    if (el.detailsBackdrop) { el.detailsBackdrop.classList.add("hidden"); el.detailsBackdrop.setAttribute("aria-hidden", "true"); }
+    if (el.detailsPanel) { el.detailsPanel.setAttribute("aria-hidden", "false"); }
+  }
+}
+
+// update button label/aria according to state
+function updateDetailsToggleButton() {
+  if (!el.detailsToggle) return;
+  const minimized = document.body.classList.contains("details-minimized");
+  el.detailsToggle.textContent = minimized ? "▴" : "—";
+  el.detailsToggle.setAttribute("aria-label", minimized ? "Restaurar painel de detalhes" : "Minimizar painel de detalhes");
+}
+
+function renderTaskDetails(task) {
+  el.detailsTitle.textContent = task.title || "Tarefa";
+
+  const titleInput = document.createElement("input");
+  titleInput.value = task.title;
+  titleInput.addEventListener("input", () => {
+    task.title = titleInput.value;
+    touch(task);
+    saveStateDebounced();
+    renderMain();
+  });
+
+  const statusSelect = createSelect(
+    STATUS_ORDER.map((status) => ({ value: status, label: STATUS_LABELS[status] })),
+    task.status
+  );
+  statusSelect.addEventListener("change", () => {
+    task.status = statusSelect.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = task.dueDate || "";
+  dateInput.addEventListener("change", () => {
+    task.dueDate = dateInput.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = task.dueTime || "";
+  timeInput.addEventListener("change", () => {
+    task.dueTime = timeInput.value;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const prioritySelect = createSelect(
+    [
+      { value: "low", label: "Baixa" },
+      { value: "med", label: "Media" },
+      { value: "high", label: "Alta" }
+    ],
+    task.priority
+  );
+  prioritySelect.addEventListener("change", () => {
+    task.priority = prioritySelect.value;
+    touch(task);
+    saveState();
+  });
+
+  const projectSelect = createProjectSelect(task.projectId);
+  projectSelect.addEventListener("change", () => {
+    task.projectId = projectSelect.value || null;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const areaSelect = createAreaSelect(task.areaId);
+  areaSelect.addEventListener("change", () => {
+    task.areaId = areaSelect.value || null;
+    touch(task);
+    saveState();
+    renderMain();
+  });
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 4;
+  notesInput.value = task.notes || "";
+  notesInput.addEventListener("input", () => {
+    task.notes = notesInput.value;
+    touch(task);
+    saveStateDebounced();
+  });
+
+  const linksInput = document.createElement("textarea");
+  linksInput.rows = 3;
+  linksInput.value = (task.attachments || []).join("\n");
+  linksInput.addEventListener("input", () => {
+    task.attachments = linksInput.value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    touch(task);
+    saveStateDebounced();
+  });
+
+  const noteSelect = createNoteSelect(task.linkedNoteId);
+  noteSelect.addEventListener("change", () => {
+    task.linkedNoteId = noteSelect.value || null;
+    touch(task);
+    saveState();
+  });
+
+  const checklist = createChecklistEditor(task);
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Concluir", "ghost-btn", () => {
+      task.status = "done";
+      touch(task);
+      saveState();
+      renderAll();
+    }),
+    createButton("Definir foco", "ghost-btn", () => toggleTaskFocus(task)),
+    createButton("Adiar 1 dia", "ghost-btn", () => snoozeTask(task, 1)),
+    createButton("Adiar 7 dias", "ghost-btn", () => snoozeTask(task, 7)),
+    createButton("Arquivar", "ghost-btn danger", () => archiveTask(task))
+  );
+
+  el.detailsBody.append(
+    buildField("Titulo", titleInput),
+    buildField("Status", statusSelect),
+    buildField("Prazo", dateInput),
+    buildField("Hora", timeInput),
+    buildField("Prioridade", prioritySelect),
+    buildField("Projeto", projectSelect),
+    buildField("Area", areaSelect),
+    buildField("Subtarefas", checklist),
+    buildField("Descricao", notesInput),
+    buildField("Anexos/links", linksInput),
+    buildField("Vinculo com nota", noteSelect),
+    buildField("Acoes chave", actions)
+  );
+}
+
+function renderEventDetails(event) {
+  el.detailsTitle.textContent = event.title || "Evento";
+
+  const titleInput = document.createElement("input");
+  titleInput.value = event.title;
+  titleInput.addEventListener("input", () => {
+    event.title = titleInput.value;
+    touch(event);
+    saveStateDebounced();
+    renderMain();
+  });
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = event.date;
+  dateInput.addEventListener("change", () => {
+    event.date = dateInput.value;
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = event.start;
+  timeInput.addEventListener("change", () => {
+    event.start = timeInput.value;
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const durationInput = document.createElement("input");
+  durationInput.type = "number";
+  durationInput.min = "15";
+  durationInput.value = event.duration;
+  durationInput.addEventListener("change", () => {
+    event.duration = Math.max(15, Number(durationInput.value) || 15);
+    touch(event);
+    saveState();
+    renderMain();
+  });
+
+  const recurrenceSelect = createSelect(
+    [
+      { value: "none", label: "Sem repeticao" },
+      { value: "daily", label: "Diario" },
+      { value: "weekly", label: "Semanal" },
+      { value: "monthly", label: "Mensal" }
+    ],
+    event.recurrence
+  );
+  recurrenceSelect.addEventListener("change", () => {
+    event.recurrence = recurrenceSelect.value;
+    touch(event);
+    saveState();
+  });
+
+  const locationInput = document.createElement("input");
+  locationInput.value = event.location || "";
+  locationInput.addEventListener("input", () => {
+    event.location = locationInput.value;
+    touch(event);
+    saveStateDebounced();
+  });
+
+  const notesInput = document.createElement("textarea");
+  notesInput.rows = 4;
+  notesInput.value = event.notes || "";
+  notesInput.addEventListener("input", () => {
+    event.notes = notesInput.value;
+    touch(event);
+    saveStateDebounced();
+  });
+
+  const projectSelect = createProjectSelect(event.projectId);
+  projectSelect.addEventListener("change", () => {
+    event.projectId = projectSelect.value || null;
+    touch(event);
+    saveState();
+  });
+
+  const areaSelect = createAreaSelect(event.areaId);
+  areaSelect.addEventListener("change", () => {
+    event.areaId = areaSelect.value || null;
+    touch(event);
+    saveState();
+  });
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Arquivar", "ghost-btn danger", () => archiveEvent(event))
+  );
+
+  el.detailsBody.append(
+    buildField("Titulo", titleInput),
+    buildField("Data", dateInput),
+    buildField("Hora", timeInput),
+    buildField("Duracao (min)", durationInput),
+    buildField("Repeticao", recurrenceSelect),
+    buildField("Local", locationInput),
+    buildField("Projeto", projectSelect),
+    buildField("Area", areaSelect),
+    buildField("Notas", notesInput),
+    buildField("Acoes chave", actions)
+  );
+}
+
+function renderNoteDetails(note) {
+  el.detailsTitle.textContent = note.title || "Nota";
+
+  const areaSelect
