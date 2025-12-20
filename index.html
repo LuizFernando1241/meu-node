@@ -12,7 +12,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <style>
-    /* Minimal styles to support a compact/minimized details panel */
     body.details-minimized .details {
       position: fixed;
       left: 0;
@@ -25,13 +24,9 @@
       box-shadow: 0 -6px 20px rgba(0,0,0,0.12);
     }
     body.details-minimized .details-body { display: none; }
-    body.details-minimized .details .details-header {
-      cursor: pointer;
-    }
-    /* ensure backdrop is hidden when minimized (but selection remains) */
+    body.details-minimized .details .details-header { cursor: pointer; }
     body.details-minimized #detailsBackdrop { display: none !important; }
     @media (min-width: 769px) {
-      /* keep original desktop behavior */
       body.details-minimized .details { position: static; height: auto; overflow: visible; box-shadow: none; }
       body.details-minimized .details-body { display: block; }
     }
@@ -86,7 +81,6 @@
 
     <main class="shell">
       <aside class="sidebar panel">
-        <!-- Certificar-se de que os botões de navegação estão presentes -->
         <div class="sidebar-section">
           <button class="nav-item" data-route="/today">Hoje</button>
           <button class="nav-item" data-route="/inbox">Inbox</button>
@@ -97,12 +91,60 @@
       </aside>
 
       <section class="content panel">
-        <div id="viewRoot" class="view-root"></div> <!-- Elemento para renderizar o conteúdo -->
+        <div class="page-header">
+          <div id="pageEyebrow" class="page-eyebrow"></div>
+          <h1 id="pageTitle" class="page-title"></h1>
+          <div id="pageActions" class="page-actions"></div>
+        </div>
+        <div id="viewRoot" class="view-root"></div>
       </section>
+
+      <aside id="detailsPanel" class="details panel">
+        <div class="details-header">
+          <h2 id="detailsTitle" class="details-title"></h2>
+          <div class="details-actions">
+            <button id="detailsToggle" class="icon-btn ghost-btn" aria-label="Minimizar painel">—</button>
+            <button id="detailsClose" class="icon-btn ghost-btn" aria-label="Fechar painel">&times;</button>
+          </div>
+        </div>
+        <div id="detailsBody" class="details-body"></div>
+      </aside>
     </main>
 
-    <div id="detailsBackdrop" class="details-backdrop"></div> <!-- Adicionado -->
+    <div id="detailsBackdrop" class="details-backdrop hidden"></div>
+    <div id="modalBackdrop" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div id="modalEyebrow" class="modal-eyebrow"></div>
+          <h2 id="modalTitle" class="modal-title"></h2>
+          <button id="modalClose" class="icon-btn ghost-btn">&times;</button>
+        </div>
+        <div id="modalBody" class="modal-body"></div>
+        <div class="modal-footer">
+          <button id="modalCancel" class="ghost-btn">Cancelar</button>
+          <button id="modalDelete" class="ghost-btn danger">Deletar</button>
+          <button id="modalSave" class="primary-btn">Salvar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="commandPalette" class="command-palette hidden">
+      <div class="command-card">
+        <input
+          id="commandInput"
+          type="text"
+          class="command-input"
+          placeholder="Digite um comando ou /"
+          autocomplete="off"
+        />
+        <div id="commandList" class="command-list"></div>
+      </div>
+    </div>
+
+    <div id="toastContainer" class="toast-container"></div>
   </div>
+
+  <script src="ui-helpers.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
