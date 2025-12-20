@@ -1728,18 +1728,9 @@ function renderGlobalSearchView(root, query) {
       : null;
   const results = apiResults || getSearchResults(query);
   const wrap = createElement("div", "today-grid");
-  wrap.classList.add("search-overlay");
-  const banner = createElement("div", "search-banner");
-  banner.append(
-    createElement("div", "card-title", "Busca global"),
-    createElement("div", "list-meta", "Buscando em tarefas, eventos, projetos e notas.")
-  );
-  wrap.append(banner);
-  const summary = createSection("Busca global", `Resultados para "${query}"`);
 
   if (state.ui.searching && !apiResults) {
-    summary.body.append(createElement("div", "list-meta", "Buscando na API..."));
-    wrap.append(summary.section);
+    wrap.append(createElement("div", "list-meta", "Buscando..."));
     root.append(wrap);
     return;
   }
@@ -1750,20 +1741,10 @@ function renderGlobalSearchView(root, query) {
     results.projects.length === 0 &&
     results.notes.length === 0
   ) {
-    summary.body.append(createElement("div", "empty", "Nada encontrado."));
-    wrap.append(summary.section);
+    wrap.append(createElement("div", "empty", "Sem resultados."));
     root.append(wrap);
     return;
   }
-
-  summary.body.append(
-    createElement(
-      "div",
-      "list-meta",
-      `${results.tasks.length} tarefas, ${results.events.length} eventos, ${results.projects.length} projetos, ${results.notes.length} notas`
-    )
-  );
-  wrap.append(summary.section);
 
   if (results.tasks.length) {
     const section = createSection("Tarefas", "");
@@ -1800,7 +1781,7 @@ function renderGlobalSearchView(root, query) {
 
 function renderLoadingView(root) {
   const wrap = createElement("div", "today-grid");
-  const section = createSection("Carregando", "Sincronizando dados...");
+  const section = createSection("Carregando", "");
   for (let i = 0; i < 6; i += 1) {
     const skeleton = createElement("div", "skeleton");
     section.body.append(skeleton);
@@ -1894,83 +1875,15 @@ function renderPageActions(route, container) {
   }
 }
 
-function renderActionBar(route, root) {
-  const bar = createElement("div", "action-bar");
-  const label = createElement("div", "action-label", "Acoes rapidas:");
-  bar.append(label);
-
-  if (route.name === "today") {
-    bar.append(
-      createButton("Nova tarefa", "primary-btn", () => openTaskModal({ dueDate: getTodayKey() })),
-      createButton("Novo evento", "ghost-btn", () => openEventModal({ date: getTodayKey() })),
-      createButton("Abrir inbox", "ghost-btn", () => navigate("/inbox"))
-    );
-  }
-  if (route.name === "inbox") {
-    bar.append(
-      createButton("Capturar", "primary-btn", () => {
-        const input = document.querySelector(".capture-input");
-        if (input) input.focus();
-      })
-    );
-    if (state.inbox.length) {
-      bar.append(
-        createButton("Processar agora", "ghost-btn", () =>
-          openBulkProcessModal(state.inbox.map((item) => item.id))
-        )
-      );
-    }
-  }
-  if (route.name === "week") {
-    bar.append(
-      createButton("Novo evento", "primary-btn", () => openEventModal({})),
-      createButton("Nova tarefa", "ghost-btn", () => openTaskModal({})),
-      createButton("Hoje", "ghost-btn", () => {
-        state.ui.weekOffset = 0;
-        saveState();
-        renderMain();
-      })
-    );
-  }
-  if (route.name === "calendar") {
-    bar.append(
-      createButton("Novo evento", "primary-btn", () => openEventModal({})),
-      createButton("Hoje", "ghost-btn", () => {
-        state.ui.calendarMonthOffset = 0;
-        saveState();
-        renderMain();
-      })
-    );
-  }
-  if (route.name === "projects") {
-    bar.append(createButton("Criar projeto", "primary-btn", openProjectModal));
-  }
-  if (route.name === "notes") {
-    bar.append(
-      createButton("Nova nota", "primary-btn", () => openNoteModal({})),
-      createButton("Templates", "ghost-btn", openTemplateChooser)
-    );
-  }
-
-  if (bar.childElementCount > 1) {
-    root.append(bar);
-  }
-}
-
 function renderTodayView(root) {
   const wrap = createElement("div", "today-grid");
   const query = (state.ui.search || "").trim().toLowerCase();
 
-  renderActionBar({ name: "today" }, wrap);
-
-  const captureCard = createElement("div", "capture-card");
-  captureCard.append(
-    createElement("div", "card-title", "Captura rapida"),
-    createElement("div", "list-meta", "Ex.: 15:00 reuniao, amanha pagar conta, nota: ideias")
-  );
+  const captureCard = createElement("div", "card");
+  captureCard.append(createElement("div", "card-title", "Captura"));
   const capture = document.createElement("input");
   capture.className = "capture-input";
-  capture.placeholder = "Digite e pressione Enter";
+  capture.placeholder = "Nova entrada";
   capture.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -2006,46 +1919,9 @@ function renderTodayView(root) {
     }
   });
   captureCard.append(capture);
-
-  const examples = createElement("div", "example-chips");
-  ["15:00 reuniao", "amanha pagar conta", "nota: ideias soltas"].forEach((text) => {
-    const chip = createButton(text, "chip-btn", () => {
-      capture.value = text;
-      capture.focus();
-    });
-    examples.append(chip);
-  });
-  captureCard.append(examples);
   wrap.append(captureCard);
 
-  if (isFirstRun() && !query) {
-    const empty = createElement("div", "empty");
-    empty.innerHTML = "<h3>Primeiro uso</h3><p>Exemplos rapidos para voce comecar.</p>";
-    const examples = createElement("div", "focus-grid");
-    ["Planejar a semana", "Revisar projetos", "Escrever nota de reuniao"].forEach((text) => {
-      const card = createElement("div", "card");
-      card.append(createElement("div", "card-title", text));
-      card.append(createElement("div", "card-meta", "Exemplo"));
-      examples.append(card);
-    });
-    const action = createButton("Criar primeira tarefa", "primary-btn", () =>
-      openTaskModal({ dueDate: getTodayKey() })
-    );
-    empty.append(examples, action);
-    wrap.append(empty);
-    root.append(wrap);
-    return;
-  }
-
-  const focusSection = createSection("Agora", "O que merece foco imediato");
-  const focusHeader = focusSection.section.querySelector(".section-header");
-  if (focusHeader) {
-    focusHeader.append(
-      createButton("Evento agora", "ghost-btn", () =>
-        openEventModal({ date: getTodayKey(), start: getRoundedTime() })
-      )
-    );
-  }
+  const focusSection = createSection("Agora", "");
   const focusTasks = state.tasks.filter(
     (task) =>
       task.status !== "done" &&
@@ -2053,7 +1929,7 @@ function renderTodayView(root) {
       matchesTaskSearch(task, query)
   );
   if (!focusTasks.length) {
-    focusSection.body.append(createElement("div", "list-meta", "Sem foco definido."));
+    focusSection.body.append(createElement("div", "list-meta", "Sem foco."));
   } else {
     const grid = createElement("div", "focus-grid stagger");
     focusTasks.slice(0, 3).forEach((task, index) => {
@@ -2065,13 +1941,7 @@ function renderTodayView(root) {
   }
   wrap.append(focusSection.section);
 
-  const agendaSection = createSection("Agenda de hoje", "Arraste tarefas ou clique para criar evento");
-  const agendaHeader = agendaSection.section.querySelector(".section-header");
-  if (agendaHeader) {
-    agendaHeader.append(
-      createButton("+ Evento", "ghost-btn", () => openEventModal({ date: getTodayKey() }))
-    );
-  }
+  const agendaSection = createSection("Agenda", "");
   const timeline = createElement("div", "timeline");
   const agendaItems = getAgendaItems(getTodayKey()).filter((item) =>
     matchesQuery(item.title, query)
@@ -2092,13 +1962,7 @@ function renderTodayView(root) {
   agendaSection.body.append(timeline);
   wrap.append(agendaSection.section);
 
-  const tasksSection = createSection("Proximo", "Concluir em 1 clique");
-  const tasksHeader = tasksSection.section.querySelector(".section-header");
-  if (tasksHeader) {
-    tasksHeader.append(
-      createButton("Nova tarefa", "ghost-btn", () => openTaskModal({ dueDate: getTodayKey() }))
-    );
-  }
+  const tasksSection = createSection("Proximo", "");
   const overdue = getOverdueTasks().filter((task) => matchesTaskSearch(task, query));
   if (overdue.length) {
     const overdueWrap = createElement("div", "section");
@@ -2123,19 +1987,19 @@ function renderTodayView(root) {
 
   const todayTasks = getTodayTasks().filter((task) => matchesTaskSearch(task, query));
   if (!todayTasks.length) {
-    tasksSection.body.append(createElement("div", "list-meta", "Nenhuma tarefa para hoje."));
+    tasksSection.body.append(createElement("div", "list-meta", "Sem itens."));
   } else {
     todayTasks.forEach((task) => tasksSection.body.append(createTaskRow(task)));
   }
   wrap.append(tasksSection.section);
 
-  const nextSection = createSection("Depois", "Proximos 7 dias");
+  const nextSection = createSection("Depois", "");
   const nextTasks = getNextDaysTasks(7)
     .filter((task) => task.dueDate !== getTodayKey())
     .filter((task) => matchesTaskSearch(task, query))
     .slice(0, 7);
   if (!nextTasks.length) {
-    nextSection.body.append(createElement("div", "list-meta", "Sem tarefas futuras."));
+    nextSection.body.append(createElement("div", "list-meta", "Sem itens."));
   } else {
     nextTasks.forEach((task) => nextSection.body.append(createTaskRow(task, { compact: true })));
   }
@@ -2148,10 +2012,9 @@ function renderInboxView(root) {
   state.ui.inboxSelection = state.ui.inboxSelection.filter((id) =>
     state.inbox.some((item) => item.id === id)
   );
-  renderActionBar({ name: "inbox" }, root);
   const capture = document.createElement("input");
   capture.className = "capture-input";
-  capture.placeholder = "Digite e Enter para capturar...";
+  capture.placeholder = "Nova entrada";
   capture.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -2166,26 +2029,7 @@ function renderInboxView(root) {
     }
   });
 
-  const flow = createElement("div", "flow-card");
-  flow.append(createElement("div", "card-title", "Inbox em 3 passos"));
-  const steps = createElement("div", "flow-steps");
-  steps.innerHTML =
-    "<div><strong>1.</strong> Capture tudo sem pensar.</div><div><strong>2.</strong> Escolha tipo e data.</div><div><strong>3.</strong> Envie para tarefa, evento ou nota.</div>";
-  flow.append(steps);
-  root.append(flow);
   root.append(capture);
-
-  if (state.inbox.length) {
-    const cta = createElement("div", "inbox-cta");
-    cta.append(createElement("div", "card-title", `Processar ${state.inbox.length} itens agora`));
-    cta.append(
-      createButton("Processar agora", "primary-btn", () => {
-        const ids = state.inbox.map((item) => item.id);
-        openBulkProcessModal(ids);
-      })
-    );
-    root.append(cta);
-  }
 
   if (state.ui.inboxSelection.length) {
     const bulk = createElement("div", "bulk-bar");
@@ -2193,7 +2037,7 @@ function renderInboxView(root) {
       createElement("div", "card-title", `${state.ui.inboxSelection.length} selecionados`)
     );
     bulk.append(
-      createButton("Processar em lote", "ghost-btn", () =>
+      createButton("Processar", "ghost-btn", () =>
         openBulkProcessModal(state.ui.inboxSelection)
       )
     );
@@ -2216,9 +2060,9 @@ function renderInboxView(root) {
   } else {
     const filtered = state.inbox.filter((item) => matchesQuery(item.title, state.ui.search));
     const groups = [
-      { label: "Sugestao: Tarefas", kind: "task" },
-      { label: "Sugestao: Eventos", kind: "event" },
-      { label: "Sugestao: Notas", kind: "note" }
+      { label: "Tarefas", kind: "task" },
+      { label: "Eventos", kind: "event" },
+      { label: "Notas", kind: "note" }
     ];
     groups.forEach((group) => {
       const items = filtered.filter((item) => item.kind === group.kind);
@@ -2234,43 +2078,7 @@ function renderInboxView(root) {
   root.append(list);
 }
 
-function renderWeekView(root) {
-  renderActionBar({ name: "week" }, root);
-  const tabs = createElement("div", "week-tabs");
-  const planBtn = createButton("Planejar", "tab-btn", () => setWeekTab("plan"));
-  const reviewBtn = createButton("Revisar", "tab-btn", () => setWeekTab("review"));
-  planBtn.classList.toggle("active", state.ui.weekTab === "plan");
-  reviewBtn.classList.toggle("active", state.ui.weekTab === "review");
-  tabs.append(planBtn, reviewBtn);
-  root.append(tabs);
-
-  if (state.ui.weekTab === "plan") {
-    const toggleLabel = state.ui.weekShowTimeBlocks
-      ? "Mostrar apenas compromissos"
-      : "Mostrar compromissos + time-blocks";
-    const toggle = createButton(toggleLabel, "ghost-btn", () => {
-      state.ui.weekShowTimeBlocks = !state.ui.weekShowTimeBlocks;
-      saveState();
-      renderMain();
-    });
-    const legend = createElement("div", "legend-row");
-    legend.append(
-      createElement("span", "chip chip-event", "Evento"),
-      createElement("span", "chip chip-task", "Time-block")
-    );
-    root.append(toggle);
-    root.append(legend);
-  }
-
-  if (state.ui.weekTab === "review") {
-    renderWeekReview(root);
-  } else {
-    renderWeekPlan(root);
-  }
-}
-
 function renderCalendarView(root) {
-  renderActionBar({ name: "calendar" }, root);
   const tabs = createElement("div", "week-tabs");
   const weekBtn = createButton("Semana", "tab-btn", () => setCalendarTab("week"));
   const monthBtn = createButton("Mes", "tab-btn", () => setCalendarTab("month"));
@@ -2301,16 +2109,7 @@ function renderCalendarWeek(root) {
     header.append(headerBtn);
     column.append(header);
     const items = getAgendaItems(day.date);
-    if (!items.length) {
-      const empty = createElement("div", "empty");
-      empty.append(createElement("div", "list-meta", "Sem itens"));
-      const cta = createButton("Criar evento", "ghost-btn", (event) => {
-        event.stopPropagation();
-        openEventModal({ date: day.date });
-      });
-      empty.append(cta);
-      column.append(empty);
-    } else {
+    if (items.length) {
       items.forEach((item) => column.append(createCalendarChip(item)));
     }
     column.addEventListener("click", () => openEventModal({ date: day.date }));
@@ -2445,7 +2244,7 @@ function renderWeekPlan(root) {
   });
 
   if (!weekTasks.length) {
-    side.append(createElement("div", "empty", "Sem tarefas para planejar."));
+    side.append(createElement("div", "empty", "Sem itens."));
   } else {
     weekTasks.forEach((task) => side.append(createTaskRow(task)));
   }
@@ -2484,7 +2283,7 @@ function renderWeekReview(root) {
   sections.forEach((section) => {
     const block = createSection(section.title, "");
     if (!section.items.length) {
-      block.body.append(createElement("div", "list-meta", "Nada aqui."));
+      block.body.append(createElement("div", "list-meta", "Sem itens."));
     } else {
       section.items.forEach((item) => {
         if (section.type === "task") {
@@ -2510,7 +2309,6 @@ function renderWeekReview(root) {
 }
 
 function renderProjectsView(root) {
-  renderActionBar({ name: "projects" }, root);
   const filters = createElement("div", "week-tabs");
   ["active", "paused", "done"].forEach((status) => {
     const label = status === "active" ? "Ativos" : status === "paused" ? "Pausados" : "Concluidos";
@@ -2528,7 +2326,7 @@ function renderProjectsView(root) {
       matchesQuery(`${project.title} ${project.objective}`, query)
   );
   if (!projects.length) {
-    list.append(createElement("div", "empty", "Sem projetos neste filtro."));
+    list.append(createElement("div", "empty", "Sem itens."));
   } else {
     projects.forEach((project) => {
       const card = createProjectCard(project);
@@ -2543,7 +2341,7 @@ function renderProjectsView(root) {
 function renderProjectDetail(root, projectId) {
   const project = getProject(projectId);
   if (!project) {
-    root.append(createElement("div", "empty", "Projeto nao encontrado."));
+    root.append(createElement("div", "empty", "Nao encontrado."));
     return;
   }
 
@@ -2632,7 +2430,7 @@ function renderProjectDetail(root, projectId) {
       (task) => task.projectId === project.id && task.status === status
     );
     if (!tasks.length) {
-      group.append(createElement("div", "list-meta", "Sem tarefas."));
+      group.append(createElement("div", "list-meta", "Sem itens."));
     } else {
       tasks.forEach((task) => group.append(createTaskRow(task)));
     }
@@ -2649,7 +2447,7 @@ function renderProjectDetail(root, projectId) {
 
   const projectNotes = state.notes.filter((note) => note.projectId === project.id);
   if (!projectNotes.length) {
-    notesSection.body.append(createElement("div", "list-meta", "Sem notas ainda."));
+    notesSection.body.append(createElement("div", "list-meta", "Sem itens."));
   } else {
     projectNotes.forEach((note) => {
       const item = createElement("div", "task-row");
@@ -2665,7 +2463,6 @@ function renderNotesView(root, noteId) {
   if (noteId) {
     state.ui.notesNoteId = noteId;
   }
-  renderActionBar({ name: "notes" }, root);
   const layout = createElement("div", "notes-layout");
   const tree = createElement("div", "notes-tree");
 
@@ -2751,7 +2548,7 @@ function renderAreasView(root) {
   const query = (state.ui.search || "").trim().toLowerCase();
   const areas = state.areas.filter((area) => matchesQuery(area.name, query));
   if (!areas.length) {
-    list.append(createElement("div", "empty", "Nenhuma area criada."));
+    list.append(createElement("div", "empty", "Sem itens."));
   } else {
     areas.forEach((area) => {
       const card = createAreaCard(area);
@@ -2788,7 +2585,7 @@ function renderAreaDetail(root, areaId) {
   const projectsSection = createSection("Projetos", "");
   const projects = state.projects.filter((p) => p.areaId === area.id);
   if (!projects.length) {
-    projectsSection.body.append(createElement("div", "list-meta", "Sem projetos."));
+    projectsSection.body.append(createElement("div", "list-meta", "Sem itens."));
   } else {
     projects.forEach((p) => {
       const card = createProjectCard(p);
@@ -2802,7 +2599,7 @@ function renderAreaDetail(root, areaId) {
   const tasksSection = createSection("Tarefas", "");
   const tasks = state.tasks.filter((t) => t.areaId === area.id);
   if (!tasks.length) {
-    tasksSection.body.append(createElement("div", "list-meta", "Sem tarefas."));
+    tasksSection.body.append(createElement("div", "list-meta", "Sem itens."));
   } else {
     tasks.forEach((t) => tasksSection.body.append(createTaskRow(t)));
   }
@@ -4260,5 +4057,6 @@ function updateConnectionStatus() {
   const offline = typeof navigator !== "undefined" && navigator.onLine === false;
   el.offlineBanner.classList.toggle("hidden", !offline);
 }
+
 
 
