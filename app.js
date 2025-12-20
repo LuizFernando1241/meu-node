@@ -2056,6 +2056,18 @@ function renderInboxView(root) {
 
   root.append(capture);
 
+  if (state.inbox.length) {
+    const cta = createElement("div", "inbox-cta");
+    cta.append(createElement("div", "card-title", `Processar ${state.inbox.length} itens agora`));
+    cta.append(
+      createButton("Processar agora", "primary-btn", () => {
+        const ids = state.inbox.map((item) => item.id);
+        openBulkProcessModal(ids);
+      })
+    );
+    root.append(cta);
+  }
+
   if (state.ui.inboxSelection.length) {
     const bulk = createElement("div", "bulk-bar");
     bulk.append(
@@ -3163,6 +3175,65 @@ function openTemplateChooser() {
   el.modalDelete.classList.add("hidden");
 }
 
+function openContextMenu(kind, item) {
+  openModal("Acoes rapidas", "Atalhos", {}, null, null);
+  el.modalCancel.textContent = "Fechar";
+  el.modalBody.innerHTML = "";
+  const actions = createElement("div", "card-actions");
+
+  if (kind === "task") {
+    actions.append(
+      createButton("Editar", "ghost-btn", () => {
+        closeModal();
+        openTaskModal(item);
+      }),
+      createButton("Agendar", "primary-btn", () => {
+        closeModal();
+        openTaskScheduleModal(item);
+      }),
+      createButton("Amanha", "ghost-btn", () => {
+        closeModal();
+        snoozeTask(item, 1);
+      }),
+      createButton("+7d", "ghost-btn", () => {
+        closeModal();
+        snoozeTask(item, 7);
+      }),
+      createButton("Deletar", "ghost-btn danger", () => {
+        closeModal();
+        if (confirm("Deletar tarefa?")) {
+          state.tasks = state.tasks.filter((task) => task.id !== item.id);
+          markDeleted("tasks", item.id);
+          saveState();
+          renderAll();
+        }
+      })
+    );
+  }
+
+  if (kind === "event") {
+    actions.append(
+      createButton("Editar", "ghost-btn", () => {
+        closeModal();
+        openEventModal(item);
+      }),
+      createButton("Deletar", "ghost-btn danger", () => {
+        closeModal();
+        if (confirm("Deletar evento?")) {
+          state.events = state.events.filter((event) => event.id !== item.id);
+          markDeleted("events", item.id);
+          saveState();
+          renderAll();
+        }
+      })
+    );
+  }
+
+  el.modalBody.append(actions);
+  el.modalSave.classList.add("hidden");
+  el.modalDelete.classList.add("hidden");
+}
+
 function closeModal() {
   el.modalBackdrop.classList.add("hidden");
   el.modalBody.innerHTML = "";
@@ -3880,7 +3951,7 @@ function renderDetailsPanel() {
     const actions = createElement("div", "card-actions");
     actions.append(
       createButton("Editar", "ghost-btn", () => openTaskModal(selection.item)),
-      createButton("Agendar", "ghost-btn", () => openTaskScheduleModal(selection.item)),
+      createButton("Agendar", "primary-btn", () => openTaskScheduleModal(selection.item)),
       createButton("Amanha", "ghost-btn", () => snoozeTask(selection.item, 1)),
       createButton("Deletar", "ghost-btn danger", () => {
         if (confirm("Deletar tarefa?")) {

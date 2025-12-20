@@ -156,7 +156,13 @@ function createTaskRow(task, options = {}) {
     });
     scheduleBtn.title = "Agendar";
     scheduleBtn.setAttribute("aria-label", "Agendar");
-    actions.append(focusBtn, snoozeBtn, weekBtn, scheduleBtn);
+    const menuBtn = createButton("...", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openContextMenu("task", task);
+    });
+    menuBtn.title = "Mais acoes";
+    menuBtn.setAttribute("aria-label", "Mais acoes");
+    actions.append(focusBtn, snoozeBtn, weekBtn, scheduleBtn, menuBtn);
     row.append(actions);
   }
   
@@ -215,7 +221,13 @@ function createEventRow(event) {
   });
   deleteBtn.title = "Deletar";
   deleteBtn.setAttribute("aria-label", "Deletar");
-  actions.append(editBtn, deleteBtn);
+  const menuBtn = createButton("...", "ghost-btn", (ev) => {
+    ev.stopPropagation();
+    openContextMenu("event", event);
+  });
+  menuBtn.title = "Mais acoes";
+  menuBtn.setAttribute("aria-label", "Mais acoes");
+  actions.append(editBtn, deleteBtn, menuBtn);
   row.append(actions);
 
   row.addEventListener("click", (e) => {
@@ -244,9 +256,10 @@ function createInboxRow(item, options = {}) {
   title.textContent = item.title;
   content.append(title);
   
-  const meta = document.createElement("div");
-  meta.className = "list-meta";
-  meta.textContent = item.kind;
+  const kindLabel = item.kind === "event" ? "Evento" : item.kind === "note" ? "Nota" : "Tarefa";
+  const meta = document.createElement("span");
+  meta.className = `kind-chip kind-${item.kind || "task"}`;
+  meta.textContent = kindLabel;
   content.append(meta);
   
   const actions = document.createElement("div");
