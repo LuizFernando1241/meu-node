@@ -131,23 +131,31 @@ function createTaskRow(task, options = {}) {
   if (!options.compact) {
     const actions = document.createElement("div");
     actions.className = "task-actions";
-    const focusBtn = createButton(task.focus ? "Foco *" : "Foco", "ghost-btn", (event) => {
+    const focusBtn = createButton(task.focus ? "F*" : "F", "ghost-btn", (event) => {
       event.stopPropagation();
       toggleTaskFocus(task);
       renderMain();
     });
-    const snoozeBtn = createButton("Amanha", "ghost-btn", (event) => {
+    focusBtn.title = "Foco";
+    focusBtn.setAttribute("aria-label", "Foco");
+    const snoozeBtn = createButton("1d", "ghost-btn", (event) => {
       event.stopPropagation();
       snoozeTask(task, 1);
     });
-    const weekBtn = createButton("+7d", "ghost-btn", (event) => {
+    snoozeBtn.title = "Amanha";
+    snoozeBtn.setAttribute("aria-label", "Amanha");
+    const weekBtn = createButton("7d", "ghost-btn", (event) => {
       event.stopPropagation();
       snoozeTask(task, 7);
     });
-    const scheduleBtn = createButton("Agendar", "ghost-btn", (event) => {
+    weekBtn.title = "Adicionar 7 dias";
+    weekBtn.setAttribute("aria-label", "Adicionar 7 dias");
+    const scheduleBtn = createButton("Cal", "ghost-btn", (event) => {
       event.stopPropagation();
       openTaskScheduleModal(task);
     });
+    scheduleBtn.title = "Agendar";
+    scheduleBtn.setAttribute("aria-label", "Agendar");
     actions.append(focusBtn, snoozeBtn, weekBtn, scheduleBtn);
     row.append(actions);
   }
@@ -187,7 +195,34 @@ function createEventRow(event) {
   content.append(meta);
   
   row.append(content);
-  row.addEventListener("click", () => selectItem("event", event.id));
+
+  const actions = document.createElement("div");
+  actions.className = "task-actions";
+  const editBtn = createButton("E", "ghost-btn", (ev) => {
+    ev.stopPropagation();
+    openEventModal(event);
+  });
+  editBtn.title = "Editar";
+  editBtn.setAttribute("aria-label", "Editar");
+  const deleteBtn = createButton("X", "ghost-btn danger", (ev) => {
+    ev.stopPropagation();
+    if (confirm("Deletar evento?")) {
+      state.events = state.events.filter((item) => item.id !== event.id);
+      markDeleted("events", event.id);
+      saveState();
+      renderMain();
+    }
+  });
+  deleteBtn.title = "Deletar";
+  deleteBtn.setAttribute("aria-label", "Deletar");
+  actions.append(editBtn, deleteBtn);
+  row.append(actions);
+
+  row.addEventListener("click", (e) => {
+    if (!e.target.closest(".task-actions")) {
+      selectItem("event", event.id);
+    }
+  });
   
   return row;
 }

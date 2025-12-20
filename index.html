@@ -11,26 +11,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
-  <style>
-    body.details-minimized .details {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 48px;
-      transform: translateY(0);
-      z-index: 60;
-      overflow: hidden;
-      box-shadow: 0 -6px 20px rgba(0,0,0,0.12);
-    }
-    body.details-minimized .details-body { display: none; }
-    body.details-minimized .details .details-header { cursor: pointer; }
-    body.details-minimized #detailsBackdrop { display: none !important; }
-    @media (min-width: 769px) {
-      body.details-minimized .details { position: static; height: auto; overflow: visible; box-shadow: none; }
-      body.details-minimized .details-body { display: block; }
-    }
-  </style>
 </head>
 <body>
   <div class="app" id="appRoot" role="application" aria-label="Meu Node">
@@ -62,11 +42,13 @@
             &times;
           </button>
         </div>
-        <div class="search-hint">Ctrl/Cmd + K</div>
+        <div class="search-hint hidden" aria-hidden="true">Ctrl/Cmd + K</div>
       </div>
 
       <div class="topbar-actions">
         <button id="createBtn" class="primary-btn">+ Criar</button>
+        <div class="shortcut-hint">Ctrl/Cmd+K: comandos</div>
+        <button id="helpBtn" class="ghost-btn" aria-label="Ajuda e atalhos" title="Ajuda e atalhos">?</button>
         <button id="commandBtn" class="ghost-btn">Paleta</button>
       </div>
     </header>
@@ -116,7 +98,7 @@
         <div class="details-header">
           <h2 id="detailsTitle" class="details-title"></h2>
           <div class="details-actions">
-            <button id="detailsToggle" class="icon-btn ghost-btn" aria-label="Minimizar painel">—</button>
+            <button id="detailsToggle" class="icon-btn ghost-btn" aria-label="Minimizar painel">v</button>
             <button id="detailsClose" class="icon-btn ghost-btn" aria-label="Fechar painel">&times;</button>
           </div>
         </div>
@@ -169,3 +151,5 @@
   <script src="app.js"></script>
 </body>
 </html>
+
+

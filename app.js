@@ -59,6 +59,7 @@ const el = {
   searchClear: document.getElementById("searchClear"),
   createBtn: document.getElementById("createBtn"),
   commandBtn: document.getElementById("commandBtn"),
+  helpBtn: document.getElementById("helpBtn"),
   countToday: document.getElementById("countToday"),
   countInbox: document.getElementById("countInbox"),
   countWeek: document.getElementById("countWeek"),
@@ -127,6 +128,11 @@ async function init() {
     localStorage.setItem(APP_PIN_KEY, DEFAULT_APP_PIN);
   }
   bindEvents();
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./sw.js").catch((error) => {
+      console.warn("Service worker registration failed.", error);
+    });
+  }
   applyRouteFromLocation();
   scheduleSearch(state.ui.search);
   renderAll();
@@ -169,6 +175,9 @@ function bindEvents() {
   }
   if (el.commandBtn) {
     el.commandBtn.addEventListener("click", openCommandPalette);
+  }
+  if (el.helpBtn) {
+    el.helpBtn.addEventListener("click", openHelpModal);
   }
 
   document.querySelectorAll("[data-route]").forEach((node) => {
@@ -539,6 +548,84 @@ async function runSearch(query) {
     state.ui.searching = false;
     renderMain();
   }
+}
+
+function inferQuickCapture(text) {
+  const raw = String(text || "").trim();
+  const lower = raw.toLowerCase();
+  const now = new Date();
+
+  if (!raw) {
+    return null;
+  }
+
+  let kind = "task";
+  let date = "";
+  let time = "";
+
+  if (lower.startsWith("nota:")) {
+    kind = "note";
+  }
+
+  if (/\bhoje\b/.test(lower)) {
+    date = formatDate(now);
+  }
+  if (/\bamanha\b/.test(lower)) {
+    date = formatDate(addDays(now, 1));
+  }
+
+  const dateMatch = lower.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+  if (dateMatch) {
+    const day = parseInt(dateMatch[1], 10);
+    const month = parseInt(dateMatch[2], 10);
+    let year = dateMatch[3] ? parseInt(dateMatch[3], 10) : now.getFullYear();
+    if (year < 100) {
+      year += 2000;
+    }
+    const parsed = new Date(year, month - 1, day);
+    if (!Number.isNaN(parsed.getTime())) {
+      date = formatDate(parsed);
+    }
+  }
+
+  const timeMatch = lower.match(/(\b\d{1,2}):(\d{2})/);
+  if (timeMatch) {
+    const hh = String(timeMatch[1]).padStart(2, "0");
+    const mm = String(timeMatch[2]).padStart(2, "0");
+    time = `${hh}:${mm}`;
+  } else {
+    const hourMatch = lower.match(/(\b\d{1,2})\s*h\b/);
+    if (hourMatch) {
+      const hh = String(hourMatch[1]).padStart(2, "0");
+      time = `${hh}:00`;
+    }
+  }
+
+  if (time) {
+    kind = "event";
+    if (!date) {
+      date = formatDate(now);
+    }
+  } else if (!date) {
+    date = formatDate(now);
+  }
+
+  let title = raw;
+  title = title.replace(/^nota:\s*/i, "");
+  title = title.replace(/\bhoje\b/gi, "");
+  title = title.replace(/\bamanha\b/gi, "");
+  if (dateMatch) {
+    title = title.replace(dateMatch[0], "");
+  }
+  if (timeMatch) {
+    title = title.replace(timeMatch[0], "");
+  }
+  title = title.replace(/\s{2,}/g, " ").trim();
+  if (!title) {
+    title = raw;
+  }
+
+  return { kind, title, date, time };
 }
 
 function parseDateTime(value) {
@@ -1734,7 +1821,8 @@ function renderPageActions(route, container) {
   }
   if (route.name === "today") {
     container.append(
-      createButton("Nova tarefa", "ghost-btn", () => openTaskModal({ dueDate: getTodayKey() }))
+      createButton("Nova tarefa", "ghost-btn", () => openTaskModal({ dueDate: getTodayKey() })),
+      createButton("Novo evento", "ghost-btn", () => openEventModal({ date: getTodayKey() }))
     );
   }
   if (route.name === "inbox") {
@@ -1749,12 +1837,27 @@ function renderPageActions(route, container) {
   }
   if (route.name === "week") {
     container.append(
+      createButton("Hoje", "ghost-btn", () => {
+        state.ui.weekOffset = 0;
+        saveState();
+        renderMain();
+      }),
+      createButton("Nova tarefa", "ghost-btn", () => openTaskModal({})),
+      createButton("Novo evento", "ghost-btn", () => openEventModal({})),
       createButton("Semana -", "ghost-btn", () => shiftWeek(-1)),
       createButton("Semana +", "ghost-btn", () => shiftWeek(1))
     );
   }
   if (route.name === "calendar") {
-    container.append(createButton("Novo evento", "primary-btn", () => openEventModal({})));
+    container.append(
+      createButton("Hoje", "ghost-btn", () => {
+        state.ui.calendarMonthOffset = 0;
+        state.ui.weekOffset = 0;
+        saveState();
+        renderMain();
+      }),
+      createButton("Novo evento", "primary-btn", () => openEventModal({}))
+    );
   }
   if (route.name === "projects") {
     container.append(createButton("Criar projeto", "primary-btn", openProjectModal));
@@ -1765,7 +1868,10 @@ function renderPageActions(route, container) {
     );
   }
   if (route.name === "notes" || route.name === "note") {
-    container.append(createButton("Nova nota", "primary-btn", () => openNoteModal({})));
+    container.append(
+      createButton("Nova nota", "primary-btn", () => openNoteModal({})),
+      createButton("Templates", "ghost-btn", openTemplateChooser)
+    );
   }
   if (route.name === "areas") {
     container.append(createButton("Nova area", "primary-btn", openAreaModal));
@@ -1786,8 +1892,28 @@ function renderTodayView(root) {
       if (!value) {
         return;
       }
-      const task = createTask({ title: value, dueDate: getTodayKey() });
-      state.tasks.unshift(task);
+      const captureInfo = inferQuickCapture(value);
+      if (!captureInfo) {
+        return;
+      }
+      if (captureInfo.kind === "event") {
+        const eventItem = createEvent({
+          title: captureInfo.title,
+          date: captureInfo.date || getTodayKey(),
+          start: captureInfo.time || "09:00",
+          duration: DEFAULT_EVENT_DURATION
+        });
+        state.events.push(eventItem);
+        showToast("Evento criado.");
+      } else if (captureInfo.kind === "note") {
+        openNoteModal({ title: captureInfo.title });
+        capture.value = "";
+        return;
+      } else {
+        const task = createTask({ title: captureInfo.title, dueDate: captureInfo.date || getTodayKey() });
+        state.tasks.unshift(task);
+        showToast("Tarefa criada.");
+      }
       capture.value = "";
       saveState();
       renderMain();
@@ -1835,6 +1961,12 @@ function renderTodayView(root) {
   wrap.append(focusSection.section);
 
   const agendaSection = createSection("Agenda de hoje", "Arraste tarefas para time-block");
+  const agendaHeader = agendaSection.section.querySelector(".section-header");
+  if (agendaHeader) {
+    agendaHeader.append(
+      createButton("+ Evento", "ghost-btn", () => openEventModal({ date: getTodayKey() }))
+    );
+  }
   const timeline = createElement("div", "timeline");
   const agendaItems = getAgendaItems(getTodayKey()).filter((item) =>
     matchesQuery(item.title, query)
@@ -2011,10 +2143,18 @@ function renderCalendarWeek(root) {
     column.append(header);
     const items = getAgendaItems(day.date);
     if (!items.length) {
-      column.append(createElement("div", "list-meta", "Sem itens"));
+      const empty = createElement("div", "empty");
+      empty.append(createElement("div", "list-meta", "Sem itens"));
+      const cta = createButton("Criar evento", "ghost-btn", (event) => {
+        event.stopPropagation();
+        openEventModal({ date: day.date });
+      });
+      empty.append(cta);
+      column.append(empty);
     } else {
       items.forEach((item) => column.append(createCalendarChip(item)));
     }
+    column.addEventListener("click", () => openEventModal({ date: day.date }));
     grid.append(column);
   });
   root.append(grid);
@@ -2084,6 +2224,7 @@ function renderWeekPlan(root) {
     if (day.isToday) {
       header.classList.add("pill");
     }
+    header.addEventListener("click", () => openEventModal({ date: day.date }));
     column.append(header);
     attachDropHandlers(column, { date: day.date, time: null });
 
@@ -2112,6 +2253,12 @@ function renderWeekPlan(root) {
         slot.append(chip);
       });
       attachDropHandlers(slot, { date: day.date, time });
+      slot.addEventListener("click", (event) => {
+        if (event.target.closest(".calendar-chip")) {
+          return;
+        }
+        openEventModal({ date: day.date, start: time });
+      });
       column.append(slot);
     });
     grid.append(column);
@@ -2354,7 +2501,8 @@ function renderNotesView(root, noteId) {
   const tree = createElement("div", "notes-tree");
 
   const addNoteBtn = createButton("Nova nota", "ghost-btn", () => openNoteModal({}));
-  tree.append(addNoteBtn);
+  const templatesBtn = createButton("Templates", "ghost-btn", openTemplateChooser);
+  tree.append(addNoteBtn, templatesBtn);
 
   const grouped = groupNotesByArea();
   Object.keys(grouped).forEach((areaId) => {
@@ -2894,9 +3042,12 @@ function openModal(title, eyebrow, data, onSave, onDelete) {
   el.modalTitle.textContent = title || "Novo item";
   el.modalBody.innerHTML = "";
   el.modalDelete.classList.toggle("hidden", !onDelete);
+  el.modalCancel.textContent = "Cancelar";
 
   const formData = { ...data };
   const fields = Object.keys(data);
+  const hasSave = typeof onSave === "function";
+  el.modalSave.classList.toggle("hidden", !hasSave);
 
   fields.forEach((key) => {
     const value = data[key];
@@ -2952,12 +3103,64 @@ function openModal(title, eyebrow, data, onSave, onDelete) {
     el.modalBody.append(buildField(label, input));
   });
 
-  modalState.onSave = () => onSave(formData);
+  modalState.onSave = hasSave ? () => onSave(formData) : null;
   modalState.onDelete = onDelete;
   modalState.previousFocus = document.activeElement;
 
   el.modalBackdrop.classList.remove("hidden");
   el.modalSave.focus();
+}
+
+function openHelpModal() {
+  openModal("Ajuda e atalhos", "Atalhos", {}, null, null);
+  el.modalCancel.textContent = "Fechar";
+  el.modalBody.innerHTML = "";
+
+  const list = createElement("div", "help-list");
+  const items = [
+    { key: "Ctrl/Cmd+K", desc: "Abrir paleta de comandos" },
+    { key: "Enter", desc: "Capturar e confirmar" },
+    { key: "Esc", desc: "Fechar modais e painel" },
+    { key: "Arrastar", desc: "Criar time-blocks e reordenar" }
+  ];
+
+  items.forEach((item) => {
+    const row = createElement("div", "help-item");
+    row.append(createElement("span", "", item.key), createElement("span", "", item.desc));
+    list.append(row);
+  });
+
+  el.modalBody.append(list);
+  el.modalSave.classList.add("hidden");
+  el.modalDelete.classList.add("hidden");
+}
+
+function openTemplateChooser() {
+  openModal("Templates de nota", "Notas", {}, null, null);
+  el.modalCancel.textContent = "Fechar";
+  el.modalBody.innerHTML = "";
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Reuniao", "ghost-btn", () => {
+      closeModal();
+      openNoteModal({ template: "meeting" });
+    }),
+    createButton("Diario", "ghost-btn", () => {
+      closeModal();
+      openNoteModal({ template: "diary" });
+    }),
+    createButton("Estudo", "ghost-btn", () => {
+      closeModal();
+      openNoteModal({ template: "study" });
+    }),
+    createButton("Planejamento mensal", "ghost-btn", () => {
+      closeModal();
+      openNoteModal({ template: "monthly" });
+    })
+  );
+  el.modalBody.append(actions);
+  el.modalSave.classList.add("hidden");
+  el.modalDelete.classList.add("hidden");
 }
 
 function closeModal() {
@@ -3656,38 +3859,18 @@ function renderDetailsPanel() {
     el.detailsPanel.innerHTML = "";
     return;
   }
-  
-  el.detailsTitle.textContent = selection.item.title || selection.item.name || "Detalhe";
-  el.detailsBody.innerHTML = "";
-  
-  const info = createElement("div", "details-info");
-  if (selection.kind === "task") {
-    info.append(
-      createElement("div", "detail-row", `Status: ${STATUS_LABELS[selection.item.status]}`),
-      createElement("div", "detail-row", `Prioridade: ${PRIORITY_LABELS[selection.item.priority]}`),
-      selection.item.dueDate ? createElement("div", "detail-row", `Data: ${selection.item.dueDate}`) : null
-    );
-  } else if (selection.kind === "event") {
-    info.append(
-      createElement("div", "detail-row", `Data: ${selection.item.date}`),
-      createElement("div", "detail-row", `Hora: ${selection.item.start}`),
-      createElement("div", "detail-row", `Duração: ${selection.item.duration}min`)
-    );
-  }
-  el.detailsBody.append(info);
-}
-
-function renderDetailsPanel() {
-  const selection = getSelectedItem();
-  if (!selection.item) {
-    el.detailsPanel.innerHTML = "";
-    return;
-  }
 
   el.detailsTitle.textContent = selection.item.title || selection.item.name || "Detalhe";
   el.detailsBody.innerHTML = "";
 
   const info = createElement("div", "details-info");
+  const typeLabel = {
+    task: "Tarefa",
+    event: "Evento",
+    note: "Nota",
+    project: "Projeto"
+  }[selection.kind] || "Item";
+  info.append(createElement("div", "detail-row", `Tipo: ${typeLabel}`));
   if (selection.kind === "task") {
     info.append(
       createElement("div", "detail-row", `Status: ${STATUS_LABELS[selection.item.status]}`),
@@ -3698,7 +3881,7 @@ function renderDetailsPanel() {
     actions.append(
       createButton("Editar", "ghost-btn", () => openTaskModal(selection.item)),
       createButton("Agendar", "ghost-btn", () => openTaskScheduleModal(selection.item)),
-      createButton("Amanhã", "ghost-btn", () => snoozeTask(selection.item, 1)),
+      createButton("Amanha", "ghost-btn", () => snoozeTask(selection.item, 1)),
       createButton("Deletar", "ghost-btn danger", () => {
         if (confirm("Deletar tarefa?")) {
           state.tasks = state.tasks.filter((task) => task.id !== selection.item.id);
@@ -3808,3 +3991,5 @@ function updateConnectionStatus() {
   const offline = typeof navigator !== "undefined" && navigator.onLine === false;
   el.offlineBanner.classList.toggle("hidden", !offline);
 }
+
+

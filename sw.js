@@ -1,10 +1,11 @@
-const CACHE_NAME = "meu-node-cache-v3";
+const CACHE_NAME = "meu-node-cache-v4";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./ui-helpers.js",
+  "./sw.js",
   "./manifest.json",
   "./icon.svg",
   "./icon-maskable.svg",
@@ -52,13 +53,11 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          return response;
-        })
-        .catch(() => caches.match("./index.html")); // Garantir fallback
+      return fetch(event.request).then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      });
     })
   );
 });

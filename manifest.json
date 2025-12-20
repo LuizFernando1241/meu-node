@@ -1,10 +1,11 @@
 {
   "name": "Meu Node",
   "short_name": "Meu Node",
-  "start_url": ".",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "background_color": "#f26a4f",
+  "theme_color": "#f26a4f",
   "icons": [
     {
       "src": "icon.svg",
