@@ -1266,6 +1266,15 @@ function formatTimeLabel(time) {
   return time || "--:--";
 }
 
+function getRoundedTime() {
+  const now = new Date();
+  const minutes = now.getMinutes();
+  const step = Math.max(15, Number(TIME_STEP_MINUTES) || 30);
+  const rounded = Math.ceil(minutes / step) * step;
+  now.setMinutes(rounded, 0, 0);
+  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+
 function parseDate(value) {
   if (!value || typeof value !== "string") {
     return null;
@@ -2028,7 +2037,15 @@ function renderTodayView(root) {
     return;
   }
 
-  const focusSection = createSection("Foco do dia", "Ate 3 itens");
+  const focusSection = createSection("Agora", "O que merece foco imediato");
+  const focusHeader = focusSection.section.querySelector(".section-header");
+  if (focusHeader) {
+    focusHeader.append(
+      createButton("Evento agora", "ghost-btn", () =>
+        openEventModal({ date: getTodayKey(), start: getRoundedTime() })
+      )
+    );
+  }
   const focusTasks = state.tasks.filter(
     (task) =>
       task.status !== "done" &&
@@ -2075,7 +2092,13 @@ function renderTodayView(root) {
   agendaSection.body.append(timeline);
   wrap.append(agendaSection.section);
 
-  const tasksSection = createSection("Proximo a fazer", "Concluir em 1 clique");
+  const tasksSection = createSection("Proximo", "Concluir em 1 clique");
+  const tasksHeader = tasksSection.section.querySelector(".section-header");
+  if (tasksHeader) {
+    tasksHeader.append(
+      createButton("Nova tarefa", "ghost-btn", () => openTaskModal({ dueDate: getTodayKey() }))
+    );
+  }
   const overdue = getOverdueTasks().filter((task) => matchesTaskSearch(task, query));
   if (overdue.length) {
     const overdueWrap = createElement("div", "section");
@@ -2232,8 +2255,8 @@ function renderWeekView(root) {
     });
     const legend = createElement("div", "legend-row");
     legend.append(
-      createElement("span", "summary-chip", "Evento"),
-      createElement("span", "summary-chip", "Time-block")
+      createElement("span", "chip chip-event", "Evento"),
+      createElement("span", "chip chip-task", "Time-block")
     );
     root.append(toggle);
     root.append(legend);
@@ -2487,6 +2510,7 @@ function renderWeekReview(root) {
 }
 
 function renderProjectsView(root) {
+  renderActionBar({ name: "projects" }, root);
   const filters = createElement("div", "week-tabs");
   ["active", "paused", "done"].forEach((status) => {
     const label = status === "active" ? "Ativos" : status === "paused" ? "Pausados" : "Concluidos";
@@ -2641,6 +2665,7 @@ function renderNotesView(root, noteId) {
   if (noteId) {
     state.ui.notesNoteId = noteId;
   }
+  renderActionBar({ name: "notes" }, root);
   const layout = createElement("div", "notes-layout");
   const tree = createElement("div", "notes-tree");
 
@@ -3882,7 +3907,12 @@ function getScheduledItems(date, time) {
 }
 
 function createCalendarChip(item) {
-  const chip = createElement("div", "chip");
+  const chip = createElement("div", "chip calendar-chip");
+  if (item.kind === "event") {
+    chip.classList.add("chip-event");
+  } else if (item.kind === "task") {
+    chip.classList.add("chip-task");
+  }
   chip.textContent = item.title;
   chip.draggable = true;
   chip.addEventListener("dragstart", (event) => setDragData(event, item.kind, item.id));

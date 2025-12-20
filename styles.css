@@ -504,6 +504,16 @@ body.details-open .details-backdrop {
   box-shadow: var(--shadow-1);
 }
 
+.chip-event {
+  background: rgba(91, 126, 232, 0.16);
+  color: var(--color-accent);
+}
+
+.chip-task {
+  background: rgba(242, 106, 79, 0.16);
+  color: var(--color-primary);
+}
+
 .kind-chip {
   display: inline-flex;
   align-items: center;
