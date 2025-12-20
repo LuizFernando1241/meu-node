@@ -75,7 +75,7 @@ function createTaskCard(task, options = {}) {
   
   const meta = document.createElement("div");
   meta.className = "list-meta";
-  meta.textContent = `${STATUS_LABELS[task.status] || task.status} • ${PRIORITY_LABELS[task.priority] || task.priority}`;
+    meta.textContent = `${STATUS_LABELS[task.status] || task.status} - ${PRIORITY_LABELS[task.priority] || task.priority}`;
   card.append(meta);
   
   card.addEventListener("click", () => selectItem("task", task.id));
@@ -91,10 +91,19 @@ function createTaskRow(task, options = {}) {
   checkbox.type = "checkbox";
   checkbox.checked = task.status === "done";
   checkbox.addEventListener("change", () => {
+    const previous = task.status;
     task.status = checkbox.checked ? "done" : "todo";
     touch(task);
     saveState();
     renderMain();
+    if (checkbox.checked) {
+      showActionToast("Tarefa concluida.", "Desfazer", () => {
+        task.status = previous;
+        touch(task);
+        saveState();
+        renderMain();
+      });
+    }
   });
   
   const content = document.createElement("div");
@@ -114,29 +123,39 @@ function createTaskRow(task, options = {}) {
   
   row.append(checkbox, content);
   row.addEventListener("click", (e) => {
-    if (e.target !== checkbox) selectItem("task", task.id);
+    if (e.target !== checkbox && !e.target.closest(".task-actions")) {
+      selectItem("task", task.id);
+    }
   });
+
+  if (!options.compact) {
+    const actions = document.createElement("div");
+    actions.className = "task-actions";
+    const focusBtn = createButton(task.focus ? "Foco *" : "Foco", "ghost-btn", (event) => {
+      event.stopPropagation();
+      toggleTaskFocus(task);
+      renderMain();
+    });
+    const snoozeBtn = createButton("Amanha", "ghost-btn", (event) => {
+      event.stopPropagation();
+      snoozeTask(task, 1);
+    });
+    const weekBtn = createButton("+7d", "ghost-btn", (event) => {
+      event.stopPropagation();
+      snoozeTask(task, 7);
+    });
+    const scheduleBtn = createButton("Agendar", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openTaskScheduleModal(task);
+    });
+    actions.append(focusBtn, snoozeBtn, weekBtn, scheduleBtn);
+    row.append(actions);
+  }
   
   return row;
 }
 
-function createProjectCard(project) {
-  const card = document.createElement("div");
-  card.className = "card";
 
-  const title = document.createElement("div");
-  title.className = "card-title";
-  title.textContent = project.title;
-  card.append(title);
-  
-  const meta = document.createElement("div");
-  meta.className = "list-meta";
-  const statusLabel = project.status === "active" ? "Ativo" : project.status === "paused" ? "Pausado" : "Concluído";
-  meta.textContent = statusLabel;
-  card.append(meta);
-  
-  return card;
-}
 
 function createAreaCard(area) {
   const card = document.createElement("div");
@@ -200,8 +219,9 @@ function createInboxRow(item, options = {}) {
   
   const processBtn = createButton("Processar", "ghost-btn", () => openProcessModal(item));
   const archiveBtn = createButton("Arquivar", "ghost-btn", () => archiveInboxItem(item.id));
+  const deleteBtn = createButton("Apagar", "ghost-btn danger", () => deleteInboxItem(item.id));
   
-  actions.append(processBtn, archiveBtn);
+  actions.append(processBtn, archiveBtn, deleteBtn);
   
   row.append(checkbox, content, actions);
   
@@ -224,3 +244,60 @@ function setDetailsOpen(open) {
 function toggleDetailsMinimize() {
   document.body.classList.toggle("details-minimized");
 }
+
+function createProjectCard(project) {
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const title = document.createElement("div");
+  title.className = "card-title";
+  title.textContent = project.title;
+  card.append(title);
+
+  if (project.objective) {
+    const objective = document.createElement("div");
+    objective.className = "list-meta";
+    objective.textContent = project.objective;
+    card.append(objective);
+  }
+
+  const meta = document.createElement("div");
+  meta.className = "list-meta";
+  const statusLabel = project.status === "active" ? "Ativo" : project.status === "paused" ? "Pausado" : "Concluido";
+  meta.textContent = statusLabel;
+  card.append(meta);
+
+  const nextTask = state.tasks.find(
+    (task) => task.projectId === project.id && task.status !== "done"
+  );
+  if (nextTask) {
+    const next = document.createElement("div");
+    next.className = "list-meta";
+    next.textContent = `Proximo passo: ${nextTask.title}`;
+    card.append(next);
+  }
+
+  const activeTasks = state.tasks.filter(
+    (task) => task.projectId === project.id && task.status !== "done"
+  ).length;
+  const overdueTasks = state.tasks.filter((task) => {
+    if (task.projectId !== project.id || task.status === "done" || !task.dueDate) {
+      return false;
+    }
+    const due = parseDate(task.dueDate);
+    return due && due < dateOnly(new Date());
+  }).length;
+  const counts = document.createElement("div");
+  counts.className = "list-meta";
+  counts.textContent = `${activeTasks} ativas - ${overdueTasks} atrasadas`;
+  card.append(counts);
+
+  return card;
+}
+
+
+
+
+
+
+

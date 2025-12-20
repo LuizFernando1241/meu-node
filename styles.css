@@ -100,6 +100,14 @@ body {
   gap: 16px;
 }
 
+.offline-banner {
+  background: #111827;
+  color: #f9fafb;
+  padding: 8px 16px;
+  font-size: 12px;
+  text-align: center;
+}
+
 .shell {
   display: flex;
   flex: 1;
@@ -313,6 +321,82 @@ body.details-open .details-backdrop {
   flex-wrap: wrap;
 }
 
+.capture-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+}
+
+.details-info .detail-row {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.modal-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.calendar-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.calendar-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.calendar-day {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.calendar-day.muted {
+  opacity: 0.5;
+}
+
+.calendar-day-header {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.calendar-day-number {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.calendar-month-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.skeleton {
+  height: 48px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .task-row {
   display: flex;
   gap: 12px;
@@ -321,6 +405,17 @@ body.details-open .details-backdrop {
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.2s;
+}
+
+.task-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.task-actions button {
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 .task-row:hover {
@@ -561,6 +656,51 @@ button {
   padding: 12px 16px;
   border-radius: 6px;
   animation: slideIn 0.3s ease-out;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toast-actions {
+  margin-left: auto;
+}
+
+.toast-btn {
+  background: transparent;
+  color: #fef3c7;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.mobile-nav {
+  display: none;
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 8px;
+  gap: 8px;
+  justify-content: space-between;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 80;
+}
+
+.mobile-nav .nav-item {
+  flex: 1;
+  justify-content: center;
+}
+
+.mobile-nav .nav-create {
+  background: var(--color-primary);
+  color: white;
+  border-radius: 999px;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
 }
 
 @keyframes slideIn {
@@ -631,12 +771,23 @@ button {
 }
 
 @media (max-width: 900px) {
+  .sidebar {
+    display: none;
+  }
+  .mobile-nav {
+    display: flex;
+  }
+  .content {
+    padding-bottom: 90px;
+  }
   .topbar-actions {
     justify-content: flex-start;
   }
   .week-grid,
   .calendar-week,
-  .calendar-month {
+  .calendar-month,
+  .calendar-week-grid,
+  .calendar-month-grid {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
   .week-layout,

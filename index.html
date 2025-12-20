@@ -70,6 +70,9 @@
         <button id="commandBtn" class="ghost-btn">Paleta</button>
       </div>
     </header>
+    <div id="offlineBanner" class="offline-banner hidden">
+      Offline: suas acoes vao sincronizar quando voltar.
+    </div>
 
     <main class="shell">
       <aside class="sidebar panel">
@@ -93,6 +96,9 @@
           <button class="nav-item" data-route="/notes">
             <span>Notas</span>
             <span id="countNotes" class="count"></span>
+          </button>
+          <button class="nav-item" data-route="/areas">
+            <span>Mais</span>
           </button>
         </div>
       </aside>
@@ -149,6 +155,14 @@
     </div>
 
     <div id="toastContainer" class="toast-container"></div>
+
+    <nav class="mobile-nav">
+      <button class="nav-item" data-route="/today">Hoje</button>
+      <button class="nav-item" data-route="/inbox">Inbox</button>
+      <button class="nav-item" data-route="/week">Semana</button>
+      <button class="nav-item" data-route="/projects">Projetos</button>
+      <button id="mobileCreateBtn" class="nav-item nav-create">+</button>
+    </nav>
   </div>
 
   <script src="ui-helpers.js"></script>
