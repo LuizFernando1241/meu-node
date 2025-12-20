@@ -131,10 +131,9 @@ function createProjectCard(project) {
   
   const meta = document.createElement("div");
   meta.className = "list-meta";
-  meta.textContent = project.status === "active" ? "Ativo" : project.status === "paused" ? "Pausado" : "Concluído";
+  const statusLabel = project.status === "active" ? "Ativo" : project.status === "paused" ? "Pausado" : "Concluído";
+  meta.textContent = statusLabel;
   card.append(meta);
-  
-  card.addEventListener("click", () => navigate(`/projects/${project.id}`));
   
   return card;
 }
@@ -154,8 +153,6 @@ function createAreaCard(area) {
     meta.textContent = area.objective.slice(0, 80);
     card.append(meta);
   }
-  
-  card.addEventListener("click", () => navigate(`/areas/${area.id}`));
   
   return card;
 }

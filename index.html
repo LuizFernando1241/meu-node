@@ -82,12 +82,28 @@
     <main class="shell">
       <aside class="sidebar panel">
         <div class="sidebar-section">
-          <button class="nav-item" data-route="/today">Hoje</button>
-          <button class="nav-item" data-route="/inbox">Inbox</button>
-          <button class="nav-item" data-route="/week">Semana</button>
-          <button class="nav-item" data-route="/projects">Projetos</button>
-          <button class="nav-item" data-route="/notes">Notas</button>
+          <button class="nav-item" data-route="/today">
+            <span>Hoje</span>
+            <span id="countToday" class="count"></span>
+          </button>
+          <button class="nav-item" data-route="/inbox">
+            <span>Inbox</span>
+            <span id="countInbox" class="count"></span>
+          </button>
+          <button class="nav-item" data-route="/week">
+            <span>Semana</span>
+            <span id="countWeek" class="count"></span>
+          </button>
+          <button class="nav-item" data-route="/projects">
+            <span>Projetos</span>
+            <span id="countProjects" class="count"></span>
+          </button>
+          <button class="nav-item" data-route="/notes">
+            <span>Notas</span>
+            <span id="countNotes" class="count"></span>
+          </button>
         </div>
+        <div id="syncStatus" class="sync-status" style="margin-top: 16px; padding: 8px; font-size: 11px; color: var(--color-text-secondary);"></div>
       </aside>
 
       <section class="content panel">
