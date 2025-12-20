@@ -1719,6 +1719,13 @@ function renderGlobalSearchView(root, query) {
       : null;
   const results = apiResults || getSearchResults(query);
   const wrap = createElement("div", "today-grid");
+  wrap.classList.add("search-overlay");
+  const banner = createElement("div", "search-banner");
+  banner.append(
+    createElement("div", "card-title", "Busca global"),
+    createElement("div", "list-meta", "Buscando em tarefas, eventos, projetos e notas.")
+  );
+  wrap.append(banner);
   const summary = createSection("Busca global", `Resultados para "${query}"`);
 
   if (state.ui.searching && !apiResults) {
@@ -1878,13 +1885,83 @@ function renderPageActions(route, container) {
   }
 }
 
+function renderActionBar(route, root) {
+  const bar = createElement("div", "action-bar");
+  const label = createElement("div", "action-label", "Acoes rapidas:");
+  bar.append(label);
+
+  if (route.name === "today") {
+    bar.append(
+      createButton("Nova tarefa", "primary-btn", () => openTaskModal({ dueDate: getTodayKey() })),
+      createButton("Novo evento", "ghost-btn", () => openEventModal({ date: getTodayKey() })),
+      createButton("Abrir inbox", "ghost-btn", () => navigate("/inbox"))
+    );
+  }
+  if (route.name === "inbox") {
+    bar.append(
+      createButton("Capturar", "primary-btn", () => {
+        const input = document.querySelector(".capture-input");
+        if (input) input.focus();
+      })
+    );
+    if (state.inbox.length) {
+      bar.append(
+        createButton("Processar agora", "ghost-btn", () =>
+          openBulkProcessModal(state.inbox.map((item) => item.id))
+        )
+      );
+    }
+  }
+  if (route.name === "week") {
+    bar.append(
+      createButton("Novo evento", "primary-btn", () => openEventModal({})),
+      createButton("Nova tarefa", "ghost-btn", () => openTaskModal({})),
+      createButton("Hoje", "ghost-btn", () => {
+        state.ui.weekOffset = 0;
+        saveState();
+        renderMain();
+      })
+    );
+  }
+  if (route.name === "calendar") {
+    bar.append(
+      createButton("Novo evento", "primary-btn", () => openEventModal({})),
+      createButton("Hoje", "ghost-btn", () => {
+        state.ui.calendarMonthOffset = 0;
+        saveState();
+        renderMain();
+      })
+    );
+  }
+  if (route.name === "projects") {
+    bar.append(createButton("Criar projeto", "primary-btn", openProjectModal));
+  }
+  if (route.name === "notes") {
+    bar.append(
+      createButton("Nova nota", "primary-btn", () => openNoteModal({})),
+      createButton("Templates", "ghost-btn", openTemplateChooser)
+    );
+  }
+
+  if (bar.childElementCount > 1) {
+    root.append(bar);
+  }
+}
+
 function renderTodayView(root) {
   const wrap = createElement("div", "today-grid");
   const query = (state.ui.search || "").trim().toLowerCase();
 
+  renderActionBar({ name: "today" }, wrap);
+
+  const captureCard = createElement("div", "capture-card");
+  captureCard.append(
+    createElement("div", "card-title", "Captura rapida"),
+    createElement("div", "list-meta", "Ex.: 15:00 reuniao, amanha pagar conta, nota: ideias")
+  );
   const capture = document.createElement("input");
   capture.className = "capture-input";
-  capture.placeholder = "Capturar rapido e Enter...";
+  capture.placeholder = "Digite e pressione Enter";
   capture.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -1919,7 +1996,18 @@ function renderTodayView(root) {
       renderMain();
     }
   });
-  wrap.append(capture);
+  captureCard.append(capture);
+
+  const examples = createElement("div", "example-chips");
+  ["15:00 reuniao", "amanha pagar conta", "nota: ideias soltas"].forEach((text) => {
+    const chip = createButton(text, "chip-btn", () => {
+      capture.value = text;
+      capture.focus();
+    });
+    examples.append(chip);
+  });
+  captureCard.append(examples);
+  wrap.append(captureCard);
 
   if (isFirstRun() && !query) {
     const empty = createElement("div", "empty");
@@ -1960,7 +2048,7 @@ function renderTodayView(root) {
   }
   wrap.append(focusSection.section);
 
-  const agendaSection = createSection("Agenda de hoje", "Arraste tarefas para time-block");
+  const agendaSection = createSection("Agenda de hoje", "Arraste tarefas ou clique para criar evento");
   const agendaHeader = agendaSection.section.querySelector(".section-header");
   if (agendaHeader) {
     agendaHeader.append(
@@ -1987,7 +2075,7 @@ function renderTodayView(root) {
   agendaSection.body.append(timeline);
   wrap.append(agendaSection.section);
 
-  const tasksSection = createSection("Tarefas de hoje", "Concluir em 1 clique");
+  const tasksSection = createSection("Proximo a fazer", "Concluir em 1 clique");
   const overdue = getOverdueTasks().filter((task) => matchesTaskSearch(task, query));
   if (overdue.length) {
     const overdueWrap = createElement("div", "section");
@@ -2018,7 +2106,7 @@ function renderTodayView(root) {
   }
   wrap.append(tasksSection.section);
 
-  const nextSection = createSection("Proximos 7 dias", "Mini lista");
+  const nextSection = createSection("Depois", "Proximos 7 dias");
   const nextTasks = getNextDaysTasks(7)
     .filter((task) => task.dueDate !== getTodayKey())
     .filter((task) => matchesTaskSearch(task, query))
@@ -2037,6 +2125,7 @@ function renderInboxView(root) {
   state.ui.inboxSelection = state.ui.inboxSelection.filter((id) =>
     state.inbox.some((item) => item.id === id)
   );
+  renderActionBar({ name: "inbox" }, root);
   const capture = document.createElement("input");
   capture.className = "capture-input";
   capture.placeholder = "Digite e Enter para capturar...";
@@ -2054,6 +2143,13 @@ function renderInboxView(root) {
     }
   });
 
+  const flow = createElement("div", "flow-card");
+  flow.append(createElement("div", "card-title", "Inbox em 3 passos"));
+  const steps = createElement("div", "flow-steps");
+  steps.innerHTML =
+    "<div><strong>1.</strong> Capture tudo sem pensar.</div><div><strong>2.</strong> Escolha tipo e data.</div><div><strong>3.</strong> Envie para tarefa, evento ou nota.</div>";
+  flow.append(steps);
+  root.append(flow);
   root.append(capture);
 
   if (state.inbox.length) {
@@ -2095,14 +2191,28 @@ function renderInboxView(root) {
   if (!state.inbox.length) {
     list.append(createElement("div", "empty", "Inbox vazia."));
   } else {
-    state.inbox
-      .filter((item) => matchesQuery(item.title, state.ui.search))
-      .forEach((item) => list.append(createInboxRow(item)));
+    const filtered = state.inbox.filter((item) => matchesQuery(item.title, state.ui.search));
+    const groups = [
+      { label: "Sugestao: Tarefas", kind: "task" },
+      { label: "Sugestao: Eventos", kind: "event" },
+      { label: "Sugestao: Notas", kind: "note" }
+    ];
+    groups.forEach((group) => {
+      const items = filtered.filter((item) => item.kind === group.kind);
+      if (items.length) {
+        const header = createElement("div", "section-title", group.label);
+        list.append(header);
+        items.forEach((item) => list.append(createInboxRow(item)));
+      }
+    });
+    const rest = filtered.filter((item) => !["task", "event", "note"].includes(item.kind));
+    rest.forEach((item) => list.append(createInboxRow(item)));
   }
   root.append(list);
 }
 
 function renderWeekView(root) {
+  renderActionBar({ name: "week" }, root);
   const tabs = createElement("div", "week-tabs");
   const planBtn = createButton("Planejar", "tab-btn", () => setWeekTab("plan"));
   const reviewBtn = createButton("Revisar", "tab-btn", () => setWeekTab("review"));
@@ -2120,7 +2230,13 @@ function renderWeekView(root) {
       saveState();
       renderMain();
     });
+    const legend = createElement("div", "legend-row");
+    legend.append(
+      createElement("span", "summary-chip", "Evento"),
+      createElement("span", "summary-chip", "Time-block")
+    );
     root.append(toggle);
+    root.append(legend);
   }
 
   if (state.ui.weekTab === "review") {
@@ -2131,6 +2247,7 @@ function renderWeekView(root) {
 }
 
 function renderCalendarView(root) {
+  renderActionBar({ name: "calendar" }, root);
   const tabs = createElement("div", "week-tabs");
   const weekBtn = createButton("Semana", "tab-btn", () => setCalendarTab("week"));
   const monthBtn = createButton("Mes", "tab-btn", () => setCalendarTab("month"));
@@ -2151,7 +2268,14 @@ function renderCalendarWeek(root) {
   const days = getWeekDays(0);
   days.forEach((day) => {
     const column = createElement("div", "calendar-day");
-    const header = createElement("div", "calendar-day-header", day.label);
+    const header = createElement("div", "calendar-day-header");
+    header.append(createElement("span", "", day.label));
+    const headerBtn = createButton("+", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openEventModal({ date: day.date });
+    });
+    headerBtn.classList.add("calendar-header-btn");
+    header.append(headerBtn);
     column.append(header);
     const items = getAgendaItems(day.date);
     if (!items.length) {
@@ -2232,9 +2356,17 @@ function renderWeekPlan(root) {
 
   days.forEach((day) => {
     const column = createElement("div", "week-day");
-    const header = createElement("div", "week-header", day.label);
+    const header = createElement("div", "week-header");
+    const label = createElement("span", "", day.label);
+    header.append(label);
+    const headerBtn = createButton("+", "ghost-btn", (event) => {
+      event.stopPropagation();
+      openEventModal({ date: day.date });
+    });
+    headerBtn.classList.add("week-header-btn");
+    header.append(headerBtn);
     if (day.isToday) {
-      header.classList.add("pill");
+      label.classList.add("pill");
     }
     header.addEventListener("click", () => openEventModal({ date: day.date }));
     column.append(header);
@@ -3941,8 +4073,17 @@ function renderDetailsPanel() {
     note: "Nota",
     project: "Projeto"
   }[selection.kind] || "Item";
-  info.append(createElement("div", "detail-row", `Tipo: ${typeLabel}`));
+  const summary = createElement("div", "details-summary");
+  summary.append(createElement("span", "summary-chip", typeLabel));
+  info.append(summary);
   if (selection.kind === "task") {
+    summary.append(
+      createElement("span", "summary-chip", STATUS_LABELS[selection.item.status]),
+      createElement("span", "summary-chip", PRIORITY_LABELS[selection.item.priority])
+    );
+    if (selection.item.dueDate) {
+      summary.append(createElement("span", "summary-chip", selection.item.dueDate));
+    }
     info.append(
       createElement("div", "detail-row", `Status: ${STATUS_LABELS[selection.item.status]}`),
       createElement("div", "detail-row", `Prioridade: ${PRIORITY_LABELS[selection.item.priority]}`),
@@ -3965,6 +4106,11 @@ function renderDetailsPanel() {
     );
     info.append(actions);
   } else if (selection.kind === "event") {
+    summary.append(
+      createElement("span", "summary-chip", selection.item.date),
+      createElement("span", "summary-chip", selection.item.start),
+      createElement("span", "summary-chip", `${selection.item.duration}min`)
+    );
     info.append(
       createElement("div", "detail-row", `Data: ${selection.item.date}`),
       createElement("div", "detail-row", `Hora: ${selection.item.start}`),
@@ -3985,6 +4131,24 @@ function renderDetailsPanel() {
     );
     info.append(actions);
   } else if (selection.kind === "note") {
+    if (selection.item.areaId) {
+      summary.append(
+        createElement(
+          "span",
+          "summary-chip",
+          getArea(selection.item.areaId)?.name || "Area"
+        )
+      );
+    }
+    if (selection.item.projectId) {
+      summary.append(
+        createElement(
+          "span",
+          "summary-chip",
+          getProject(selection.item.projectId)?.title || "Projeto"
+        )
+      );
+    }
     info.append(
       createElement("div", "detail-row", `Titulo: ${selection.item.title}`),
       selection.item.areaId
@@ -4009,6 +4173,10 @@ function renderDetailsPanel() {
     );
     info.append(actions);
   } else if (selection.kind === "project") {
+    summary.append(
+      createElement("span", "summary-chip", selection.item.status),
+      createElement("span", "summary-chip", selection.item.areaId ? "Com area" : "Sem area")
+    );
     info.append(
       createElement("div", "detail-row", `Objetivo: ${selection.item.objective || "-"}`),
       createElement("div", "detail-row", `Status: ${selection.item.status}`)
