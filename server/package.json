@@ -8,10 +8,7 @@
     "dev": "nodemon server/server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "@libsql/client": "^0.3.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.0.3"
+    "express": "^4.18.2"
   },
   "devDependencies": {
     "nodemon": "^2.0.22"
