@@ -11,6 +11,31 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Minimal styles to support a compact/minimized details panel */
+    body.details-minimized .details {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 48px;
+      transform: translateY(0);
+      z-index: 60;
+      overflow: hidden;
+      box-shadow: 0 -6px 20px rgba(0,0,0,0.12);
+    }
+    body.details-minimized .details-body { display: none; }
+    body.details-minimized .details .details-header {
+      cursor: pointer;
+    }
+    /* ensure backdrop is hidden when minimized (but selection remains) */
+    body.details-minimized #detailsBackdrop { display: none !important; }
+    @media (min-width: 769px) {
+      /* keep original desktop behavior */
+      body.details-minimized .details { position: static; height: auto; overflow: visible; box-shadow: none; }
+      body.details-minimized .details-body { display: block; }
+    }
+  </style>
 </head>
 <body>
   <div class="bg-aurora"></div>
@@ -111,6 +136,7 @@
             <h2 id="detailsTitle">Nada selecionado</h2>
           </div>
           <div class="details-actions">
+            <button id="detailsToggle" class="mini-btn" aria-label="Minimizar painel de detalhes">—</button>
             <button id="detailsClose" class="ghost-btn icon-btn" aria-label="Fechar detalhes">&times;</button>
           </div>
         </div>

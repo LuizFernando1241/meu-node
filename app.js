@@ -78,6 +78,7 @@ const el = {
   detailsTitle: document.getElementById("detailsTitle"),
   detailsBody: document.getElementById("detailsBody"),
   detailsClose: document.getElementById("detailsClose"),
+  detailsToggle: document.getElementById("detailsToggle"),
   detailsBackdrop: document.getElementById("detailsBackdrop"),
   modalBackdrop: document.getElementById("modalBackdrop"),
   modalEyebrow: document.getElementById("modalEyebrow"),
@@ -204,6 +205,12 @@ function bindEvents() {
 
   if (el.detailsClose) {
     el.detailsClose.addEventListener("click", clearSelection);
+  }
+  if (el.detailsToggle) {
+    el.detailsToggle.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      toggleDetailsMinimize();
+    });
   }
   if (el.detailsBackdrop) {
     el.detailsBackdrop.addEventListener("click", clearSelection);
@@ -2127,6 +2134,7 @@ function renderDetailsPanel() {
     empty.innerHTML = "<h3>Selecione um item</h3><p>Detalhes aparecem aqui.</p>";
     el.detailsBody.append(empty);
     appendQuickCapturePanel();
+    updateDetailsToggleButton();
     return;
   }
 
@@ -2140,6 +2148,7 @@ function renderDetailsPanel() {
     renderNoteDetails(selection.item);
   }
   appendQuickCapturePanel();
+  updateDetailsToggleButton();
 }
 
 function setDetailsOpen(isOpen) {
@@ -2151,22 +2160,61 @@ function setDetailsOpen(isOpen) {
   if (el.detailsPanel) {
     el.detailsPanel.setAttribute("aria-hidden", String(!isOpen));
   }
+  // if panel is being closed fully, also clear minimized visual state
+  if (!isOpen) {
+    document.body.classList.remove("details-minimized");
+    updateDetailsToggleButton();
+  }
 }
 
-// Hide details panel on mobile view when user scrolls/touches the page.
-function handleMobileScroll() {
-  try {
-    if (window.innerWidth > 768) {
-      return;
-    }
-    if (!document.body.classList.contains("details-open")) {
-      return;
-    }
-    // keep selection but hide the panel so it doesn't cover 1/3 of the screen
-    setDetailsOpen(false);
-  } catch (e) {
-    // noop
+// Toggle minimized visual state (keeps the item selected but frees space)
+function toggleDetailsMinimize() {
+  const isMin = document.body.classList.toggle("details-minimized");
+  updateDetailsToggleButton();
+  // when minimizing we ensure details panel is visible state-wise
+  // but if it was fully closed, open it to show the minimized header
+  if (isMin && !document.body.classList.contains("details-open")) {
+    document.body.classList.add("details-open");
+    if (el.detailsBackdrop) { el.detailsBackdrop.classList.add("hidden"); el.detailsBackdrop.setAttribute("aria-hidden", "true"); }
+    if (el.detailsPanel) { el.detailsPanel.setAttribute("aria-hidden", "false"); }
   }
+}
+
+// update button label/aria according to state
+function updateDetailsToggleButton() {
+  if (!el.detailsToggle) return;
+  const minimized = document.body.classList.contains("details-minimized");
+  el.detailsToggle.textContent = minimized ? "▴" : "—";
+  el.detailsToggle.setAttribute("aria-label", minimized ? "Restaurar painel de detalhes" : "Minimizar painel de detalhes");
+}
+
+// ensure UI reflects minimized state when rendering details
+function renderDetailsPanel() {
+  const selection = getSelectedItem();
+  el.detailsBody.innerHTML = "";
+
+  if (!selection.item) {
+    el.detailsTitle.textContent = "Nada selecionado";
+    setDetailsOpen(false);
+    const empty = createElement("div", "empty");
+    empty.innerHTML = "<h3>Selecione um item</h3><p>Detalhes aparecem aqui.</p>";
+    el.detailsBody.append(empty);
+    appendQuickCapturePanel();
+    updateDetailsToggleButton();
+    return;
+  }
+
+  setDetailsOpen(true);
+
+  if (selection.kind === "task") {
+    renderTaskDetails(selection.item);
+  } else if (selection.kind === "event") {
+    renderEventDetails(selection.item);
+  } else if (selection.kind === "note") {
+    renderNoteDetails(selection.item);
+  }
+  appendQuickCapturePanel();
+  updateDetailsToggleButton();
 }
 
 function selectItem(kind, id) {
