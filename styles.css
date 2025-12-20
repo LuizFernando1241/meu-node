@@ -933,6 +933,10 @@ body.details-open .details-backdrop {
   pointer-events: auto;
 }
 
+body.details-minimized .details-backdrop {
+  display: none;
+}
+
 .field {
   display: flex;
   flex-direction: column;

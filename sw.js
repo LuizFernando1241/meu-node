@@ -57,7 +57,7 @@ self.addEventListener("fetch", (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
           return response;
         })
-        .catch(() => cached || caches.match("./index.html")); // Garantir fallback
+        .catch(() => caches.match("./index.html")); // Garantir fallback
     })
   );
 });
