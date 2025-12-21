@@ -18,6 +18,17 @@ const TASK_STATUSES = new Set(["todo", "doing", "done"]);
 const TASK_PRIORITIES = new Set(["low", "normal", "high"]);
 const PROJECT_STATUSES = new Set(["active", "paused", "done"]);
 const INBOX_TYPES = new Set(["task", "note", "event"]);
+const BLOCK_TYPES = new Set([
+  "title",
+  "text",
+  "heading",
+  "list",
+  "checklist",
+  "table",
+  "quote",
+  "divider",
+  "embed"
+]);
 
 if (!TURSO_URL) {
   console.error("Missing TURSO_URL.");
@@ -74,6 +85,16 @@ api.post("/notes", upsertNote);
 api.patch("/notes/:id", patchNote);
 api.delete("/notes/:id", deleteNote);
 
+api.get("/pages", listPages);
+api.post("/pages", upsertPage);
+api.patch("/pages/:id", patchPage);
+api.delete("/pages/:id", deletePage);
+
+api.get("/blocks", listBlocks);
+api.post("/blocks", upsertBlock);
+api.patch("/blocks/:id", patchBlock);
+api.delete("/blocks/:id", deleteBlock);
+
 api.get("/search", searchAll);
 
 app.use("/v1", api);
@@ -119,6 +140,31 @@ function asNullableString(value) {
 function asNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
+}
+
+function asTimestamp(value) {
+  if (Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function parseJson(value, fallback = null) {
+  if (!value) {
+    return fallback;
+  }
+  if (typeof value === "object") {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return fallback;
+  }
 }
 
 function inferInboxType(text) {
@@ -188,6 +234,33 @@ function mapNoteRow(row) {
     projectId: row.project_id || null,
     title: row.title,
     contentJson: row.content_json,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapPageRow(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    parentId: row.parent_id || null,
+    icon: row.icon || "",
+    cover: row.cover || "",
+    projectId: row.project_id || null,
+    areaId: row.area_id || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapBlockRow(row) {
+  return {
+    id: row.id,
+    pageId: row.page_id,
+    parentBlockId: row.parent_block_id || null,
+    type: row.type,
+    position: row.position,
+    content: parseJson(row.content_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -866,24 +939,222 @@ async function deleteNote(req, res) {
   }
 }
 
+async function listPages(_req, res) {
+  try {
+    const result = await client.execute("SELECT * FROM pages ORDER BY updated_at DESC");
+    res.json(result.rows.map(mapPageRow));
+  } catch (error) {
+    console.error("Error in GET /pages:", error);
+    res.status(500).json({ error: "db_error" });
+  }
+}
+
+async function upsertPage(req, res) {
+  try {
+    const body = req.body || {};
+    const id = asString(body.id) || createId("page");
+    const title = asString(body.title);
+    if (!title) {
+      return res.status(400).json({ error: "missing_title" });
+    }
+    const parentId = asNullableString(body.parentId);
+    const icon = asString(body.icon);
+    const cover = asString(body.cover);
+    const projectId = asNullableString(body.projectId);
+    const areaId = asNullableString(body.areaId);
+    const now = Date.now();
+
+    const existing = await client.execute({
+      sql: "SELECT created_at FROM pages WHERE id = ?",
+      args: [id]
+    });
+    const existingRow = existing.rows && existing.rows[0] ? existing.rows[0] : null;
+    const createdAt = existingRow ? existingRow.created_at : asTimestamp(body.createdAt) || now;
+    const updatedAt = asTimestamp(body.updatedAt) || now;
+
+    await client.execute({
+      sql:
+        "INSERT INTO pages (id, title, parent_id, icon, cover, project_id, area_id, created_at, updated_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+        "ON CONFLICT(id) DO UPDATE SET " +
+        "title = excluded.title, parent_id = excluded.parent_id, icon = excluded.icon, " +
+        "cover = excluded.cover, project_id = excluded.project_id, area_id = excluded.area_id, " +
+        "updated_at = excluded.updated_at",
+      args: [id, title, parentId, icon, cover, projectId, areaId, createdAt, updatedAt]
+    });
+    const result = await client.execute({
+      sql: "SELECT * FROM pages WHERE id = ?",
+      args: [id]
+    });
+    res.json(mapPageRow(result.rows[0]));
+  } catch (error) {
+    console.error("Error in POST /pages:", error);
+    res.status(500).json({ error: "db_error" });
+  }
+}
+
+async function patchPage(req, res) {
+  try {
+    const id = asString(req.params.id);
+    const existing = await client.execute({
+      sql: "SELECT * FROM pages WHERE id = ?",
+      args: [id]
+    });
+    if (!existing.rows || !existing.rows[0]) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    const current = mapPageRow(existing.rows[0]);
+    const body = req.body || {};
+    const merged = {
+      ...current,
+      ...body,
+      id
+    };
+    req.body = merged;
+    return upsertPage(req, res);
+  } catch (error) {
+    console.error("Error in PATCH /pages:", error);
+    res.status(500).json({ error: "db_error" });
+  }
+}
+
+async function deletePage(req, res) {
+  try {
+    const id = asString(req.params.id);
+    await client.execute({
+      sql: "DELETE FROM pages WHERE id = ?",
+      args: [id]
+    });
+    res.sendStatus(204);
+  } catch (error) {
+    console.error("Error in DELETE /pages:", error);
+    res.status(500).json({ error: "db_error" });
+  }
+}
+
+async function listBlocks(req, res) {
+  try {
+    const pageId = asString(req.query.pageId);
+    if (pageId) {
+      const result = await client.execute({
+        sql: "SELECT * FROM blocks WHERE page_id = ? ORDER BY position ASC",
+        args: [pageId]
+      });
+      res.json(result.rows.map(mapBlockRow));
+      return;
+    }
+    const result = await client.execute("SELECT * FROM blocks ORDER BY page_id ASC, position ASC");
+    res.json(result.rows.map(mapBlockRow));
+  } catch (error) {
+    console.error("Error in GET /blocks:", error);
+    res.status(500).json({ error: "db_error" });
+  }
+}
+
+async function upsertBlock(req, res) {
+  try {
+    const body = req.body || {};
+    const id = asString(body.id) || createId("block");
+    const pageId = asString(body.pageId);
+    if (!pageId) {
+      return res.status(400).json({ error: "missing_page_id" });
+    }
+    const type = BLOCK_TYPES.has(body.type) ? body.type : "text";
+    const parentBlockId = asNullableString(body.parentBlockId);
+    const position = asNumber(body.position) || 0;
+    const content = parseJson(body.content, {});
+    const contentJson = JSON.stringify(content || {});
+    const now = Date.now();
+
+    const existing = await client.execute({
+      sql: "SELECT created_at FROM blocks WHERE id = ?",
+      args: [id]
+    });
+    const existingRow = existing.rows && existing.rows[0] ? existing.rows[0] : null;
+    const createdAt = existingRow ? existingRow.created_at : asTimestamp(body.createdAt) || now;
+    const updatedAt = asTimestamp(body.updatedAt) || now;
+
+    await client.execute({
+      sql:
+        "INSERT INTO blocks (id, page_id, parent_block_id, type, content_json, position, created_at, updated_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+        "ON CONFLICT(id) DO UPDATE SET " +
+        "page_id = excluded.page_id, parent_block_id = excluded.parent_block_id, type = excluded.type, " +
+        "content_json = excluded.content_json, position = excluded.position, updated_at = excluded.updated_at",
+      args: [id, pageId, parentBlockId, type, contentJson, position, createdAt, updatedAt]
+    });
+    const result = await client.execute({
+      sql: "SELECT * FROM blocks WHERE id = ?",
+      args: [id]
+    });
+    res.json(mapBlockRow(result.rows[0]));
+  } catch (error) {
+    console.error("Error in POST /blocks:", error);
+    res.status(500).json({ error: "db_error" });
+  }
+}
+
+async function patchBlock(req, res) {
+  try {
+    const id = asString(req.params.id);
+    const existing = await client.execute({
+      sql: "SELECT * FROM blocks WHERE id = ?",
+      args: [id]
+    });
+    if (!existing.rows || !existing.rows[0]) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    const current = mapBlockRow(existing.rows[0]);
+    const body = req.body || {};
+    const merged = {
+      ...current,
+      ...body,
+      id
+    };
+    req.body = merged;
+    return upsertBlock(req, res);
+  } catch (error) {
+    console.error("Error in PATCH /blocks:", error);
+    res.status(500).json({ error: "db_error" });
+  }
+}
+
+async function deleteBlock(req, res) {
+  try {
+    const id = asString(req.params.id);
+    await client.execute({
+      sql: "DELETE FROM blocks WHERE id = ?",
+      args: [id]
+    });
+    res.sendStatus(204);
+  } catch (error) {
+    console.error("Error in DELETE /blocks:", error);
+    res.status(500).json({ error: "db_error" });
+  }
+}
+
 async function searchAll(req, res) {
   try {
     const q = asString(req.query.q);
     if (!q) {
-      return res.json({ tasks: [], events: [], projects: [], notes: [] });
+      return res.json({ tasks: [], events: [], projects: [], notes: [], pages: [], blocks: [] });
     }
     const like = `%${q}%`;
-    const [tasks, events, projects, notes] = await Promise.all([
+    const [tasks, events, projects, notes, pages, blocks] = await Promise.all([
       client.execute({ sql: "SELECT * FROM tasks WHERE title LIKE ? LIMIT 5", args: [like] }),
       client.execute({ sql: "SELECT * FROM events WHERE title LIKE ? LIMIT 5", args: [like] }),
       client.execute({ sql: "SELECT * FROM projects WHERE title LIKE ? LIMIT 5", args: [like] }),
-      client.execute({ sql: "SELECT * FROM notes WHERE title LIKE ? LIMIT 5", args: [like] })
+      client.execute({ sql: "SELECT * FROM notes WHERE title LIKE ? LIMIT 5", args: [like] }),
+      client.execute({ sql: "SELECT * FROM pages WHERE title LIKE ? LIMIT 5", args: [like] }),
+      client.execute({ sql: "SELECT * FROM blocks WHERE content_json LIKE ? LIMIT 5", args: [like] })
     ]);
     res.json({
       tasks: tasks.rows.map(mapTaskRow),
       events: events.rows.map(mapEventRow),
       projects: projects.rows.map(mapProjectRow),
-      notes: notes.rows.map(mapNoteRow)
+      notes: notes.rows.map(mapNoteRow),
+      pages: pages.rows.map(mapPageRow),
+      blocks: blocks.rows.map(mapBlockRow)
     });
   } catch (error) {
     console.error("Error in GET /search:", error);
@@ -982,6 +1253,38 @@ async function initDb() {
   `);
 
   await client.execute(`
+    CREATE TABLE IF NOT EXISTS pages (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT,
+      title TEXT NOT NULL,
+      icon TEXT,
+      cover TEXT,
+      project_id TEXT,
+      area_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (parent_id) REFERENCES pages(id) ON DELETE SET NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+      FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE SET NULL
+    );
+  `);
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS blocks (
+      id TEXT PRIMARY KEY,
+      page_id TEXT NOT NULL,
+      parent_block_id TEXT,
+      type TEXT NOT NULL,
+      content_json TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_block_id) REFERENCES blocks(id) ON DELETE CASCADE
+    );
+  `);
+
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS inbox (
       id TEXT PRIMARY KEY,
       raw_text TEXT NOT NULL,
@@ -1006,4 +1309,8 @@ async function initDb() {
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_scheduled_at_idx ON tasks (scheduled_at);");
   await client.execute("CREATE INDEX IF NOT EXISTS events_start_at_idx ON events (start_at);");
   await client.execute("CREATE INDEX IF NOT EXISTS notes_updated_at_idx ON notes (updated_at);");
+  await client.execute("CREATE INDEX IF NOT EXISTS pages_updated_at_idx ON pages (updated_at);");
+  await client.execute("CREATE INDEX IF NOT EXISTS blocks_page_id_idx ON blocks (page_id);");
+  await client.execute("CREATE INDEX IF NOT EXISTS blocks_parent_id_idx ON blocks (parent_block_id);");
+  await client.execute("CREATE INDEX IF NOT EXISTS blocks_position_idx ON blocks (position);");
 }

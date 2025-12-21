@@ -280,7 +280,7 @@ function createInboxRow(item, options = {}) {
   title.textContent = item.title;
   content.append(title);
   
-  const kindLabel = item.kind === "event" ? "Evento" : item.kind === "note" ? "Nota" : "Tarefa";
+  const kindLabel = item.kind === "event" ? "Evento" : item.kind === "note" ? "Pagina" : "Tarefa";
   const meta = document.createElement("span");
   meta.className = `kind-chip kind-${item.kind || "task"}`;
   meta.textContent = kindLabel;

@@ -36,6 +36,46 @@ const BLOCK_TYPES = [
   { value: "embed", label: "Embed" }
 ];
 
+const NOTE_TEMPLATES = {
+  meeting: () => ({
+    title: "Notas de reuniao",
+    blocks: [
+      { type: "title", text: "Reuniao - " },
+      { type: "heading", text: "Participantes" },
+      { type: "list", items: [""] },
+      { type: "heading", text: "Discussoes" },
+      { type: "text", text: "" },
+      { type: "heading", text: "Acoes" },
+      { type: "checklist", items: [{ text: "", done: false }] }
+    ]
+  }),
+  diary: () => ({
+    title: "Entrada de diario",
+    blocks: [
+      { type: "title", text: formatDate(new Date()) },
+      { type: "text", text: "" }
+    ]
+  }),
+  study: () => ({
+    title: "Notas de estudo",
+    blocks: [
+      { type: "heading", text: "Topico" },
+      { type: "text", text: "" },
+      { type: "heading", text: "Resumo" },
+      { type: "text", text: "" }
+    ]
+  }),
+  monthly: () => ({
+    title: "Revisao mensal",
+    blocks: [
+      { type: "heading", text: "Conquistas" },
+      { type: "list", items: [""] },
+      { type: "heading", text: "Aprendizados" },
+      { type: "list", items: [""] }
+    ]
+  })
+};
+
 const HOURS = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00"];
 const CALENDAR_START_HOUR = 7;
 const CALENDAR_END_HOUR = 18;
@@ -47,8 +87,10 @@ const ROUTE_META = {
   calendar: { title: "Calendario", eyebrow: "Agenda" },
   projects: { title: "Projetos", eyebrow: "Visao macro" },
   project: { title: "Projeto", eyebrow: "Detalhe" },
-  notes: { title: "Notas", eyebrow: "Conhecimento" },
-  note: { title: "Nota", eyebrow: "Detalhe" },
+  pages: { title: "Paginas", eyebrow: "Organizar" },
+  page: { title: "Pagina", eyebrow: "Detalhe" },
+  notes: { title: "Paginas", eyebrow: "Organizar" },
+  note: { title: "Pagina", eyebrow: "Detalhe" },
   areas: { title: "Areas", eyebrow: "Estrutura" },
   area: { title: "Area", eyebrow: "Detalhe" }
 };
@@ -64,7 +106,7 @@ const el = {
   countInbox: document.getElementById("countInbox"),
   countWeek: document.getElementById("countWeek"),
   countProjects: document.getElementById("countProjects"),
-  countNotes: document.getElementById("countNotes"),
+  countPages: document.getElementById("countPages"),
   pageEyebrow: document.getElementById("pageEyebrow"),
   pageTitle: document.getElementById("pageTitle"),
   pageActions: document.getElementById("pageActions"),
@@ -115,6 +157,8 @@ let lastSyncErrorAt = 0;
 let searchTimer = null;
 
 const pendingDeletes = {
+  pages: new Set(),
+  blocks: new Set(),
   tasks: new Set(),
   events: new Set(),
   notes: new Set(),
@@ -137,11 +181,76 @@ async function init() {
   scheduleSearch(state.ui.search);
   renderAll();
   await loadRemoteState();
+  runMigrations();
 }
 
 init().catch((error) => {
   console.error("Failed to init app.", error);
 });
+
+function runMigrations() {
+  if (!state.meta.migrations) {
+    state.meta.migrations = { pagesFromNotes: false, pagesSeeded: false };
+  }
+  let changed = false;
+
+  if (!state.meta.migrations.pagesFromNotes && state.pages.length === 0 && state.notes.length) {
+    state.notes.forEach((note) => {
+      migrateNoteToPage(note);
+    });
+    state.meta.migrations.pagesFromNotes = true;
+    changed = true;
+  }
+
+  if (!state.meta.migrations.pagesSeeded && state.pages.length === 0) {
+    const page = createPage({ title: "Home" });
+    state.pages.push(page);
+    state.meta.migrations.pagesSeeded = true;
+    state.ui.pageId = page.id;
+    changed = true;
+  }
+
+  if (state.pages.length && !state.ui.pageId) {
+    state.ui.pageId = state.pages[0].id;
+    changed = true;
+  }
+
+  if (changed) {
+    saveState();
+    renderAll();
+  }
+}
+
+function migrateNoteToPage(note) {
+  if (!note) {
+    return null;
+  }
+  const page = createPage({
+    id: note.id,
+    title: note.title,
+    projectId: note.projectId || null,
+    areaId: note.areaId || null,
+    createdAt: note.createdAt,
+    updatedAt: note.updatedAt
+  });
+  state.pages.push(page);
+  (note.blocks || []).forEach((block, index) => {
+    const pageBlock = createBlock({
+      id: block.id,
+      pageId: page.id,
+      type: block.type,
+      position: index,
+      text: block.text,
+      items: block.items,
+      rows: block.rows,
+      url: block.url,
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt
+    });
+    state.blocks.push(pageBlock);
+  });
+  return page;
+}
 
 function bindEvents() {
   if (el.globalSearch) {
@@ -268,7 +377,7 @@ function handleGlobalClick(event) {
 }
 
 function handlePopState() {
-  const path = normalizePath(stripBasePath(window.location.pathname));
+  const path = normalizeRouteAlias(normalizePath(stripBasePath(window.location.pathname)));
   const route = parseRoute(path);
   if (!route) {
     state.ui.route = "/today";
@@ -284,9 +393,10 @@ function applyRouteFromLocation() {
   const query = new URLSearchParams(window.location.search);
   const forwarded = query.get("path");
   if (forwarded) {
-    history.replaceState({}, "", toPublicPath(normalizePath(forwarded)));
+    const normalizedForward = normalizeRouteAlias(normalizePath(forwarded));
+    history.replaceState({}, "", toPublicPath(normalizedForward));
   }
-  const path = normalizePath(stripBasePath(window.location.pathname));
+  const path = normalizeRouteAlias(normalizePath(stripBasePath(window.location.pathname)));
   const route = parseRoute(path);
   if (!route) {
     navigate("/today", { replace: true });
@@ -297,7 +407,7 @@ function applyRouteFromLocation() {
 }
 
 function navigate(path, options = {}) {
-  const normalized = normalizePath(path);
+  const normalized = normalizeRouteAlias(normalizePath(path));
   const route = parseRoute(normalized);
   if (!route) {
     return;
@@ -323,6 +433,19 @@ function normalizePath(path) {
   }
   cleaned = cleaned.replace(/\/+$/, "");
   return cleaned || "/today";
+}
+
+function normalizeRouteAlias(path) {
+  if (!path) {
+    return path;
+  }
+  if (path === "/notes") {
+    return "/pages";
+  }
+  if (path.startsWith("/notes/")) {
+    return path.replace("/notes/", "/pages/");
+  }
+  return path;
 }
 
 function stripBasePath(path) {
@@ -367,11 +490,11 @@ function parseRoute(path) {
     }
     return { name: "projects" };
   }
-  if (parts[0] === "notes") {
+  if (parts[0] === "pages" || parts[0] === "notes") {
     if (parts[1]) {
-      return { name: "note", id: parts[1] };
+      return { name: "page", id: parts[1] };
     }
-    return { name: "notes" };
+    return { name: "pages" };
   }
   if (parts[0] === "areas") {
     if (parts[1]) {
@@ -384,6 +507,8 @@ function parseRoute(path) {
 
 function defaultState() {
   return {
+    pages: [],
+    blocks: [],
     tasks: [],
     events: [],
     notes: [],
@@ -391,7 +516,11 @@ function defaultState() {
     areas: [],
     inbox: [],
     meta: {
-      lastReviewAt: null
+      lastReviewAt: null,
+      migrations: {
+        pagesFromNotes: false,
+        pagesSeeded: false
+      }
     },
     ui: {
       route: "/today",
@@ -409,6 +538,7 @@ function defaultState() {
       calendarMonthOffset: 0,
       projectFilter: "active",
       notesNoteId: null,
+      pageId: null,
       inboxSelection: [],
       overdueCollapsed: true
     }
@@ -436,6 +566,15 @@ function normalizeState(data) {
     ...base.ui,
     ...(data.ui || {})
   };
+  const meta = {
+    ...base.meta,
+    ...(data.meta || {})
+  };
+  if (!meta.migrations) {
+    meta.migrations = { ...base.meta.migrations };
+  } else {
+    meta.migrations = { ...base.meta.migrations, ...meta.migrations };
+  }
   if (!["week", "month"].includes(ui.calendarTab)) {
     ui.calendarTab = "month";
   }
@@ -443,15 +582,15 @@ function normalizeState(data) {
     ui.calendarTab = "month";
   }
   return {
+    pages: Array.isArray(data.pages) ? data.pages.map(normalizePage).filter(Boolean) : [],
+    blocks: Array.isArray(data.blocks) ? data.blocks.map(normalizeBlock).filter(Boolean) : [],
     tasks: Array.isArray(data.tasks) ? data.tasks.map(normalizeTask).filter(Boolean) : [],
     events: Array.isArray(data.events) ? data.events.map(normalizeEvent).filter(Boolean) : [],
     notes: Array.isArray(data.notes) ? data.notes.map(normalizeNote).filter(Boolean) : [],
     projects: Array.isArray(data.projects) ? data.projects.map(normalizeProject).filter(Boolean) : [],
     areas: Array.isArray(data.areas) ? data.areas.map(normalizeArea).filter(Boolean) : [],
     inbox: Array.isArray(data.inbox) ? data.inbox.map(normalizeInboxItem).filter(Boolean) : [],
-    meta: {
-      lastReviewAt: data.meta && data.meta.lastReviewAt ? data.meta.lastReviewAt : null
-    },
+    meta,
     ui
   };
 }
@@ -554,7 +693,8 @@ async function runSearch(query) {
       tasks: Array.isArray(data.tasks) ? data.tasks.map(taskFromApi).filter(Boolean) : [],
       events: Array.isArray(data.events) ? data.events.map(eventFromApi).filter(Boolean) : [],
       projects: Array.isArray(data.projects) ? data.projects.map(projectFromApi).filter(Boolean) : [],
-      notes: Array.isArray(data.notes) ? data.notes.map(noteFromApi).filter(Boolean) : []
+      notes: Array.isArray(data.notes) ? data.notes.map(noteFromApi).filter(Boolean) : [],
+      pages: Array.isArray(data.pages) ? data.pages.map(pageFromApi).filter(Boolean) : []
     };
   } catch (error) {
     state.ui.searchResults = null;
@@ -788,6 +928,83 @@ function eventToApi(event) {
   };
 }
 
+function pageFromApi(data) {
+  if (!data) {
+    return null;
+  }
+  return normalizePage({
+    id: data.id,
+    title: data.title,
+    parentId: data.parentId || null,
+    icon: data.icon || "",
+    cover: data.cover || "",
+    projectId: data.projectId || null,
+    areaId: data.areaId || null,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt
+  });
+}
+
+function pageToApi(page) {
+  return {
+    id: page.id,
+    title: page.title,
+    parentId: page.parentId || null,
+    icon: page.icon || "",
+    cover: page.cover || "",
+    projectId: page.projectId || null,
+    areaId: page.areaId || null,
+    createdAt: page.createdAt,
+    updatedAt: page.updatedAt
+  };
+}
+
+function blockFromApi(data) {
+  if (!data) {
+    return null;
+  }
+  const content = data.content || {};
+  return normalizeBlock({
+    id: data.id,
+    pageId: data.pageId,
+    parentBlockId: data.parentBlockId || null,
+    type: data.type,
+    position: data.position,
+    text: content.text,
+    items: content.items,
+    rows: content.rows,
+    url: content.url,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt
+  });
+}
+
+function blockToApi(block) {
+  const content = {};
+  if (["text", "heading", "quote", "title"].includes(block.type)) {
+    content.text = block.text || "";
+  }
+  if (block.type === "list" || block.type === "checklist") {
+    content.items = Array.isArray(block.items) ? block.items : [];
+  }
+  if (block.type === "table") {
+    content.rows = Array.isArray(block.rows) ? block.rows : [];
+  }
+  if (block.type === "embed") {
+    content.url = block.url || "";
+  }
+  return {
+    id: block.id,
+    pageId: block.pageId,
+    parentBlockId: block.parentBlockId || null,
+    type: block.type,
+    position: Number.isFinite(block.position) ? block.position : 0,
+    content,
+    createdAt: block.createdAt,
+    updatedAt: block.updatedAt
+  };
+}
+
 function noteFromApi(data) {
   if (!data) {
     return null;
@@ -891,7 +1108,9 @@ async function loadRemoteState() {
   try {
     state.ui.loading = true;
     renderMain();
-    const [areas, projects, tasks, events, notes, inbox] = await Promise.all([
+    const [pages, blocks, areas, projects, tasks, events, notes, inbox] = await Promise.all([
+      apiRequest("/pages"),
+      apiRequest("/blocks"),
       apiRequest("/areas"),
       apiRequest("/projects"),
       apiRequest("/tasks"),
@@ -901,6 +1120,8 @@ async function loadRemoteState() {
     ]);
 
     const nextState = normalizeState({
+      pages: (pages || []).map(pageFromApi).filter(Boolean),
+      blocks: (blocks || []).map(blockFromApi).filter(Boolean),
       areas: (areas || []).map(areaFromApi).filter(Boolean),
       projects: (projects || []).map(projectFromApi).filter(Boolean),
       tasks: (tasks || []).map(taskFromApi).filter(Boolean),
@@ -977,6 +1198,8 @@ async function flushDirty() {
   syncPending = false;
   try {
     await flushDeletes();
+    await flushList(state.pages, upsertPage);
+    await flushList(state.blocks, upsertBlock);
     await flushList(state.areas, upsertArea);
     await flushList(state.projects, upsertProject);
     await flushList(state.tasks, upsertTask);
@@ -999,6 +1222,8 @@ async function flushDirty() {
 }
 
 async function flushDeletes() {
+  await flushDeleteSet("blocks", pendingDeletes.blocks, (id) => apiDelete(`/blocks/${id}`));
+  await flushDeleteSet("pages", pendingDeletes.pages, (id) => apiDelete(`/pages/${id}`));
   await flushDeleteSet("tasks", pendingDeletes.tasks, (id) => apiDelete(`/tasks/${id}`));
   await flushDeleteSet("events", pendingDeletes.events, (id) => apiDelete(`/events/${id}`));
   await flushDeleteSet("notes", pendingDeletes.notes, (id) => apiDelete(`/notes/${id}`));
@@ -1034,6 +1259,22 @@ async function upsertTask(task) {
     body: JSON.stringify(taskToApi(task))
   });
   return taskFromApi(data);
+}
+
+async function upsertPage(page) {
+  const data = await apiRequest("/pages", {
+    method: "POST",
+    body: JSON.stringify(pageToApi(page))
+  });
+  return pageFromApi(data);
+}
+
+async function upsertBlock(block) {
+  const data = await apiRequest("/blocks", {
+    method: "POST",
+    body: JSON.stringify(blockToApi(block))
+  });
+  return blockFromApi(data);
 }
 
 async function upsertEvent(event) {
@@ -1151,6 +1392,60 @@ function normalizeEvent(event) {
   return normalized;
 }
 
+function normalizePage(page) {
+  if (!page || typeof page !== "object") {
+    return null;
+  }
+  const normalized = { ...page };
+  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("page");
+  normalized.title = typeof normalized.title === "string" ? normalized.title : "Nova pagina";
+  normalized.parentId = typeof normalized.parentId === "string" ? normalized.parentId : null;
+  normalized.icon = typeof normalized.icon === "string" ? normalized.icon : "";
+  normalized.cover = typeof normalized.cover === "string" ? normalized.cover : "";
+  normalized.projectId = typeof normalized.projectId === "string" ? normalized.projectId : null;
+  normalized.areaId = typeof normalized.areaId === "string" ? normalized.areaId : null;
+  normalized.createdAt =
+    normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
+  normalized.updatedAt =
+    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
+  return normalized;
+}
+
+function normalizeBlock(block) {
+  if (!block || typeof block !== "object") {
+    return null;
+  }
+  const normalized = { ...block };
+  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("block");
+  normalized.pageId = typeof normalized.pageId === "string" ? normalized.pageId : "";
+  normalized.parentBlockId =
+    typeof normalized.parentBlockId === "string" ? normalized.parentBlockId : null;
+  normalized.type = BLOCK_TYPES.find((type) => type.value === normalized.type)
+    ? normalized.type
+    : "text";
+  normalized.position = Number.isFinite(normalized.position) ? normalized.position : 0;
+  if (["text", "heading", "quote", "title"].includes(normalized.type)) {
+    normalized.text = typeof normalized.text === "string" ? normalized.text : "";
+  }
+  if (normalized.type === "list") {
+    normalized.items = Array.isArray(normalized.items) ? normalized.items : [];
+  }
+  if (normalized.type === "checklist") {
+    normalized.items = Array.isArray(normalized.items) ? normalized.items : [];
+  }
+  if (normalized.type === "table") {
+    normalized.rows = Array.isArray(normalized.rows) ? normalized.rows : [];
+  }
+  if (normalized.type === "embed") {
+    normalized.url = typeof normalized.url === "string" ? normalized.url : "";
+  }
+  normalized.createdAt =
+    normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
+  normalized.updatedAt =
+    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
+  return normalized;
+}
+
 function normalizeNote(note) {
   if (!note || typeof note !== "object") {
     return null;
@@ -1236,33 +1531,6 @@ function normalizeTimeBlock(block) {
     start: typeof block.start === "string" ? block.start : "09:00",
     duration: Number.isFinite(block.duration) ? Math.max(15, block.duration) : 60
   };
-}
-
-function normalizeBlock(block) {
-  if (!block || typeof block !== "object") {
-    return null;
-  }
-  const normalized = { ...block };
-  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("block");
-  normalized.type = BLOCK_TYPES.find((type) => type.value === normalized.type)
-    ? normalized.type
-    : "text";
-  if (["text", "heading", "quote", "title"].includes(normalized.type)) {
-    normalized.text = typeof normalized.text === "string" ? normalized.text : "";
-  }
-  if (normalized.type === "list") {
-    normalized.items = Array.isArray(normalized.items) ? normalized.items : [];
-  }
-  if (normalized.type === "checklist") {
-    normalized.items = Array.isArray(normalized.items) ? normalized.items : [];
-  }
-  if (normalized.type === "table") {
-    normalized.rows = Array.isArray(normalized.rows) ? normalized.rows : [];
-  }
-  if (normalized.type === "embed") {
-    normalized.url = typeof normalized.url === "string" ? normalized.url : "";
-  }
-  return normalized;
 }
 
 function uid(prefix) {
@@ -1388,6 +1656,40 @@ function getWeekDays(offset = 0) {
     });
   }
   return days;
+}
+
+function createPage(data = {}) {
+  const page = normalizePage({
+    id: data.id || uid("page"),
+    title: data.title || "Nova pagina",
+    parentId: data.parentId || null,
+    icon: data.icon || "",
+    cover: data.cover || "",
+    projectId: data.projectId || null,
+    areaId: data.areaId || null,
+    createdAt: data.createdAt || new Date().toISOString(),
+    updatedAt: data.updatedAt || new Date().toISOString()
+  });
+  markDirty(page);
+  return page;
+}
+
+function createBlock(data = {}) {
+  const block = normalizeBlock({
+    id: data.id || uid("block"),
+    pageId: data.pageId || "",
+    parentBlockId: data.parentBlockId || null,
+    type: data.type || "text",
+    position: Number.isFinite(data.position) ? data.position : 0,
+    text: data.text,
+    items: data.items,
+    rows: data.rows,
+    url: data.url,
+    createdAt: data.createdAt || new Date().toISOString(),
+    updatedAt: data.updatedAt || new Date().toISOString()
+  });
+  markDirty(block);
+  return block;
 }
 
 function createTask(data = {}) {
@@ -1534,6 +1836,24 @@ function getNote(id) {
   return state.notes.find((note) => note.id === id) || null;
 }
 
+function getPage(id) {
+  return state.pages.find((page) => page.id === id) || null;
+}
+
+function getPageBlocks(pageId, parentBlockId = null) {
+  return state.blocks
+    .filter((block) => block.pageId === pageId && block.parentBlockId === parentBlockId)
+    .sort((a, b) => a.position - b.position);
+}
+
+function getNextBlockPosition(pageId, parentBlockId = null) {
+  const blocks = getPageBlocks(pageId, parentBlockId);
+  if (!blocks.length) {
+    return 0;
+  }
+  return blocks[blocks.length - 1].position + 1;
+}
+
 function getProject(id) {
   return state.projects.find((project) => project.id === id) || null;
 }
@@ -1633,6 +1953,8 @@ function countFocusTasks() {
 
 function isFirstRun() {
   return (
+    state.pages.length === 0 &&
+    state.blocks.length === 0 &&
     state.tasks.length === 0 &&
     state.events.length === 0 &&
     state.notes.length === 0 &&
@@ -1672,12 +1994,18 @@ function renderSidebar() {
   setCount(el.countToday, getTodayTasks().length + getAgendaItems(getTodayKey()).length);
   setCount(el.countWeek, getNextDaysTasks(7).length);
   setCount(el.countProjects, state.projects.filter((project) => project.status === "active").length);
-  setCount(el.countNotes, state.notes.length);
+  setCount(el.countPages, state.pages.length);
 }
 
 function renderPageHeader() {
   const route = parseRoute(state.ui.route);
-  const meta = route ? ROUTE_META[route.name] : ROUTE_META.today;
+  let meta = route ? ROUTE_META[route.name] : ROUTE_META.today;
+  if (route && route.name === "page") {
+    const page = getPage(route.id);
+    if (page && page.title) {
+      meta = { ...meta, title: page.title };
+    }
+  }
   if (el.pageEyebrow) {
     el.pageEyebrow.textContent = meta.eyebrow;
   }
@@ -1721,10 +2049,10 @@ function renderMain() {
     renderProjectsView(el.viewRoot);
   } else if (route.name === "project") {
     renderProjectDetail(el.viewRoot, route.id);
-  } else if (route.name === "notes") {
-    renderNotesView(el.viewRoot);
-  } else if (route.name === "note") {
-    renderNotesView(el.viewRoot, route.id);
+  } else if (route.name === "pages") {
+    renderPagesView(el.viewRoot);
+  } else if (route.name === "page") {
+    renderPagesView(el.viewRoot, route.id);
   } else if (route.name === "areas") {
     renderAreasView(el.viewRoot);
   } else if (route.name === "area") {
@@ -1741,6 +2069,11 @@ function renderGlobalSearchView(root, query) {
       ? state.ui.searchResults
       : null;
   const results = apiResults || getSearchResults(query);
+  results.pages = Array.isArray(results.pages) ? results.pages : [];
+  results.tasks = Array.isArray(results.tasks) ? results.tasks : [];
+  results.events = Array.isArray(results.events) ? results.events : [];
+  results.projects = Array.isArray(results.projects) ? results.projects : [];
+  results.notes = Array.isArray(results.notes) ? results.notes : [];
   const wrap = createElement("div", "today-grid");
 
   if (state.ui.searching && !apiResults) {
@@ -1753,7 +2086,7 @@ function renderGlobalSearchView(root, query) {
     results.tasks.length === 0 &&
     results.events.length === 0 &&
     results.projects.length === 0 &&
-    results.notes.length === 0
+    results.pages.length === 0
   ) {
     wrap.append(createElement("div", "empty", "Sem resultados."));
     root.append(wrap);
@@ -1779,12 +2112,12 @@ function renderGlobalSearchView(root, query) {
     });
     wrap.append(section.section);
   }
-  if (results.notes.length) {
-    const section = createSection("Notas", "");
-    results.notes.forEach((note) => {
+  if (results.pages.length) {
+    const section = createSection("Paginas", "");
+    results.pages.forEach((page) => {
       const row = createElement("div", "task-row");
-      row.append(createElement("div", "task-title", note.title));
-      row.addEventListener("click", () => navigate(`/notes/${note.id}`));
+      row.append(createElement("div", "task-title", page.title));
+      row.addEventListener("click", () => navigate(`/pages/${page.id}`));
       section.body.append(row);
     });
     wrap.append(section.section);
@@ -1814,15 +2147,16 @@ function getSearchResults(query) {
   const projects = state.projects.filter((project) =>
     matchesQuery(`${project.title} ${project.objective || ""}`, query)
   );
-  const notes = state.notes.filter((note) => {
-    const blockText = (note.blocks || []).map(getBlockText).join(" ");
-    return matchesQuery(`${note.title} ${blockText}`, query);
+  const pages = state.pages.filter((page) => {
+    const blockText = getPageBlocks(page.id).map(getBlockText).join(" ");
+    return matchesQuery(`${page.title || ""} ${blockText}`, query);
   });
   return {
     tasks: tasks.slice(0, 6),
     events: events.slice(0, 6),
     projects: projects.slice(0, 6),
-    notes: notes.slice(0, 6)
+    notes: [],
+    pages: pages.slice(0, 6)
   };
 }
 
@@ -1878,9 +2212,9 @@ function renderPageActions(route, container) {
       createButton("Nova tarefa", "ghost-btn", () => openTaskModal({ projectId: route.id }))
     );
   }
-  if (route.name === "notes" || route.name === "note") {
+  if (route.name === "pages" || route.name === "page") {
     container.append(
-      createButton("Nova nota", "primary-btn", () => openNoteModal({})),
+      createButton("Nova pagina", "primary-btn", () => createPageAndOpen()),
       createButton("Templates", "ghost-btn", openTemplateChooser)
     );
   }
@@ -2572,25 +2906,133 @@ function renderProjectDetail(root, projectId) {
   });
   root.append(tasksSection.section);
 
-  const notesSection = createSection("Notas do projeto", "");
+  const notesSection = createSection("Paginas do projeto", "");
   const noteActions = createElement("div", "card-actions");
   noteActions.append(
-    createButton("Nova nota", "ghost-btn", () => openNoteModal({ projectId: project.id }))
+    createButton("Nova pagina", "ghost-btn", () => openNoteModal({ projectId: project.id }))
   );
   notesSection.body.append(noteActions);
 
-  const projectNotes = state.notes.filter((note) => note.projectId === project.id);
-  if (!projectNotes.length) {
+  const projectPages = state.pages.filter((page) => page.projectId === project.id);
+  if (!projectPages.length) {
     notesSection.body.append(createElement("div", "list-meta", "Sem itens."));
   } else {
-    projectNotes.forEach((note) => {
+    projectPages.forEach((page) => {
       const item = createElement("div", "task-row");
-      item.append(createElement("div", "task-title", note.title));
-      item.addEventListener("click", () => navigate(`/notes/${note.id}`));
+      item.append(createElement("div", "task-title", page.title));
+      item.addEventListener("click", () => navigate(`/pages/${page.id}`));
       notesSection.body.append(item);
     });
   }
   root.append(notesSection.section);
+}
+
+function renderPagesView(root, pageId) {
+  if (pageId) {
+    state.ui.pageId = pageId;
+  }
+
+  if (state.ui.pageId && !getPage(state.ui.pageId)) {
+    state.ui.pageId = null;
+  }
+
+  if (!state.ui.pageId && state.pages.length) {
+    state.ui.pageId = state.pages[0].id;
+  }
+
+  const layout = createElement("div", "pages-layout");
+  const tree = createElement("div", "pages-tree");
+  const treeActions = createElement("div", "card-actions");
+  treeActions.append(createButton("Nova pagina", "ghost-btn", () => createPageAndOpen()));
+  tree.append(treeActions);
+
+  const treeList = buildPageTree(null);
+  if (!treeList.childElementCount) {
+    tree.append(createElement("div", "empty", "Sem paginas."));
+  } else {
+    tree.append(treeList);
+  }
+  layout.append(tree);
+
+  const editor = createElement("div", "pages-editor");
+  const page = state.ui.pageId ? getPage(state.ui.pageId) : null;
+  if (!page) {
+    editor.append(createElement("div", "empty", "Selecione uma pagina."));
+    layout.append(editor);
+    root.append(layout);
+    return;
+  }
+
+  const titleInput = document.createElement("input");
+  titleInput.className = "page-title-input";
+  titleInput.value = page.title;
+  titleInput.addEventListener("input", () => {
+    page.title = titleInput.value;
+    touch(page);
+    saveStateDebounced();
+    const treeItem = el.viewRoot.querySelector(`.page-item[data-page-id="${page.id}"]`);
+    if (treeItem) {
+      treeItem.textContent = page.title || "Sem titulo";
+    }
+    renderSidebar();
+    renderPageHeader();
+  });
+  editor.append(buildField("Titulo", titleInput));
+
+  const projectSelect = createProjectSelect(page.projectId);
+  projectSelect.addEventListener("change", () => {
+    page.projectId = projectSelect.value || null;
+    touch(page);
+    saveState();
+    renderSidebar();
+  });
+  const areaSelect = createAreaSelect(page.areaId);
+  areaSelect.addEventListener("change", () => {
+    page.areaId = areaSelect.value || null;
+    touch(page);
+    saveState();
+    renderSidebar();
+  });
+  editor.append(buildField("Projeto", projectSelect), buildField("Area", areaSelect));
+
+  const blockList = createElement("div", "stagger");
+  const blocks = getPageBlocks(page.id);
+  if (!blocks.length) {
+    blockList.append(createElement("div", "list-meta", "Sem blocos."));
+  } else {
+    blocks.forEach((block, index) => {
+      const blockEl = createPageBlockEditor(page, block, index);
+      blockEl.style.setProperty("--delay", `${index * 30}ms`);
+      blockList.append(blockEl);
+    });
+  }
+  editor.append(blockList);
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Adicionar bloco", "ghost-btn", () => {
+      const block = createBlock({
+        pageId: page.id,
+        type: "text",
+        position: getNextBlockPosition(page.id)
+      });
+      state.blocks.push(block);
+      saveState();
+      renderMain();
+    }),
+    createButton("Nova subpagina", "ghost-btn", () => createPageAndOpen(page.id)),
+    createButton("Deletar pagina", "ghost-btn danger", () => {
+      if (confirm("Deletar esta pagina?")) {
+        deletePage(page.id);
+        navigate("/pages");
+        showToast("Pagina deletada");
+      }
+    })
+  );
+  editor.append(actions);
+
+  layout.append(editor);
+  root.append(layout);
 }
 
 function renderNotesView(root, noteId) {
@@ -2912,67 +3354,78 @@ function openEventModal(data = {}) {
 }
 
 function openNoteModal(data = {}) {
-  const templates = {
-    meeting: {
-      title: "Notas de reuniao",
-      blocks: [
-        { id: uid("b"), type: "title", text: "Reuniao - " },
-        { id: uid("b"), type: "heading", text: "Participantes" },
-        { id: uid("b"), type: "list", items: [""] },
-        { id: uid("b"), type: "heading", text: "Discussoes" },
-        { id: uid("b"), type: "text", text: "" },
-        { id: uid("b"), type: "heading", text: "Acoes" },
-        { id: uid("b"), type: "checklist", items: [{ text: "", done: false }] }
-      ]
-    },
-    diary: {
-      title: "Entrada de diario",
-      blocks: [
-        { id: uid("b"), type: "title", text: formatDate(new Date()) },
-        { id: uid("b"), type: "text", text: "" }
-      ]
-    },
-    study: {
-      title: "Notas de estudo",
-      blocks: [
-        { id: uid("b"), type: "heading", text: "Topico" },
-        { id: uid("b"), type: "text", text: "" },
-        { id: uid("b"), type: "heading", text: "Resumo" },
-        { id: uid("b"), type: "text", text: "" }
-      ]
-    },
-    monthly: {
-      title: "Revisao mensal",
-      blocks: [
-        { id: uid("b"), type: "heading", text: "Conquistas" },
-        { id: uid("b"), type: "list", items: [""] },
-        { id: uid("b"), type: "heading", text: "Aprendizados" },
-        { id: uid("b"), type: "list", items: [""] }
-      ]
-    }
-  };
-
-  const template = templates[data.template] || { title: "", blocks: [] };
-  const noteData = {
-    title: data.title || template.title || "Nova nota",
-    areaId: data.areaId || "",
-    projectId: data.projectId || "",
-    blocks: data.blocks || template.blocks || []
-  };
-
   if (data.id) {
+    const existingPage = getPage(data.id);
+    if (existingPage) {
+      navigate(`/pages/${existingPage.id}`);
+      return;
+    }
     const note = getNote(data.id);
     if (note) {
-      state.ui.notesNoteId = note.id;
-      navigate(`/notes/${note.id}`);
+      const page = migrateNoteToPage(note);
+      saveState();
+      navigate(`/pages/${page.id}`);
     }
     return;
   }
 
-  const note = createNote(noteData);
-  state.notes.push(note);
+  if (data.template) {
+    createPageFromTemplate(data.template);
+    return;
+  }
+
+  const page = createPage({
+    title: data.title || "Nova pagina",
+    projectId: data.projectId || null,
+    areaId: data.areaId || null
+  });
+  state.pages.push(page);
+  const block = createBlock({
+    pageId: page.id,
+    type: "text",
+    position: 0,
+    text: ""
+  });
+  state.blocks.push(block);
   saveState();
-  navigate(`/notes/${note.id}`);
+  navigate(`/pages/${page.id}`);
+}
+
+function createPageAndOpen(parentId = null) {
+  const page = createPage({ parentId });
+  state.pages.push(page);
+  state.blocks.push(
+    createBlock({
+      pageId: page.id,
+      type: "text",
+      position: 0,
+      text: ""
+    })
+  );
+  saveState();
+  navigate(`/pages/${page.id}`);
+}
+
+function createPageFromTemplate(templateKey) {
+  const templateFn = NOTE_TEMPLATES[templateKey];
+  const template = typeof templateFn === "function" ? templateFn() : { title: "Nova pagina", blocks: [] };
+  const page = createPage({ title: template.title || "Nova pagina" });
+  state.pages.push(page);
+  (template.blocks || []).forEach((block, index) => {
+    const pageBlock = createBlock({
+      id: block.id,
+      pageId: page.id,
+      type: block.type,
+      position: index,
+      text: block.text,
+      items: block.items,
+      rows: block.rows,
+      url: block.url
+    });
+    state.blocks.push(pageBlock);
+  });
+  saveState();
+  navigate(`/pages/${page.id}`);
 }
 
 function openProjectModal() {
@@ -2998,7 +3451,7 @@ function openCreateChooser() {
   const commands = [
     { label: "Tarefa rapida", action: () => openTaskModal({ dueDate: getTodayKey() }) },
     { label: "Evento", action: () => openEventModal({}) },
-    { label: "Nota", action: () => openNoteModal({}) },
+    { label: "Pagina", action: () => openNoteModal({}) },
     { label: "Projeto", action: () => openProjectModal() },
     { label: "Area", action: () => openAreaModal() }
   ];
@@ -3030,15 +3483,15 @@ function buildCommandList(options = {}) {
   const allCommands = [
     { label: "Nova tarefa", action: () => openTaskModal({}) },
     { label: "Novo evento", action: () => openEventModal({}) },
-    { label: "Nova nota", action: () => openNoteModal({}) },
+    { label: "Nova pagina", action: () => openNoteModal({}) },
     { label: "Novo projeto", action: () => openProjectModal() },
     { label: "Nova area", action: () => openAreaModal() },
     { label: "Ir para hoje", action: () => navigate("/today") },
     { label: "Ir para inbox", action: () => navigate("/inbox") },
     { label: "Ir para semana", action: () => navigate("/week") },
     { label: "Ir para calendario", action: () => navigate("/calendar") },
+    { label: "Ir para paginas", action: () => navigate("/pages") },
     { label: "Ir para projetos", action: () => navigate("/projects") },
-    { label: "Ir para notas", action: () => navigate("/notes") },
     { label: "Ir para areas", action: () => navigate("/areas") }
   ];
 
@@ -3242,26 +3695,26 @@ function openHelpModal() {
 }
 
 function openTemplateChooser() {
-  openModal("Templates de nota", "Notas", {}, null, null);
+  openModal("Templates de pagina", "Paginas", {}, null, null);
   el.modalCancel.textContent = "Fechar";
   el.modalBody.innerHTML = "";
   const actions = createElement("div", "card-actions");
   actions.append(
     createButton("Reuniao", "ghost-btn", () => {
       closeModal();
-      openNoteModal({ template: "meeting" });
+      createPageFromTemplate("meeting");
     }),
     createButton("Diario", "ghost-btn", () => {
       closeModal();
-      openNoteModal({ template: "diary" });
+      createPageFromTemplate("diary");
     }),
     createButton("Estudo", "ghost-btn", () => {
       closeModal();
-      openNoteModal({ template: "study" });
+      createPageFromTemplate("study");
     }),
     createButton("Planejamento mensal", "ghost-btn", () => {
       closeModal();
-      openNoteModal({ template: "monthly" });
+      createPageFromTemplate("monthly");
     })
   );
   el.modalBody.append(actions);
@@ -3386,7 +3839,7 @@ function openProcessModal(item) {
     [
       { value: "task", label: "Tarefa" },
       { value: "event", label: "Evento" },
-      { value: "note", label: "Nota" }
+      { value: "note", label: "Pagina" }
     ],
     item.kind || "task"
   );
@@ -3526,12 +3979,20 @@ function openProcessModal(item) {
       });
       state.events.push(event);
     } else {
-      const note = createNote({
+      const page = createPage({
         title,
         areaId: noteAreaSelect.value || null,
         projectId: noteProjectSelect.value || null
       });
-      state.notes.push(note);
+      state.pages.push(page);
+      state.blocks.push(
+        createBlock({
+          pageId: page.id,
+          type: "text",
+          position: 0,
+          text: ""
+        })
+      );
     }
     deleteInboxItem(item.id);
     saveState();
@@ -3554,7 +4015,7 @@ function openBulkProcessModal(ids) {
     [
       { value: "task", label: "Tarefa" },
       { value: "event", label: "Evento" },
-      { value: "note", label: "Nota" }
+      { value: "note", label: "Pagina" }
     ],
     "task"
   );
@@ -3657,12 +4118,20 @@ function openBulkProcessModal(ids) {
         });
         state.events.push(event);
       } else {
-        const note = createNote({
+        const page = createPage({
           title: item.title,
           areaId: noteAreaSelect.value || null,
           projectId: noteProjectSelect.value || null
         });
-        state.notes.push(note);
+        state.pages.push(page);
+        state.blocks.push(
+          createBlock({
+            pageId: page.id,
+            type: "text",
+            position: 0,
+            text: ""
+          })
+        );
       }
     });
     bulkDeleteInbox(ids);
@@ -3888,6 +4357,238 @@ function groupNotesByArea() {
   return grouped;
 }
 
+function buildPageTree(parentId) {
+  const container = createElement("div", parentId ? "page-children" : "page-list");
+  const pages = state.pages
+    .filter((page) => page.parentId === parentId)
+    .sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  pages.forEach((page) => {
+    const item = createElement("div", "page-item", page.title || "Sem titulo");
+    item.dataset.pageId = page.id;
+    item.classList.toggle("active", page.id === state.ui.pageId);
+    item.addEventListener("click", () => navigate(`/pages/${page.id}`));
+    container.append(item);
+
+    const children = buildPageTree(page.id);
+    if (children.childElementCount) {
+      container.append(children);
+    }
+  });
+  return container;
+}
+
+function createPageBlockEditor(page, block, index) {
+  const wrapper = createElement("div", "block-editor");
+  const header = createElement("div", "block-header");
+  const typeSelect = createSelect(BLOCK_TYPES, block.type);
+  typeSelect.addEventListener("change", () => {
+    block.type = typeSelect.value;
+    touch(block);
+    saveState();
+    renderMain();
+  });
+  if (["text", "heading", "quote", "title"].includes(block.type)) {
+    const taskBtn = createButton("Criar tarefa", "ghost-btn", () => {
+      const title = (block.text || "").trim();
+      if (!title) {
+        showToast("Texto vazio.");
+        return;
+      }
+      state.tasks.unshift(createTask({ title }));
+      saveState();
+      showToast("Tarefa criada.");
+    });
+    header.append(taskBtn);
+  }
+  const deleteBtn = createButton("Deletar", "ghost-btn danger", () => {
+    state.blocks = state.blocks.filter((item) => item.id !== block.id);
+    markDeleted("blocks", block.id);
+    saveState();
+    renderMain();
+  });
+  header.append(typeSelect, deleteBtn);
+  wrapper.append(header);
+
+  const content = createElement("div", "block-content");
+  if (["text", "heading", "quote", "title"].includes(block.type)) {
+    const input = document.createElement("textarea");
+    input.rows = 3;
+    input.value = block.text || "";
+    input.addEventListener("input", () => {
+      block.text = input.value;
+      touch(block);
+      saveStateDebounced();
+    });
+    content.append(input);
+  } else if (["list", "checklist"].includes(block.type)) {
+    const itemList = createElement("div", "list-editor");
+    const isChecklist = block.type === "checklist";
+
+    const renderItems = () => {
+      itemList.innerHTML = "";
+      (block.items || []).forEach((item, idx) => {
+        const itemWrap = createElement("div", "list-item");
+        let entry = item;
+        if (isChecklist && (typeof entry !== "object" || entry === null)) {
+          entry = { text: typeof item === "string" ? item : "", done: false };
+          block.items[idx] = entry;
+        }
+        const checkbox = isChecklist ? document.createElement("input") : null;
+        if (checkbox) {
+          checkbox.type = "checkbox";
+          checkbox.checked = Boolean(entry.done);
+          checkbox.addEventListener("change", () => {
+            entry.done = checkbox.checked;
+            touch(block);
+            saveState();
+          });
+          itemWrap.append(checkbox);
+        }
+
+        const input = document.createElement("input");
+        input.value = typeof entry === "string" ? entry : entry.text || "";
+        input.addEventListener("input", () => {
+          if (typeof block.items[idx] === "string") {
+            block.items[idx] = input.value;
+          } else {
+            block.items[idx].text = input.value;
+          }
+          touch(block);
+          saveStateDebounced();
+        });
+        itemWrap.append(input);
+
+        if (isChecklist) {
+          const convertBtn = createButton("-> tarefa", "ghost-btn", () => {
+            const title = input.value.trim();
+            if (!title) {
+              showToast("Texto vazio.");
+              return;
+            }
+            state.tasks.unshift(createTask({ title }));
+            block.items.splice(idx, 1);
+            touch(block);
+            saveState();
+            renderMain();
+            showToast("Item convertido em tarefa.");
+          });
+          itemWrap.append(convertBtn);
+        }
+
+        const removeBtn = createButton("Remover", "ghost-btn", () => {
+          block.items.splice(idx, 1);
+          touch(block);
+          saveState();
+          renderItems();
+        });
+        itemWrap.append(removeBtn);
+
+        itemList.append(itemWrap);
+      });
+    };
+
+    const addBtn = createButton("Adicionar item", "ghost-btn", () => {
+      if (!Array.isArray(block.items)) {
+        block.items = [];
+      }
+      block.items.push(isChecklist ? { text: "", done: false } : "");
+      touch(block);
+      saveState();
+      renderItems();
+    });
+
+    renderItems();
+    content.append(itemList, addBtn);
+  } else if (block.type === "table") {
+    const tableWrap = createElement("div", "table-editor");
+    if (!Array.isArray(block.rows) || block.rows.length === 0) {
+      block.rows = [
+        ["", ""],
+        ["", ""]
+      ];
+    }
+
+    const getColumnCount = () => Math.max(...block.rows.map((row) => row.length), 0);
+
+    const renderTable = () => {
+      tableWrap.innerHTML = "";
+      const colCount = Math.max(getColumnCount(), 1);
+      block.rows.forEach((row, rowIndex) => {
+        if (!Array.isArray(row)) {
+          block.rows[rowIndex] = [];
+        }
+        while (block.rows[rowIndex].length < colCount) {
+          block.rows[rowIndex].push("");
+        }
+        const rowEl = createElement("div", "table-row");
+        block.rows[rowIndex].forEach((cell, colIndex) => {
+          const input = document.createElement("input");
+          input.className = "table-cell";
+          input.value = cell || "";
+          input.addEventListener("input", () => {
+            block.rows[rowIndex][colIndex] = input.value;
+            touch(block);
+            saveStateDebounced();
+          });
+          rowEl.append(input);
+        });
+        const removeBtn = createButton("Remover", "ghost-btn", () => {
+          if (block.rows.length <= 1) {
+            return;
+          }
+          block.rows.splice(rowIndex, 1);
+          touch(block);
+          saveState();
+          renderTable();
+        });
+        rowEl.append(removeBtn);
+        tableWrap.append(rowEl);
+      });
+    };
+
+    const actions = createElement("div", "table-actions");
+    actions.append(
+      createButton("Adicionar linha", "ghost-btn", () => {
+        const colCount = Math.max(getColumnCount(), 1);
+        block.rows.push(Array.from({ length: colCount }, () => ""));
+        touch(block);
+        saveState();
+        renderTable();
+      }),
+      createButton("Adicionar coluna", "ghost-btn", () => {
+        const colCount = Math.max(getColumnCount(), 1);
+        block.rows.forEach((row) => {
+          while (row.length < colCount) {
+            row.push("");
+          }
+          row.push("");
+        });
+        touch(block);
+        saveState();
+        renderTable();
+      })
+    );
+
+    renderTable();
+    content.append(tableWrap, actions);
+  } else if (block.type === "divider") {
+    const divider = document.createElement("hr");
+    content.append(divider);
+  } else if (block.type === "embed") {
+    const input = document.createElement("input");
+    input.placeholder = "URL do embed";
+    input.value = block.url || "";
+    input.addEventListener("input", () => {
+      block.url = input.value;
+      touch(block);
+      saveStateDebounced();
+    });
+    content.append(input);
+  }
+  wrapper.append(content);
+  return wrapper;
+}
+
 function createBlockEditor(note, block, index) {
   const wrapper = createElement("div", "block-editor");
   const header = createElement("div", "block-header");
@@ -4082,6 +4783,9 @@ function createBlockEditor(note, block, index) {
 
     renderTable();
     content.append(tableWrap, actions);
+  } else if (block.type === "divider") {
+    const divider = document.createElement("hr");
+    content.append(divider);
   } else if (block.type === "embed") {
     const input = document.createElement("input");
     input.placeholder = "URL do embed";
@@ -4132,6 +4836,21 @@ function deleteArea(areaId) {
   state.projects = state.projects.map((p) => (p.areaId === areaId ? { ...p, areaId: null } : p));
   state.tasks = state.tasks.map((t) => (t.areaId === areaId ? { ...t, areaId: null } : t));
   markDeleted("areas", areaId);
+  saveState();
+}
+
+function deletePage(pageId) {
+  state.pages = state.pages.filter((page) => page.id !== pageId);
+  state.pages = state.pages.map((page) =>
+    page.parentId === pageId ? { ...page, parentId: null } : page
+  );
+  const removedBlocks = state.blocks.filter((block) => block.pageId === pageId);
+  removedBlocks.forEach((block) => markDeleted("blocks", block.id));
+  state.blocks = state.blocks.filter((block) => block.pageId !== pageId);
+  markDeleted("pages", pageId);
+  if (state.ui.pageId === pageId) {
+    state.ui.pageId = state.pages.length ? state.pages[0].id : null;
+  }
   saveState();
 }
 
