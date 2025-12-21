@@ -1,7 +1,8 @@
-const CACHE_NAME = "meu-node-cache-v4";
+const CACHE_NAME = "meu-node-cache-v5";
 const ASSETS = [
   "./",
   "./index.html",
+  "./404.html",
   "./styles.css",
   "./app.js",
   "./ui-helpers.js",
