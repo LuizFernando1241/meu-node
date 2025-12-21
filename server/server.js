@@ -73,9 +73,11 @@ api.delete("/areas/:id", deleteArea);
 api.get("/projects", listProjects);
 api.post("/projects", upsertProject);
 api.patch("/projects/:id", patchProject);
+api.delete("/projects/:id", deleteProject);
 
 api.get("/inbox", listInbox);
 api.post("/inbox", createInboxItem);
+api.patch("/inbox/:id", patchInboxItem);
 api.post("/inbox/:id/process", processInboxItem);
 api.delete("/inbox/:id", deleteInboxItem);
 
@@ -659,6 +661,20 @@ async function patchProject(req, res) {
   }
 }
 
+async function deleteProject(req, res) {
+  try {
+    const id = asString(req.params.id);
+    await client.execute({
+      sql: "DELETE FROM projects WHERE id = ?",
+      args: [id]
+    });
+    res.sendStatus(204);
+  } catch (error) {
+    console.error("Error in DELETE /projects:", error);
+    res.status(500).json({ error: "db_error" });
+  }
+}
+
 async function listInbox(_req, res) {
   try {
     const result = await client.execute("SELECT * FROM inbox ORDER BY created_at DESC");
@@ -694,6 +710,39 @@ async function createInboxItem(req, res) {
     res.json(mapInboxRow(result.rows[0]));
   } catch (error) {
     console.error("Error in POST /inbox:", error);
+    res.status(500).json({ error: "db_error" });
+  }
+}
+
+async function patchInboxItem(req, res) {
+  try {
+    const id = asString(req.params.id);
+    const existing = await client.execute({
+      sql: "SELECT * FROM inbox WHERE id = ?",
+      args: [id]
+    });
+    const row = existing.rows && existing.rows[0] ? existing.rows[0] : null;
+    if (!row) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    const current = mapInboxRow(row);
+    const body = req.body || {};
+    const patch = { ...body };
+    if (patch.title && !patch.rawText) {
+      patch.rawText = patch.title;
+    }
+    if (patch.kind && !patch.inferredType) {
+      patch.inferredType = patch.kind;
+    }
+    const merged = {
+      ...current,
+      ...patch,
+      id
+    };
+    req.body = merged;
+    return createInboxItem(req, res);
+  } catch (error) {
+    console.error("Error in PATCH /inbox:", error);
     res.status(500).json({ error: "db_error" });
   }
 }

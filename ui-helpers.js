@@ -289,11 +289,12 @@ function createInboxRow(item, options = {}) {
   const actions = document.createElement("div");
   actions.className = "card-actions";
   
+  const editBtn = createButton("Editar", "ghost-btn", () => openInboxEditModal(item));
   const processBtn = createButton("Processar", "ghost-btn", () => openProcessModal(item));
   const archiveBtn = createButton("Arquivar", "ghost-btn", () => archiveInboxItem(item.id));
   const deleteBtn = createButton("Apagar", "ghost-btn danger", () => deleteInboxItem(item.id));
   
-  actions.append(processBtn, archiveBtn, deleteBtn);
+  actions.append(editBtn, processBtn, archiveBtn, deleteBtn);
   
   row.append(checkbox, content, actions);
   

@@ -362,7 +362,7 @@ body.details-open .details-backdrop {
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 50;
+  z-index: 90;
 }
 
 .empty {
@@ -1104,8 +1104,9 @@ button {
 .command-card {
   background: white;
   border-radius: var(--radius-lg);
-  width: 500px;
-  max-height: 500px;
+  width: 92vw;
+  max-width: 500px;
+  max-height: 80vh;
   overflow: hidden;
   box-shadow: var(--shadow-2);
 }
@@ -1252,7 +1253,7 @@ button {
     left: 16px;
     top: 80px;
     bottom: 16px;
-    z-index: 40;
+    z-index: 100;
     transform: translateY(120%);
     transition: transform 0.25s ease;
   }

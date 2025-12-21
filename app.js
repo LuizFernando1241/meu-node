@@ -38,7 +38,7 @@ const BLOCK_TYPES = [
 
 const NOTE_TEMPLATES = {
   meeting: () => ({
-    title: "Notas de reuniao",
+    title: "Pagina de reuniao",
     blocks: [
       { type: "title", text: "Reuniao - " },
       { type: "heading", text: "Participantes" },
@@ -57,7 +57,7 @@ const NOTE_TEMPLATES = {
     ]
   }),
   study: () => ({
-    title: "Notas de estudo",
+    title: "Pagina de estudo",
     blocks: [
       { type: "heading", text: "Topico" },
       { type: "text", text: "" },
@@ -89,8 +89,6 @@ const ROUTE_META = {
   project: { title: "Projeto", eyebrow: "Detalhe" },
   pages: { title: "Paginas", eyebrow: "Organizar" },
   page: { title: "Pagina", eyebrow: "Detalhe" },
-  notes: { title: "Paginas", eyebrow: "Organizar" },
-  note: { title: "Pagina", eyebrow: "Detalhe" },
   areas: { title: "Areas", eyebrow: "Estrutura" },
   area: { title: "Area", eyebrow: "Detalhe" }
 };
@@ -100,7 +98,6 @@ const el = {
   globalSearch: document.getElementById("globalSearch"),
   searchClear: document.getElementById("searchClear"),
   createBtn: document.getElementById("createBtn"),
-  commandBtn: document.getElementById("commandBtn"),
   helpBtn: document.getElementById("helpBtn"),
   countToday: document.getElementById("countToday"),
   countInbox: document.getElementById("countInbox"),
@@ -190,9 +187,22 @@ init().catch((error) => {
 
 function runMigrations() {
   if (!state.meta.migrations) {
-    state.meta.migrations = { pagesFromNotes: false, pagesSeeded: false };
+    state.meta.migrations = { pagesFromNotes: false, pagesSeeded: false, notesRetired: false };
   }
   let changed = false;
+
+  if (!state.meta.migrations.notesRetired && state.notes.length) {
+    const existingPageIds = new Set(state.pages.map((page) => page.id));
+    state.notes.forEach((note) => {
+      if (!existingPageIds.has(note.id)) {
+        migrateNoteToPage(note);
+      }
+      markDeleted("notes", note.id);
+    });
+    state.notes = [];
+    state.meta.migrations.notesRetired = true;
+    changed = true;
+  }
 
   if (!state.meta.migrations.pagesFromNotes && state.pages.length === 0 && state.notes.length) {
     state.notes.forEach((note) => {
@@ -260,6 +270,12 @@ function bindEvents() {
       saveStateDebounced();
       renderAll();
     });
+    el.globalSearch.addEventListener("keydown", (event) => {
+      if (event.key === "/" && !el.globalSearch.value) {
+        event.preventDefault();
+        openCommandPalette();
+      }
+    });
   }
 
   if (el.searchClear) {
@@ -281,9 +297,6 @@ function bindEvents() {
   }
   if (el.mobileCreateBtn) {
     el.mobileCreateBtn.addEventListener("click", openCreateChooser);
-  }
-  if (el.commandBtn) {
-    el.commandBtn.addEventListener("click", openCommandPalette);
   }
   if (el.helpBtn) {
     el.helpBtn.addEventListener("click", openHelpModal);
@@ -490,7 +503,7 @@ function parseRoute(path) {
     }
     return { name: "projects" };
   }
-  if (parts[0] === "pages" || parts[0] === "notes") {
+  if (parts[0] === "pages") {
     if (parts[1]) {
       return { name: "page", id: parts[1] };
     }
@@ -519,7 +532,8 @@ function defaultState() {
       lastReviewAt: null,
       migrations: {
         pagesFromNotes: false,
-        pagesSeeded: false
+        pagesSeeded: false,
+        notesRetired: false
       }
     },
     ui: {
@@ -693,7 +707,6 @@ async function runSearch(query) {
       tasks: Array.isArray(data.tasks) ? data.tasks.map(taskFromApi).filter(Boolean) : [],
       events: Array.isArray(data.events) ? data.events.map(eventFromApi).filter(Boolean) : [],
       projects: Array.isArray(data.projects) ? data.projects.map(projectFromApi).filter(Boolean) : [],
-      notes: Array.isArray(data.notes) ? data.notes.map(noteFromApi).filter(Boolean) : [],
       pages: Array.isArray(data.pages) ? data.pages.map(pageFromApi).filter(Boolean) : []
     };
   } catch (error) {
@@ -717,7 +730,7 @@ function inferQuickCapture(text) {
   let date = "";
   let time = "";
 
-  if (lower.startsWith("nota:")) {
+  if (lower.startsWith("pagina:") || lower.startsWith("nota:")) {
     kind = "note";
   }
 
@@ -765,7 +778,7 @@ function inferQuickCapture(text) {
   }
 
   let title = raw;
-  title = title.replace(/^nota:\s*/i, "");
+  title = title.replace(/^(nota|pagina):\s*/i, "");
   title = title.replace(/\bhoje\b/gi, "");
   title = title.replace(/\bamanha\b/gi, "");
   if (dateMatch) {
@@ -1452,7 +1465,7 @@ function normalizeNote(note) {
   }
   const normalized = { ...note };
   normalized.id = typeof normalized.id === "string" ? normalized.id : uid("note");
-  normalized.title = typeof normalized.title === "string" ? normalized.title : "Nova nota";
+  normalized.title = typeof normalized.title === "string" ? normalized.title : "Nova pagina";
   normalized.areaId = typeof normalized.areaId === "string" ? normalized.areaId : null;
   normalized.projectId = typeof normalized.projectId === "string" ? normalized.projectId : null;
   normalized.blocks = Array.isArray(normalized.blocks)
@@ -1730,7 +1743,7 @@ function createEvent(data = {}) {
 function createNote(data = {}) {
   const note = normalizeNote({
     id: uid("note"),
-    title: data.title || "Nova nota",
+    title: data.title || "Nova pagina",
     areaId: data.areaId || null,
     projectId: data.projectId || null,
     blocks: Array.isArray(data.blocks) ? data.blocks : [],
@@ -1789,7 +1802,7 @@ function suggestInboxKind(text) {
   if (value.includes("reuniao") || value.includes("call") || value.includes("evento")) {
     return "event";
   }
-  if (value.includes("nota") || value.includes("ideia")) {
+  if (value.includes("pagina") || value.includes("nota") || value.includes("ideia")) {
     return "note";
   }
   return "task";
@@ -2058,7 +2071,7 @@ function renderMain() {
   } else if (route.name === "area") {
     renderAreaDetail(el.viewRoot, route.id);
   } else {
-    const empty = createElement("div", "empty", "Rota não encontrada.");
+    const empty = createElement("div", "empty", "Rota nao encontrada.");
     el.viewRoot.append(empty);
   }
 }
@@ -2073,7 +2086,6 @@ function renderGlobalSearchView(root, query) {
   results.tasks = Array.isArray(results.tasks) ? results.tasks : [];
   results.events = Array.isArray(results.events) ? results.events : [];
   results.projects = Array.isArray(results.projects) ? results.projects : [];
-  results.notes = Array.isArray(results.notes) ? results.notes : [];
   const wrap = createElement("div", "today-grid");
 
   if (state.ui.searching && !apiResults) {
@@ -2155,7 +2167,6 @@ function getSearchResults(query) {
     tasks: tasks.slice(0, 6),
     events: events.slice(0, 6),
     projects: projects.slice(0, 6),
-    notes: [],
     pages: pages.slice(0, 6)
   };
 }
@@ -2925,6 +2936,18 @@ function renderProjectDetail(root, projectId) {
     });
   }
   root.append(notesSection.section);
+
+  const actions = createElement("div", "card-actions");
+  actions.append(
+    createButton("Deletar projeto", "ghost-btn danger", () => {
+      if (confirm("Deletar este projeto?")) {
+        deleteProject(project.id);
+        navigate("/projects");
+        showToast("Projeto deletado");
+      }
+    })
+  );
+  root.append(actions);
 }
 
 function renderPagesView(root, pageId) {
@@ -3051,7 +3074,7 @@ function renderNotesView(root, noteId) {
     grouped[areaId].forEach((note) => {
       const item = createElement("div", "note-item", note.title);
       item.classList.toggle("active", note.id === state.ui.notesNoteId);
-      item.addEventListener("click", () => navigate(`/notes/${note.id}`));
+      item.addEventListener("click", () => navigate(`/pages/${note.id}`));
       tree.append(item);
     });
   });
@@ -3062,7 +3085,7 @@ function renderNotesView(root, noteId) {
   const note = state.ui.notesNoteId ? getNote(state.ui.notesNoteId) : null;
   if (!note) {
     const empty = createElement("div", "empty");
-    empty.innerHTML = "<h3>Escolha uma nota</h3>";
+    empty.innerHTML = "<h3>Escolha uma pagina</h3>";
     editor.append(empty);
   } else {
     state.ui.selected = { kind: "note", id: note.id };
@@ -3363,6 +3386,8 @@ function openNoteModal(data = {}) {
     const note = getNote(data.id);
     if (note) {
       const page = migrateNoteToPage(note);
+      state.notes = state.notes.filter((item) => item.id !== note.id);
+      markDeleted("notes", note.id);
       saveState();
       navigate(`/pages/${page.id}`);
     }
@@ -3435,7 +3460,7 @@ function openProjectModal() {
     { title: "", objective: "", areaId: "" },
     (formData) => {
       if (!formData.title.trim()) {
-        showToast("Nome do projeto obrigatório");
+        showToast("Nome do projeto obrigatorio");
         return;
       }
       const project = createProject(formData);
@@ -3448,22 +3473,16 @@ function openProjectModal() {
 }
 
 function openCreateChooser() {
-  const commands = [
-    { label: "Tarefa rapida", action: () => openTaskModal({ dueDate: getTodayKey() }) },
-    { label: "Evento", action: () => openEventModal({}) },
-    { label: "Pagina", action: () => openNoteModal({}) },
-    { label: "Projeto", action: () => openProjectModal() },
-    { label: "Area", action: () => openAreaModal() }
-  ];
-  openCommandMenu(commands);
+  openCommandPalette("nova");
 }
 
-function openCommandPalette() {
+function openCommandPalette(prefill = "") {
   commandState.open = true;
   commandState.index = 0;
   commandState.previousFocus = document.activeElement;
   el.commandPalette.classList.remove("hidden");
   el.commandInput.style.display = "block";
+  el.commandInput.value = prefill;
   el.commandInput.focus();
   buildCommandList();
 }
@@ -3560,27 +3579,6 @@ function handleCommandPaletteKeydown(event) {
   }
 }
 
-function openCommandMenu(commands) {
-  commandState.open = true;
-  commandState.index = 0;
-  commandState.filtered = commands;
-  commandState.previousFocus = document.activeElement;
-  el.commandPalette.classList.remove("hidden");
-  el.commandList.innerHTML = "";
-  commands.forEach((cmd, index) => {
-    const item = createElement("div", "command-item");
-    item.append(createElement("span", "", cmd.label));
-    item.classList.toggle("active", index === 0);
-    item.addEventListener("click", () => {
-      cmd.action();
-      closeCommandPalette();
-    });
-    el.commandList.append(item);
-  });
-  el.commandInput.value = "";
-  el.commandInput.style.display = "none";
-}
-
 function openModal(title, eyebrow, data, onSave, onDelete) {
   el.modalEyebrow.textContent = eyebrow || "Editor";
   el.modalTitle.textContent = title || "Novo item";
@@ -3595,6 +3593,7 @@ function openModal(title, eyebrow, data, onSave, onDelete) {
   const labelMap = {
     title: "Titulo",
     name: "Nome",
+    kind: "Tipo",
     status: "Status",
     priority: "Prioridade",
     dueDate: "Prazo",
@@ -3612,7 +3611,16 @@ function openModal(title, eyebrow, data, onSave, onDelete) {
     const value = data[key];
     let input;
 
-    if (key === "status") {
+    if (key === "kind") {
+      input = createSelect(
+        [
+          { value: "task", label: "Tarefa" },
+          { value: "event", label: "Evento" },
+          { value: "note", label: "Pagina" }
+        ],
+        value
+      );
+    } else if (key === "status") {
       input = createSelect(
         STATUS_ORDER.map((s) => ({ value: s, label: STATUS_LABELS[s] })),
         value
@@ -3779,6 +3787,30 @@ function openContextMenu(kind, item) {
   el.modalBody.append(actions);
   el.modalSave.classList.add("hidden");
   el.modalDelete.classList.add("hidden");
+}
+
+function openInboxEditModal(item) {
+  if (!item) {
+    return;
+  }
+  openModal(
+    "Editar inbox",
+    "Inbox",
+    { title: item.title || "", kind: item.kind || "task" },
+    (formData) => {
+      const title = (formData.title || "").trim();
+      if (!title) {
+        showToast("Texto obrigatorio.");
+        return;
+      }
+      item.title = title;
+      item.kind = ["task", "event", "note"].includes(formData.kind) ? formData.kind : item.kind;
+      markDirty(item);
+      saveState();
+      renderMain();
+      showToast("Inbox atualizada.");
+    }
+  );
 }
 
 function closeModal() {
@@ -4817,12 +4849,12 @@ function createNotesSidePanel(note) {
   const actions = createElement("div", "card-actions");
   actions.append(
     createButton("Deletar", "ghost-btn danger", () => {
-      if (confirm("Deletar esta nota?")) {
+      if (confirm("Deletar esta pagina?")) {
         state.notes = state.notes.filter((n) => n.id !== note.id);
         markDeleted("notes", note.id);
         saveState();
-        navigate("/notes");
-        showToast("Nota deletada");
+        navigate("/pages");
+        showToast("Pagina deletada");
       }
     })
   );
@@ -4836,6 +4868,24 @@ function deleteArea(areaId) {
   state.projects = state.projects.map((p) => (p.areaId === areaId ? { ...p, areaId: null } : p));
   state.tasks = state.tasks.map((t) => (t.areaId === areaId ? { ...t, areaId: null } : t));
   markDeleted("areas", areaId);
+  saveState();
+}
+
+function deleteProject(projectId) {
+  state.projects = state.projects.filter((project) => project.id !== projectId);
+  state.tasks = state.tasks.map((task) =>
+    task.projectId === projectId ? { ...task, projectId: null } : task
+  );
+  state.pages = state.pages.map((page) =>
+    page.projectId === projectId ? { ...page, projectId: null } : page
+  );
+  state.notes = state.notes.map((note) =>
+    note.projectId === projectId ? { ...note, projectId: null } : note
+  );
+  if (state.ui.selected.kind === "project" && state.ui.selected.id === projectId) {
+    clearSelection();
+  }
+  markDeleted("projects", projectId);
   saveState();
 }
 
@@ -4870,9 +4920,11 @@ function renderDetailsPanel() {
   const selection = getSelectedItem();
   if (!selection.item) {
     el.detailsPanel.innerHTML = "";
+    el.detailsPanel.classList.add("hidden");
     return;
   }
 
+  el.detailsPanel.classList.remove("hidden");
   el.detailsTitle.textContent = selection.item.title || selection.item.name || "Detalhe";
   el.detailsBody.innerHTML = "";
 
@@ -4880,7 +4932,7 @@ function renderDetailsPanel() {
   const typeLabel = {
     task: "Tarefa",
     event: "Evento",
-    note: "Nota",
+    note: "Pagina",
     project: "Projeto"
   }[selection.kind] || "Item";
   const summary = createElement("div", "details-summary");
@@ -4952,10 +5004,17 @@ function renderDetailsPanel() {
         : null
     );
     const actions = createElement("div", "card-actions");
+    const openLegacyPage = () => {
+      const page = getPage(selection.item.id) || migrateNoteToPage(selection.item);
+      if (page) {
+        saveState();
+        navigate(`/pages/${page.id}`);
+      }
+    };
     actions.append(
-      createButton("Abrir nota", "ghost-btn", () => navigate(`/notes/${selection.item.id}`)),
+      createButton("Abrir pagina", "ghost-btn", openLegacyPage),
       createButton("Deletar", "ghost-btn danger", () => {
-        if (confirm("Deletar nota?")) {
+        if (confirm("Deletar pagina?")) {
           state.notes = state.notes.filter((note) => note.id !== selection.item.id);
           markDeleted("notes", selection.item.id);
           saveState();
