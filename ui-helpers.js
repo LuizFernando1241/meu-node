@@ -67,6 +67,14 @@ function createSection(title, subtitle) {
 function createTaskCard(task, options = {}) {
   const card = document.createElement("div");
   card.className = "card";
+  card.draggable = true;
+  card.addEventListener("dragstart", (event) => {
+    if (event.target.closest("button, input, textarea, select")) {
+      event.preventDefault();
+      return;
+    }
+    setDragData(event, "task", task.id);
+  });
   
   const title = document.createElement("div");
   title.className = "card-title";
@@ -86,6 +94,14 @@ function createTaskCard(task, options = {}) {
 function createTaskRow(task, options = {}) {
   const row = document.createElement("div");
   row.className = "task-row";
+  row.draggable = true;
+  row.addEventListener("dragstart", (event) => {
+    if (event.target.closest("button, input, textarea, select")) {
+      event.preventDefault();
+      return;
+    }
+    setDragData(event, "task", task.id);
+  });
   
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
@@ -186,6 +202,14 @@ function createAreaCard(area) {
 function createEventRow(event) {
   const row = document.createElement("div");
   row.className = "task-row";
+  row.draggable = true;
+  row.addEventListener("dragstart", (ev) => {
+    if (ev.target.closest("button, input, textarea, select")) {
+      ev.preventDefault();
+      return;
+    }
+    setDragData(ev, "event", event.id);
+  });
   
   const content = document.createElement("div");
   content.className = "task-content";

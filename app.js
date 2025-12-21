@@ -397,7 +397,8 @@ function defaultState() {
       weekTab: "plan",
       weekOffset: 0,
       weekShowTimeBlocks: true,
-      calendarTab: "week",
+      calendarTab: "month",
+      calendarTabTouched: false,
       calendarMonthOffset: 0,
       projectFilter: "active",
       notesNoteId: null,
@@ -428,6 +429,12 @@ function normalizeState(data) {
     ...base.ui,
     ...(data.ui || {})
   };
+  if (!["week", "month"].includes(ui.calendarTab)) {
+    ui.calendarTab = "month";
+  }
+  if (!ui.calendarTabTouched && ui.calendarTab === "week") {
+    ui.calendarTab = "month";
+  }
   return {
     tasks: Array.isArray(data.tasks) ? data.tasks.map(normalizeTask).filter(Boolean) : [],
     events: Array.isArray(data.events) ? data.events.map(normalizeEvent).filter(Boolean) : [],
@@ -1978,7 +1985,7 @@ function renderTodayView(root) {
   captureCard.append(createElement("div", "card-title", "Captura"));
   const capture = document.createElement("input");
   capture.className = "capture-input";
-  capture.placeholder = "Nova entrada";
+  capture.placeholder = "Capturar para hoje (ex: reuniao 14:00)";
   capture.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -2114,7 +2121,7 @@ function renderInboxView(root) {
   );
   const capture = document.createElement("input");
   capture.className = "capture-input";
-  capture.placeholder = "Nova entrada";
+  capture.placeholder = "Capturar no inbox (sem organizar)";
   capture.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -2173,7 +2180,20 @@ function renderInboxView(root) {
 }
 
 function renderCalendarView(root) {
-  renderCalendarMonth(root);
+  const tabs = createElement("div", "week-tabs");
+  const activeTab = state.ui.calendarTabTouched ? state.ui.calendarTab : "month";
+  const monthBtn = createButton("Mes", "tab-btn", () => setCalendarTab("month"));
+  const weekBtn = createButton("Semana", "tab-btn", () => setCalendarTab("week"));
+  monthBtn.classList.toggle("active", activeTab === "month");
+  weekBtn.classList.toggle("active", activeTab === "week");
+  tabs.append(monthBtn, weekBtn);
+  root.append(tabs);
+
+  if (activeTab === "week") {
+    renderCalendarWeek(root);
+  } else {
+    renderCalendarMonth(root);
+  }
 }
 
 function renderCalendarWeek(root) {
@@ -2247,6 +2267,7 @@ function renderCalendarMonth(root) {
 
 function setCalendarTab(tab) {
   state.ui.calendarTab = tab;
+  state.ui.calendarTabTouched = true;
   saveState();
   renderMain();
 }
@@ -2255,6 +2276,22 @@ function shiftCalendarMonth(offset) {
   state.ui.calendarMonthOffset += offset;
   saveState();
   renderMain();
+}
+
+function renderWeekView(root) {
+  const tabs = createElement("div", "week-tabs");
+  const planBtn = createButton("Planejar", "tab-btn", () => setWeekTab("plan"));
+  const reviewBtn = createButton("Revisar", "tab-btn", () => setWeekTab("review"));
+  planBtn.classList.toggle("active", state.ui.weekTab === "plan");
+  reviewBtn.classList.toggle("active", state.ui.weekTab === "review");
+  tabs.append(planBtn, reviewBtn);
+  root.append(tabs);
+
+  if (state.ui.weekTab === "review") {
+    renderWeekReview(root);
+  } else {
+    renderWeekPlan(root);
+  }
 }
 
 function renderWeekPlan(root) {
@@ -2418,7 +2455,10 @@ function renderProjectsView(root) {
     projects.forEach((project) => {
       const card = createProjectCard(project);
       card.style.cursor = "pointer";
-      card.addEventListener("click", () => selectItem("project", project.id));
+      card.addEventListener("click", () => {
+        clearSelection();
+        navigate(`/projects/${project.id}`);
+      });
       list.append(card);
     });
   }
@@ -3160,7 +3200,7 @@ function openHelpModal() {
     { key: "Ctrl/Cmd+K", desc: "Abrir paleta de comandos" },
     { key: "Enter", desc: "Capturar e confirmar" },
     { key: "Esc", desc: "Fechar modais e painel" },
-    { key: "Arrastar", desc: "Criar time-blocks e reordenar" }
+    { key: "Arrastar", desc: "Agendar tarefas e eventos na agenda" }
   ];
 
   items.forEach((item) => {
@@ -3659,6 +3699,18 @@ function attachDropHandlers(element, context) {
           task.timeBlock = null;
         }
         touch(task);
+        saveState();
+        renderMain();
+      } else if (kind === "event") {
+        const event = getEvent(id);
+        if (!event) return;
+        if (context.date && context.time) {
+          event.date = context.date;
+          event.start = context.time;
+        } else if (context.date) {
+          event.date = context.date;
+        }
+        touch(event);
         saveState();
         renderMain();
       }

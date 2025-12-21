@@ -193,6 +193,13 @@ body {
   margin-bottom: 16px;
 }
 
+.page-eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
 .page-title {
   font-size: 28px;
   font-weight: 700;
@@ -202,6 +209,13 @@ body {
 .page-actions {
   display: flex;
   gap: 8px;
+}
+
+.week-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .view-root {

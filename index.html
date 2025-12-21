@@ -46,6 +46,7 @@
       <div class="topbar-actions">
         <button id="createBtn" class="primary-btn">+ Criar</button>
         <button id="commandBtn" class="ghost-btn">Paleta</button>
+        <button id="helpBtn" class="ghost-btn">Ajuda</button>
       </div>
     </header>
     <div id="offlineBanner" class="offline-banner hidden">
@@ -67,6 +68,9 @@
             <span>Semana</span>
             <span id="countWeek" class="count"></span>
           </button>
+          <button class="nav-item" data-route="/calendar">
+            <span>Calendario</span>
+          </button>
           <button class="nav-item" data-route="/projects">
             <span>Projetos</span>
             <span id="countProjects" class="count"></span>
@@ -83,6 +87,7 @@
 
       <section class="content panel">
         <div class="page-header">
+          <div id="pageEyebrow" class="page-eyebrow"></div>
           <h1 id="pageTitle" class="page-title"></h1>
           <div id="pageActions" class="page-actions"></div>
         </div>
