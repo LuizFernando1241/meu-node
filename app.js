@@ -1875,6 +1875,101 @@ function renderPageActions(route, container) {
   }
 }
 
+function completeTaskWithUndo(task) {
+  const previous = task.status;
+  task.status = "done";
+  touch(task);
+  saveState();
+  renderAll();
+  showActionToast("Tarefa concluida.", "Desfazer", () => {
+    task.status = previous;
+    touch(task);
+    saveState();
+    renderAll();
+  });
+}
+
+function getHeroCandidate() {
+  const todayKey = getTodayKey();
+  const focusTask = state.tasks.find((task) => task.focus && task.status !== "done");
+  if (focusTask) {
+    return { kind: "task", item: focusTask };
+  }
+
+  const agenda = getAgendaItems(todayKey);
+  if (agenda.length) {
+    const next = agenda[0];
+    if (next.kind === "event") {
+      const event = getEvent(next.id);
+      if (event) {
+        return { kind: "event", item: event };
+      }
+    }
+    if (next.kind === "task") {
+      const task = getTask(next.id);
+      if (task) {
+        return { kind: "task", item: task };
+      }
+    }
+  }
+
+  const overdue = getOverdueTasks()[0];
+  if (overdue) {
+    return { kind: "task", item: overdue };
+  }
+
+  const todayTask = getTodayTasks().find((task) => task.status !== "done");
+  if (todayTask) {
+    return { kind: "task", item: todayTask };
+  }
+
+  const nextTask = getNextDaysTasks(7).find((task) => task.status !== "done");
+  if (nextTask) {
+    return { kind: "task", item: nextTask };
+  }
+  return null;
+}
+
+function createHeroCard(hero) {
+  const card = createElement("div", "card hero-card");
+  const title = createElement("div", "hero-title", hero.item.title);
+  const metaParts = [];
+
+  if (hero.kind === "event") {
+    if (hero.item.date) metaParts.push(hero.item.date);
+    if (hero.item.start) metaParts.push(hero.item.start);
+  } else if (hero.kind === "task") {
+    if (hero.item.timeBlock) {
+      if (hero.item.timeBlock.date) metaParts.push(hero.item.timeBlock.date);
+      if (hero.item.timeBlock.start) metaParts.push(hero.item.timeBlock.start);
+    } else if (hero.item.dueDate) {
+      metaParts.push(hero.item.dueDate);
+    }
+  }
+
+  const meta = metaParts.length ? createElement("div", "list-meta", metaParts.join(" ")) : null;
+  const actions = createElement("div", "card-actions");
+
+  if (hero.kind === "task") {
+    actions.append(
+      createButton("Concluir", "primary-btn", () => completeTaskWithUndo(hero.item)),
+      createButton("Abrir", "ghost-btn", () => selectItem("task", hero.item.id))
+    );
+  } else if (hero.kind === "event") {
+    actions.append(
+      createButton("Abrir", "primary-btn", () => selectItem("event", hero.item.id)),
+      createButton("Editar", "ghost-btn", () => openEventModal(hero.item))
+    );
+  }
+
+  card.append(title);
+  if (meta) {
+    card.append(meta);
+  }
+  card.append(actions);
+  return card;
+}
+
 function renderTodayView(root) {
   const wrap = createElement("div", "today-grid");
   const query = (state.ui.search || "").trim().toLowerCase();
@@ -1922,15 +2017,17 @@ function renderTodayView(root) {
   wrap.append(captureCard);
 
   const focusSection = createSection("Agora", "");
+  const hero = getHeroCandidate();
+  if (hero) {
+    focusSection.body.append(createHeroCard(hero));
+  }
   const focusTasks = state.tasks.filter(
     (task) =>
       task.status !== "done" &&
       task.focus &&
       matchesTaskSearch(task, query)
-  );
-  if (!focusTasks.length) {
-    focusSection.body.append(createElement("div", "list-meta", "Sem foco."));
-  } else {
+  ).filter((task) => !hero || hero.kind !== "task" || task.id !== hero.item.id);
+  if (focusTasks.length) {
     const grid = createElement("div", "focus-grid stagger");
     focusTasks.slice(0, 3).forEach((task, index) => {
       const card = createTaskCard(task, { compact: true });
@@ -1938,6 +2035,9 @@ function renderTodayView(root) {
       grid.append(card);
     });
     focusSection.body.append(grid);
+  }
+  if (!hero && !focusTasks.length) {
+    focusSection.body.append(createElement("div", "list-meta", "Sem itens."));
   }
   wrap.append(focusSection.section);
 
@@ -2058,22 +2158,16 @@ function renderInboxView(root) {
   if (!state.inbox.length) {
     list.append(createElement("div", "empty", "Inbox vazia."));
   } else {
-    const filtered = state.inbox.filter((item) => matchesQuery(item.title, state.ui.search));
-    const groups = [
-      { label: "Tarefas", kind: "task" },
-      { label: "Eventos", kind: "event" },
-      { label: "Notas", kind: "note" }
-    ];
-    groups.forEach((group) => {
-      const items = filtered.filter((item) => item.kind === group.kind);
-      if (items.length) {
-        const header = createElement("div", "section-title", group.label);
-        list.append(header);
-        items.forEach((item) => list.append(createInboxRow(item)));
-      }
-    });
-    const rest = filtered.filter((item) => !["task", "event", "note"].includes(item.kind));
-    rest.forEach((item) => list.append(createInboxRow(item)));
+    const kindOrder = { event: 0, task: 1, note: 2 };
+    const filtered = state.inbox
+      .filter((item) => matchesQuery(item.title, state.ui.search))
+      .sort((a, b) => {
+        const rankA = kindOrder[a.kind] ?? 3;
+        const rankB = kindOrder[b.kind] ?? 3;
+        if (rankA !== rankB) return rankA - rankB;
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
+    filtered.forEach((item) => list.append(createInboxRow(item)));
   }
   root.append(list);
 }
@@ -3897,18 +3991,9 @@ function renderDetailsPanel() {
     );
     const actions = createElement("div", "card-actions");
     actions.append(
-      createButton("Editar", "ghost-btn", () => openTaskModal(selection.item)),
-      createButton("Agendar", "primary-btn", () => openTaskScheduleModal(selection.item)),
-      createButton("Amanha", "ghost-btn", () => snoozeTask(selection.item, 1)),
-      createButton("Deletar", "ghost-btn danger", () => {
-        if (confirm("Deletar tarefa?")) {
-          state.tasks = state.tasks.filter((task) => task.id !== selection.item.id);
-          markDeleted("tasks", selection.item.id);
-          saveState();
-          clearSelection();
-          renderAll();
-        }
-      })
+      createButton("Concluir", "primary-btn", () => completeTaskWithUndo(selection.item)),
+      createButton("Agendar", "ghost-btn", () => openTaskScheduleModal(selection.item)),
+      createButton("...", "ghost-btn", () => openContextMenu("task", selection.item))
     );
     info.append(actions);
   } else if (selection.kind === "event") {
@@ -3924,16 +4009,8 @@ function renderDetailsPanel() {
     );
     const actions = createElement("div", "card-actions");
     actions.append(
-      createButton("Editar", "ghost-btn", () => openEventModal(selection.item)),
-      createButton("Deletar", "ghost-btn danger", () => {
-        if (confirm("Deletar evento?")) {
-          state.events = state.events.filter((event) => event.id !== selection.item.id);
-          markDeleted("events", selection.item.id);
-          saveState();
-          clearSelection();
-          renderAll();
-        }
-      })
+      createButton("Editar", "primary-btn", () => openEventModal(selection.item)),
+      createButton("...", "ghost-btn", () => openContextMenu("event", selection.item))
     );
     info.append(actions);
   } else if (selection.kind === "note") {
