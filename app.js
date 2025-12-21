@@ -268,7 +268,14 @@ function handleGlobalClick(event) {
 }
 
 function handlePopState() {
-  state.ui.route = normalizePath(window.location.pathname);
+  const path = normalizePath(stripBasePath(window.location.pathname));
+  const route = parseRoute(path);
+  if (!route) {
+    state.ui.route = "/today";
+    history.replaceState({}, "", toPublicPath("/today"));
+  } else {
+    state.ui.route = path;
+  }
   saveState();
   renderAll();
 }
@@ -1570,7 +1577,7 @@ function getOverdueTasks() {
 function getTodayTasks() {
   const today = getTodayKey();
   return state.tasks.filter((task) => {
-    if (task.status === "done") {
+    if (task.status === "done" || task.timeBlock) {
       return false;
     }
     return task.dueDate === today;
@@ -2053,7 +2060,7 @@ function renderTodayView(root) {
   const agendaItems = getAgendaItems(getTodayKey()).filter((item) =>
     matchesQuery(item.title, query)
   );
-  HOURS.forEach((time) => {
+  getCalendarSlots().forEach((time) => {
     const slot = createElement("div", "timeline-slot");
     const label = createElement("div", "timeline-time", time);
     slot.append(label);
@@ -3016,7 +3023,8 @@ function closeCommandPalette() {
   }
 }
 
-function buildCommandList() {
+function buildCommandList(options = {}) {
+  const preserveIndex = options.preserveIndex === true;
   const query = (el.commandInput.value || "").trim().toLowerCase();
   const selected = getSelectedItem();
   const allCommands = [
@@ -3047,7 +3055,11 @@ function buildCommandList() {
     ? allCommands.filter((cmd) => matchesQuery(cmd.label, query))
     : allCommands;
 
-  commandState.index = 0;
+  if (!preserveIndex) {
+    commandState.index = 0;
+  } else if (commandState.index >= commandState.filtered.length) {
+    commandState.index = 0;
+  }
   el.commandList.innerHTML = "";
 
   commandState.filtered.forEach((cmd, index) => {
@@ -3073,13 +3085,13 @@ function handleCommandPaletteKeydown(event) {
   if (event.key === "ArrowDown") {
     event.preventDefault();
     commandState.index = (commandState.index + 1) % commandState.filtered.length;
-    buildCommandList();
+    buildCommandList({ preserveIndex: true });
     return;
   }
   if (event.key === "ArrowUp") {
     event.preventDefault();
     commandState.index = (commandState.index - 1 + commandState.filtered.length) % commandState.filtered.length;
-    buildCommandList();
+    buildCommandList({ preserveIndex: true });
     return;
   }
   if (event.key === "Enter") {
@@ -3127,6 +3139,21 @@ function openModal(title, eyebrow, data, onSave, onDelete) {
   const fields = Object.keys(data);
   const hasSave = typeof onSave === "function";
   el.modalSave.classList.toggle("hidden", !hasSave);
+  const labelMap = {
+    title: "Titulo",
+    name: "Nome",
+    status: "Status",
+    priority: "Prioridade",
+    dueDate: "Prazo",
+    projectId: "Projeto",
+    areaId: "Area",
+    notes: "Notas",
+    objective: "Objetivo",
+    date: "Data",
+    start: "Hora",
+    duration: "Duracao (min)",
+    location: "Local"
+  };
 
   fields.forEach((key) => {
     const value = data[key];
@@ -3178,7 +3205,7 @@ function openModal(title, eyebrow, data, onSave, onDelete) {
       formData[key] = input.value;
     });
 
-    const label = key.charAt(0).toUpperCase() + key.slice(1);
+    const label = labelMap[key] || key.charAt(0).toUpperCase() + key.slice(1);
     el.modalBody.append(buildField(label, input));
   });
 
@@ -3906,43 +3933,155 @@ function createBlockEditor(note, block, index) {
     content.append(input);
   } else if (["list", "checklist"].includes(block.type)) {
     const itemList = createElement("div", "list-editor");
-    (block.items || []).forEach((item, idx) => {
-      const itemWrap = createElement("div", "list-item");
-      const input = document.createElement("input");
-      input.value = typeof item === "string" ? item : item.text || "";
-      input.addEventListener("input", () => {
-        if (typeof block.items[idx] === "string") {
-          block.items[idx] = input.value;
-        } else {
-          block.items[idx].text = input.value;
+    const isChecklist = block.type === "checklist";
+
+    const renderItems = () => {
+      itemList.innerHTML = "";
+      (block.items || []).forEach((item, idx) => {
+        const itemWrap = createElement("div", "list-item");
+        let entry = item;
+        if (isChecklist && (typeof entry !== "object" || entry === null)) {
+          entry = { text: typeof item === "string" ? item : "", done: false };
+          block.items[idx] = entry;
         }
-        touch(note);
-        saveStateDebounced();
-      });
-      itemWrap.append(input);
-      if (block.type === "checklist") {
-        const convertBtn = createButton("-> tarefa", "ghost-btn", () => {
-          const title = input.value.trim();
-          if (!title) {
-            showToast("Texto vazio.");
-            return;
+        const checkbox = isChecklist ? document.createElement("input") : null;
+        if (checkbox) {
+          checkbox.type = "checkbox";
+          checkbox.checked = Boolean(entry.done);
+          checkbox.addEventListener("change", () => {
+            entry.done = checkbox.checked;
+            touch(note);
+            saveState();
+          });
+          itemWrap.append(checkbox);
+        }
+
+        const input = document.createElement("input");
+        input.value = typeof entry === "string" ? entry : entry.text || "";
+        input.addEventListener("input", () => {
+          if (typeof block.items[idx] === "string") {
+            block.items[idx] = input.value;
+          } else {
+            block.items[idx].text = input.value;
           }
-          state.tasks.unshift(createTask({ title }));
+          touch(note);
+          saveStateDebounced();
+        });
+        itemWrap.append(input);
+
+        if (isChecklist) {
+          const convertBtn = createButton("-> tarefa", "ghost-btn", () => {
+            const title = input.value.trim();
+            if (!title) {
+              showToast("Texto vazio.");
+              return;
+            }
+            state.tasks.unshift(createTask({ title }));
+            block.items.splice(idx, 1);
+            touch(note);
+            saveState();
+            renderMain();
+            showToast("Item convertido em tarefa.");
+          });
+          itemWrap.append(convertBtn);
+        }
+
+        const removeBtn = createButton("Remover", "ghost-btn", () => {
           block.items.splice(idx, 1);
           touch(note);
           saveState();
-          renderMain();
-          showToast("Item convertido em tarefa.");
+          renderItems();
         });
-        itemWrap.append(convertBtn);
+        itemWrap.append(removeBtn);
+
+        itemList.append(itemWrap);
+      });
+    };
+
+    const addBtn = createButton("Adicionar item", "ghost-btn", () => {
+      if (!Array.isArray(block.items)) {
+        block.items = [];
       }
-      itemList.append(itemWrap);
+      block.items.push(isChecklist ? { text: "", done: false } : "");
+      touch(note);
+      saveState();
+      renderItems();
     });
-    content.append(itemList);
+
+    renderItems();
+    content.append(itemList, addBtn);
   } else if (block.type === "table") {
     const tableWrap = createElement("div", "table-editor");
-    tableWrap.append(createElement("div", "list-meta", "Editar tabela..."));
-    content.append(tableWrap);
+    if (!Array.isArray(block.rows) || block.rows.length === 0) {
+      block.rows = [
+        ["", ""],
+        ["", ""]
+      ];
+    }
+
+    const getColumnCount = () => Math.max(...block.rows.map((row) => row.length), 0);
+
+    const renderTable = () => {
+      tableWrap.innerHTML = "";
+      const colCount = Math.max(getColumnCount(), 1);
+      block.rows.forEach((row, rowIndex) => {
+        if (!Array.isArray(row)) {
+          block.rows[rowIndex] = [];
+        }
+        while (block.rows[rowIndex].length < colCount) {
+          block.rows[rowIndex].push("");
+        }
+        const rowEl = createElement("div", "table-row");
+        block.rows[rowIndex].forEach((cell, colIndex) => {
+          const input = document.createElement("input");
+          input.className = "table-cell";
+          input.value = cell || "";
+          input.addEventListener("input", () => {
+            block.rows[rowIndex][colIndex] = input.value;
+            touch(note);
+            saveStateDebounced();
+          });
+          rowEl.append(input);
+        });
+        const removeBtn = createButton("Remover", "ghost-btn", () => {
+          if (block.rows.length <= 1) {
+            return;
+          }
+          block.rows.splice(rowIndex, 1);
+          touch(note);
+          saveState();
+          renderTable();
+        });
+        rowEl.append(removeBtn);
+        tableWrap.append(rowEl);
+      });
+    };
+
+    const actions = createElement("div", "table-actions");
+    actions.append(
+      createButton("Adicionar linha", "ghost-btn", () => {
+        const colCount = Math.max(getColumnCount(), 1);
+        block.rows.push(Array.from({ length: colCount }, () => ""));
+        touch(note);
+        saveState();
+        renderTable();
+      }),
+      createButton("Adicionar coluna", "ghost-btn", () => {
+        const colCount = Math.max(getColumnCount(), 1);
+        block.rows.forEach((row) => {
+          while (row.length < colCount) {
+            row.push("");
+          }
+          row.push("");
+        });
+        touch(note);
+        saveState();
+        renderTable();
+      })
+    );
+
+    renderTable();
+    content.append(tableWrap, actions);
   } else if (block.type === "embed") {
     const input = document.createElement("input");
     input.placeholder = "URL do embed";
