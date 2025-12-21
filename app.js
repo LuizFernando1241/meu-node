@@ -2079,19 +2079,7 @@ function renderInboxView(root) {
 }
 
 function renderCalendarView(root) {
-  const tabs = createElement("div", "week-tabs");
-  const weekBtn = createButton("Semana", "tab-btn", () => setCalendarTab("week"));
-  const monthBtn = createButton("Mes", "tab-btn", () => setCalendarTab("month"));
-  weekBtn.classList.toggle("active", state.ui.calendarTab === "week");
-  monthBtn.classList.toggle("active", state.ui.calendarTab === "month");
-  tabs.append(weekBtn, monthBtn);
-  root.append(tabs);
-
-  if (state.ui.calendarTab === "month") {
-    renderCalendarMonth(root);
-  } else {
-    renderCalendarWeek(root);
-  }
+  renderCalendarMonth(root);
 }
 
 function renderCalendarWeek(root) {
@@ -2130,6 +2118,11 @@ function renderCalendarMonth(root) {
   );
   const actions = createElement("div", "page-actions");
   actions.append(
+    createButton("Hoje", "ghost-btn", () => {
+      state.ui.calendarMonthOffset = 0;
+      saveState();
+      renderMain();
+    }),
     createButton("Mes -", "ghost-btn", () => shiftCalendarMonth(-1)),
     createButton("Mes +", "ghost-btn", () => shiftCalendarMonth(1))
   );
@@ -2490,17 +2483,7 @@ function renderNotesView(root, noteId) {
   const note = state.ui.notesNoteId ? getNote(state.ui.notesNoteId) : null;
   if (!note) {
     const empty = createElement("div", "empty");
-    empty.innerHTML = "<h3>Escolha uma nota</h3><p>Ou crie uma nova com um template.</p>";
-    const templates = createElement("div", "card-actions");
-    templates.append(
-      createButton("Reuniao", "ghost-btn", () => openNoteModal({ template: "meeting" })),
-      createButton("Diario", "ghost-btn", () => openNoteModal({ template: "diary" })),
-      createButton("Estudo", "ghost-btn", () => openNoteModal({ template: "study" })),
-      createButton("Planejamento mensal", "ghost-btn", () =>
-        openNoteModal({ template: "monthly" })
-      )
-    );
-    empty.append(templates);
+    empty.innerHTML = "<h3>Escolha uma nota</h3>";
     editor.append(empty);
   } else {
     state.ui.selected = { kind: "note", id: note.id };
