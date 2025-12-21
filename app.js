@@ -2459,10 +2459,6 @@ function renderNotesView(root, noteId) {
   const layout = createElement("div", "notes-layout");
   const tree = createElement("div", "notes-tree");
 
-  const addNoteBtn = createButton("Nova nota", "ghost-btn", () => openNoteModal({}));
-  const templatesBtn = createButton("Templates", "ghost-btn", openTemplateChooser);
-  tree.append(addNoteBtn, templatesBtn);
-
   const grouped = groupNotesByArea();
   Object.keys(grouped).forEach((areaId) => {
     const area = areaId ? getArea(areaId) : null;
