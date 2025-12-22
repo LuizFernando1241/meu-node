@@ -17,18 +17,6 @@ const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || "";
 const TASK_STATUSES = new Set(["todo", "doing", "done"]);
 const TASK_PRIORITIES = new Set(["low", "normal", "high"]);
 const PROJECT_STATUSES = new Set(["active", "paused", "done"]);
-const INBOX_TYPES = new Set(["task", "note", "event"]);
-const BLOCK_TYPES = new Set([
-  "title",
-  "text",
-  "heading",
-  "list",
-  "checklist",
-  "table",
-  "quote",
-  "divider",
-  "embed"
-]);
 
 if (!TURSO_URL) {
   console.error("Missing TURSO_URL.");
@@ -61,11 +49,6 @@ api.post("/tasks", upsertTask);
 api.patch("/tasks/:id", patchTask);
 api.delete("/tasks/:id", deleteTask);
 
-api.get("/events", listEvents);
-api.post("/events", upsertEvent);
-api.patch("/events/:id", patchEvent);
-api.delete("/events/:id", deleteEvent);
-
 api.get("/areas", listAreas);
 api.post("/areas", upsertArea);
 api.delete("/areas/:id", deleteArea);
@@ -75,29 +58,11 @@ api.post("/projects", upsertProject);
 api.patch("/projects/:id", patchProject);
 api.delete("/projects/:id", deleteProject);
 
-api.get("/inbox", listInbox);
-api.post("/inbox", createInboxItem);
-api.patch("/inbox/:id", patchInboxItem);
-api.post("/inbox/:id/process", processInboxItem);
-api.delete("/inbox/:id", deleteInboxItem);
-
 api.get("/notes", listNotes);
 api.get("/notes/:id", getNote);
 api.post("/notes", upsertNote);
 api.patch("/notes/:id", patchNote);
 api.delete("/notes/:id", deleteNote);
-
-api.get("/pages", listPages);
-api.post("/pages", upsertPage);
-api.patch("/pages/:id", patchPage);
-api.delete("/pages/:id", deletePage);
-
-api.get("/blocks", listBlocks);
-api.post("/blocks", upsertBlock);
-api.patch("/blocks/:id", patchBlock);
-api.delete("/blocks/:id", deleteBlock);
-
-api.get("/search", searchAll);
 
 app.use("/v1", api);
 
@@ -155,27 +120,6 @@ function asTimestamp(value) {
   return null;
 }
 
-function parseJson(value, fallback = null) {
-  if (!value) {
-    return fallback;
-  }
-  if (typeof value === "object") {
-    return value;
-  }
-  try {
-    return JSON.parse(value);
-  } catch (error) {
-    return fallback;
-  }
-}
-
-function inferInboxType(text) {
-  const value = (text || "").toLowerCase();
-  if (value.startsWith("nota:")) return "note";
-  if (/\b(\d{1,2}h|\d{1,2}:\d{2})\b/.test(value)) return "event";
-  return "task";
-}
-
 function mapTaskRow(row) {
   return {
     id: row.id,
@@ -192,19 +136,6 @@ function mapTaskRow(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at
-  };
-}
-
-function mapEventRow(row) {
-  return {
-    id: row.id,
-    title: row.title,
-    startAt: row.start_at,
-    endAt: row.end_at,
-    location: row.location || "",
-    notes: row.notes || "",
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
   };
 }
 
@@ -238,42 +169,6 @@ function mapNoteRow(row) {
     contentJson: row.content_json,
     createdAt: row.created_at,
     updatedAt: row.updated_at
-  };
-}
-
-function mapPageRow(row) {
-  return {
-    id: row.id,
-    title: row.title,
-    parentId: row.parent_id || null,
-    icon: row.icon || "",
-    cover: row.cover || "",
-    projectId: row.project_id || null,
-    areaId: row.area_id || null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
-
-function mapBlockRow(row) {
-  return {
-    id: row.id,
-    pageId: row.page_id,
-    parentBlockId: row.parent_block_id || null,
-    type: row.type,
-    position: row.position,
-    content: parseJson(row.content_json, {}),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
-
-function mapInboxRow(row) {
-  return {
-    id: row.id,
-    rawText: row.raw_text,
-    inferredType: row.inferred_type || "task",
-    createdAt: row.created_at
   };
 }
 
@@ -426,114 +321,6 @@ async function deleteTask(req, res) {
   }
 }
 
-async function listEvents(req, res) {
-  try {
-    const { from, to } = req.query;
-    const where = [];
-    const args = [];
-    if (from || to) {
-      const fromVal = asString(from) || "0000-01-01";
-      const toVal = asString(to) || "9999-12-31";
-      where.push("substr(start_at, 1, 10) BETWEEN ? AND ?");
-      args.push(fromVal, toVal);
-    }
-    let sql = "SELECT * FROM events";
-    if (where.length) {
-      sql += ` WHERE ${where.join(" AND ")}`;
-    }
-    sql += " ORDER BY start_at ASC";
-    const result = await client.execute({ sql, args });
-    res.json(result.rows.map(mapEventRow));
-  } catch (error) {
-    console.error("Error in GET /events:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function upsertEvent(req, res) {
-  try {
-    const body = req.body || {};
-    const id = asString(body.id) || createId("event");
-    const title = asString(body.title);
-    if (!title) {
-      return res.status(400).json({ error: "missing_title" });
-    }
-    const startAt = asString(body.startAt);
-    const endAt = asString(body.endAt);
-    if (!startAt || !endAt) {
-      return res.status(400).json({ error: "missing_time" });
-    }
-    const location = asString(body.location);
-    const notes = asString(body.notes);
-    const now = Date.now();
-    const existing = await client.execute({
-      sql: "SELECT created_at FROM events WHERE id = ?",
-      args: [id]
-    });
-    const existingRow = existing.rows && existing.rows[0] ? existing.rows[0] : null;
-    const createdAt = existingRow ? existingRow.created_at : now;
-
-    await client.execute({
-      sql:
-        "INSERT INTO events (id, title, start_at, end_at, location, notes, created_at, updated_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
-        "ON CONFLICT(id) DO UPDATE SET " +
-        "title = excluded.title, start_at = excluded.start_at, end_at = excluded.end_at, " +
-        "location = excluded.location, notes = excluded.notes, updated_at = excluded.updated_at",
-      args: [id, title, startAt, endAt, location, notes, createdAt, now]
-    });
-
-    const result = await client.execute({
-      sql: "SELECT * FROM events WHERE id = ?",
-      args: [id]
-    });
-    res.json(mapEventRow(result.rows[0]));
-  } catch (error) {
-    console.error("Error in POST /events:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function patchEvent(req, res) {
-  try {
-    const id = asString(req.params.id);
-    const existing = await client.execute({
-      sql: "SELECT * FROM events WHERE id = ?",
-      args: [id]
-    });
-    const row = existing.rows && existing.rows[0] ? existing.rows[0] : null;
-    if (!row) {
-      return res.status(404).json({ error: "not_found" });
-    }
-    const current = mapEventRow(row);
-    const body = req.body || {};
-    const merged = {
-      ...current,
-      ...body,
-      id
-    };
-    req.body = merged;
-    return upsertEvent(req, res);
-  } catch (error) {
-    console.error("Error in PATCH /events:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function deleteEvent(req, res) {
-  try {
-    const id = asString(req.params.id);
-    await client.execute({
-      sql: "DELETE FROM events WHERE id = ?",
-      args: [id]
-    });
-    res.sendStatus(204);
-  } catch (error) {
-    console.error("Error in DELETE /events:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
 async function listAreas(_req, res) {
   try {
     const result = await client.execute("SELECT * FROM areas ORDER BY sort_order ASC, name ASC");
@@ -675,191 +462,6 @@ async function deleteProject(req, res) {
   }
 }
 
-async function listInbox(_req, res) {
-  try {
-    const result = await client.execute("SELECT * FROM inbox ORDER BY created_at DESC");
-    res.json(result.rows.map(mapInboxRow));
-  } catch (error) {
-    console.error("Error in GET /inbox:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function createInboxItem(req, res) {
-  try {
-    const body = req.body || {};
-    const rawText = asString(body.rawText || body.title);
-    if (!rawText) {
-      return res.status(400).json({ error: "missing_text" });
-    }
-    const inferredType = INBOX_TYPES.has(body.inferredType)
-      ? body.inferredType
-      : inferInboxType(rawText);
-    const id = asString(body.id) || createId("inbox");
-    const createdAt = Date.now();
-    await client.execute({
-      sql:
-        "INSERT INTO inbox (id, raw_text, inferred_type, created_at) VALUES (?, ?, ?, ?) " +
-        "ON CONFLICT(id) DO UPDATE SET raw_text = excluded.raw_text, inferred_type = excluded.inferred_type",
-      args: [id, rawText, inferredType, createdAt]
-    });
-    const result = await client.execute({
-      sql: "SELECT * FROM inbox WHERE id = ?",
-      args: [id]
-    });
-    res.json(mapInboxRow(result.rows[0]));
-  } catch (error) {
-    console.error("Error in POST /inbox:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function patchInboxItem(req, res) {
-  try {
-    const id = asString(req.params.id);
-    const existing = await client.execute({
-      sql: "SELECT * FROM inbox WHERE id = ?",
-      args: [id]
-    });
-    const row = existing.rows && existing.rows[0] ? existing.rows[0] : null;
-    if (!row) {
-      return res.status(404).json({ error: "not_found" });
-    }
-    const current = mapInboxRow(row);
-    const body = req.body || {};
-    const patch = { ...body };
-    if (patch.title && !patch.rawText) {
-      patch.rawText = patch.title;
-    }
-    if (patch.kind && !patch.inferredType) {
-      patch.inferredType = patch.kind;
-    }
-    const merged = {
-      ...current,
-      ...patch,
-      id
-    };
-    req.body = merged;
-    return createInboxItem(req, res);
-  } catch (error) {
-    console.error("Error in PATCH /inbox:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function processInboxItem(req, res) {
-  try {
-    const id = asString(req.params.id);
-    const result = await client.execute({
-      sql: "SELECT * FROM inbox WHERE id = ?",
-      args: [id]
-    });
-    const row = result.rows && result.rows[0] ? result.rows[0] : null;
-    if (!row) {
-      return res.status(404).json({ error: "not_found" });
-    }
-    const body = req.body || {};
-    const type = INBOX_TYPES.has(body.type) ? body.type : row.inferred_type || "task";
-    const title = asString(body.title) || row.raw_text;
-    let created = null;
-
-    if (type === "note") {
-      const noteId = createId("note");
-      const now = Date.now();
-      await client.execute({
-        sql:
-          "INSERT INTO notes (id, area_id, project_id, title, content_json, created_at, updated_at) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        args: [
-          noteId,
-          asNullableString(body.areaId),
-          asNullableString(body.projectId),
-          title,
-          asString(body.contentJson || "[]"),
-          now,
-          now
-        ]
-      });
-      const note = await client.execute({
-        sql: "SELECT * FROM notes WHERE id = ?",
-        args: [noteId]
-      });
-      created = mapNoteRow(note.rows[0]);
-    } else if (type === "event") {
-      const eventId = createId("event");
-      const now = Date.now();
-      const startAt = asString(body.startAt);
-      const endAt = asString(body.endAt);
-      if (!startAt || !endAt) {
-        return res.status(400).json({ error: "missing_time" });
-      }
-      await client.execute({
-        sql:
-          "INSERT INTO events (id, title, start_at, end_at, location, notes, created_at, updated_at) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        args: [eventId, title, startAt, endAt, asString(body.location), asString(body.notes), now, now]
-      });
-      const event = await client.execute({
-        sql: "SELECT * FROM events WHERE id = ?",
-        args: [eventId]
-      });
-      created = mapEventRow(event.rows[0]);
-    } else {
-      const taskId = createId("task");
-      const now = Date.now();
-      await client.execute({
-        sql:
-          "INSERT INTO tasks (id, area_id, project_id, title, status, priority, due_date, scheduled_at, duration_min, notes, focus, created_at, updated_at, completed_at) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        args: [
-          taskId,
-          asNullableString(body.areaId),
-          asNullableString(body.projectId),
-          title,
-          TASK_STATUSES.has(body.status) ? body.status : "todo",
-          TASK_PRIORITIES.has(body.priority) ? body.priority : "normal",
-          asNullableString(body.dueDate),
-          asNullableString(body.scheduledAt),
-          asNumber(body.durationMin),
-          asString(body.notes),
-          body.focus ? 1 : 0,
-          now,
-          now,
-          null
-        ]
-      });
-      const task = await client.execute({
-        sql: "SELECT * FROM tasks WHERE id = ?",
-        args: [taskId]
-      });
-      created = mapTaskRow(task.rows[0]);
-    }
-
-    await client.execute({
-      sql: "DELETE FROM inbox WHERE id = ?",
-      args: [id]
-    });
-    res.json({ created, type });
-  } catch (error) {
-    console.error("Error in POST /inbox/:id/process:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function deleteInboxItem(req, res) {
-  try {
-    const id = asString(req.params.id);
-    await client.execute({
-      sql: "DELETE FROM inbox WHERE id = ?",
-      args: [id]
-    });
-    res.sendStatus(204);
-  } catch (error) {
-    console.error("Error in DELETE /inbox:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
 async function listNotes(req, res) {
   try {
     const { areaId, projectId, q } = req.query;
@@ -988,229 +590,6 @@ async function deleteNote(req, res) {
   }
 }
 
-async function listPages(_req, res) {
-  try {
-    const result = await client.execute("SELECT * FROM pages ORDER BY updated_at DESC");
-    res.json(result.rows.map(mapPageRow));
-  } catch (error) {
-    console.error("Error in GET /pages:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function upsertPage(req, res) {
-  try {
-    const body = req.body || {};
-    const id = asString(body.id) || createId("page");
-    const title = asString(body.title);
-    if (!title) {
-      return res.status(400).json({ error: "missing_title" });
-    }
-    const parentId = asNullableString(body.parentId);
-    const icon = asString(body.icon);
-    const cover = asString(body.cover);
-    const projectId = asNullableString(body.projectId);
-    const areaId = asNullableString(body.areaId);
-    const now = Date.now();
-
-    const existing = await client.execute({
-      sql: "SELECT created_at FROM pages WHERE id = ?",
-      args: [id]
-    });
-    const existingRow = existing.rows && existing.rows[0] ? existing.rows[0] : null;
-    const createdAt = existingRow ? existingRow.created_at : asTimestamp(body.createdAt) || now;
-    const updatedAt = asTimestamp(body.updatedAt) || now;
-
-    await client.execute({
-      sql:
-        "INSERT INTO pages (id, title, parent_id, icon, cover, project_id, area_id, created_at, updated_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-        "ON CONFLICT(id) DO UPDATE SET " +
-        "title = excluded.title, parent_id = excluded.parent_id, icon = excluded.icon, " +
-        "cover = excluded.cover, project_id = excluded.project_id, area_id = excluded.area_id, " +
-        "updated_at = excluded.updated_at",
-      args: [id, title, parentId, icon, cover, projectId, areaId, createdAt, updatedAt]
-    });
-    const result = await client.execute({
-      sql: "SELECT * FROM pages WHERE id = ?",
-      args: [id]
-    });
-    res.json(mapPageRow(result.rows[0]));
-  } catch (error) {
-    console.error("Error in POST /pages:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function patchPage(req, res) {
-  try {
-    const id = asString(req.params.id);
-    const existing = await client.execute({
-      sql: "SELECT * FROM pages WHERE id = ?",
-      args: [id]
-    });
-    if (!existing.rows || !existing.rows[0]) {
-      return res.status(404).json({ error: "not_found" });
-    }
-    const current = mapPageRow(existing.rows[0]);
-    const body = req.body || {};
-    const merged = {
-      ...current,
-      ...body,
-      id
-    };
-    req.body = merged;
-    return upsertPage(req, res);
-  } catch (error) {
-    console.error("Error in PATCH /pages:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function deletePage(req, res) {
-  try {
-    const id = asString(req.params.id);
-    await client.execute({
-      sql: "DELETE FROM pages WHERE id = ?",
-      args: [id]
-    });
-    res.sendStatus(204);
-  } catch (error) {
-    console.error("Error in DELETE /pages:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function listBlocks(req, res) {
-  try {
-    const pageId = asString(req.query.pageId);
-    if (pageId) {
-      const result = await client.execute({
-        sql: "SELECT * FROM blocks WHERE page_id = ? ORDER BY position ASC",
-        args: [pageId]
-      });
-      res.json(result.rows.map(mapBlockRow));
-      return;
-    }
-    const result = await client.execute("SELECT * FROM blocks ORDER BY page_id ASC, position ASC");
-    res.json(result.rows.map(mapBlockRow));
-  } catch (error) {
-    console.error("Error in GET /blocks:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function upsertBlock(req, res) {
-  try {
-    const body = req.body || {};
-    const id = asString(body.id) || createId("block");
-    const pageId = asString(body.pageId);
-    if (!pageId) {
-      return res.status(400).json({ error: "missing_page_id" });
-    }
-    const type = BLOCK_TYPES.has(body.type) ? body.type : "text";
-    const parentBlockId = asNullableString(body.parentBlockId);
-    const position = asNumber(body.position) || 0;
-    const content = parseJson(body.content, {});
-    const contentJson = JSON.stringify(content || {});
-    const now = Date.now();
-
-    const existing = await client.execute({
-      sql: "SELECT created_at FROM blocks WHERE id = ?",
-      args: [id]
-    });
-    const existingRow = existing.rows && existing.rows[0] ? existing.rows[0] : null;
-    const createdAt = existingRow ? existingRow.created_at : asTimestamp(body.createdAt) || now;
-    const updatedAt = asTimestamp(body.updatedAt) || now;
-
-    await client.execute({
-      sql:
-        "INSERT INTO blocks (id, page_id, parent_block_id, type, content_json, position, created_at, updated_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
-        "ON CONFLICT(id) DO UPDATE SET " +
-        "page_id = excluded.page_id, parent_block_id = excluded.parent_block_id, type = excluded.type, " +
-        "content_json = excluded.content_json, position = excluded.position, updated_at = excluded.updated_at",
-      args: [id, pageId, parentBlockId, type, contentJson, position, createdAt, updatedAt]
-    });
-    const result = await client.execute({
-      sql: "SELECT * FROM blocks WHERE id = ?",
-      args: [id]
-    });
-    res.json(mapBlockRow(result.rows[0]));
-  } catch (error) {
-    console.error("Error in POST /blocks:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function patchBlock(req, res) {
-  try {
-    const id = asString(req.params.id);
-    const existing = await client.execute({
-      sql: "SELECT * FROM blocks WHERE id = ?",
-      args: [id]
-    });
-    if (!existing.rows || !existing.rows[0]) {
-      return res.status(404).json({ error: "not_found" });
-    }
-    const current = mapBlockRow(existing.rows[0]);
-    const body = req.body || {};
-    const merged = {
-      ...current,
-      ...body,
-      id
-    };
-    req.body = merged;
-    return upsertBlock(req, res);
-  } catch (error) {
-    console.error("Error in PATCH /blocks:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function deleteBlock(req, res) {
-  try {
-    const id = asString(req.params.id);
-    await client.execute({
-      sql: "DELETE FROM blocks WHERE id = ?",
-      args: [id]
-    });
-    res.sendStatus(204);
-  } catch (error) {
-    console.error("Error in DELETE /blocks:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
-async function searchAll(req, res) {
-  try {
-    const q = asString(req.query.q);
-    if (!q) {
-      return res.json({ tasks: [], events: [], projects: [], notes: [], pages: [], blocks: [] });
-    }
-    const like = `%${q}%`;
-    const [tasks, events, projects, notes, pages, blocks] = await Promise.all([
-      client.execute({ sql: "SELECT * FROM tasks WHERE title LIKE ? LIMIT 5", args: [like] }),
-      client.execute({ sql: "SELECT * FROM events WHERE title LIKE ? LIMIT 5", args: [like] }),
-      client.execute({ sql: "SELECT * FROM projects WHERE title LIKE ? LIMIT 5", args: [like] }),
-      client.execute({ sql: "SELECT * FROM notes WHERE title LIKE ? LIMIT 5", args: [like] }),
-      client.execute({ sql: "SELECT * FROM pages WHERE title LIKE ? LIMIT 5", args: [like] }),
-      client.execute({ sql: "SELECT * FROM blocks WHERE content_json LIKE ? LIMIT 5", args: [like] })
-    ]);
-    res.json({
-      tasks: tasks.rows.map(mapTaskRow),
-      events: events.rows.map(mapEventRow),
-      projects: projects.rows.map(mapProjectRow),
-      notes: notes.rows.map(mapNoteRow),
-      pages: pages.rows.map(mapPageRow),
-      blocks: blocks.rows.map(mapBlockRow)
-    });
-  } catch (error) {
-    console.error("Error in GET /search:", error);
-    res.status(500).json({ error: "db_error" });
-  }
-}
-
 async function initDb() {
   await client.execute("PRAGMA foreign_keys = ON;");
 
@@ -1275,19 +654,6 @@ async function initDb() {
   }
 
   await client.execute(`
-    CREATE TABLE IF NOT EXISTS events (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      start_at TEXT NOT NULL,
-      end_at TEXT NOT NULL,
-      location TEXT,
-      notes TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-  `);
-
-  await client.execute(`
     CREATE TABLE IF NOT EXISTS notes (
       id TEXT PRIMARY KEY,
       area_id TEXT,
@@ -1301,65 +667,8 @@ async function initDb() {
     );
   `);
 
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS pages (
-      id TEXT PRIMARY KEY,
-      parent_id TEXT,
-      title TEXT NOT NULL,
-      icon TEXT,
-      cover TEXT,
-      project_id TEXT,
-      area_id TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      FOREIGN KEY (parent_id) REFERENCES pages(id) ON DELETE SET NULL,
-      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
-      FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE SET NULL
-    );
-  `);
-
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS blocks (
-      id TEXT PRIMARY KEY,
-      page_id TEXT NOT NULL,
-      parent_block_id TEXT,
-      type TEXT NOT NULL,
-      content_json TEXT NOT NULL,
-      position INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE,
-      FOREIGN KEY (parent_block_id) REFERENCES blocks(id) ON DELETE CASCADE
-    );
-  `);
-
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS inbox (
-      id TEXT PRIMARY KEY,
-      raw_text TEXT NOT NULL,
-      inferred_type TEXT,
-      created_at INTEGER NOT NULL
-    );
-  `);
-
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS relations (
-      id TEXT PRIMARY KEY,
-      from_type TEXT NOT NULL,
-      from_id TEXT NOT NULL,
-      to_type TEXT NOT NULL,
-      to_id TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-  `);
-
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks (status);");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_due_date_idx ON tasks (due_date);");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_scheduled_at_idx ON tasks (scheduled_at);");
-  await client.execute("CREATE INDEX IF NOT EXISTS events_start_at_idx ON events (start_at);");
   await client.execute("CREATE INDEX IF NOT EXISTS notes_updated_at_idx ON notes (updated_at);");
-  await client.execute("CREATE INDEX IF NOT EXISTS pages_updated_at_idx ON pages (updated_at);");
-  await client.execute("CREATE INDEX IF NOT EXISTS blocks_page_id_idx ON blocks (page_id);");
-  await client.execute("CREATE INDEX IF NOT EXISTS blocks_parent_id_idx ON blocks (parent_block_id);");
-  await client.execute("CREATE INDEX IF NOT EXISTS blocks_position_idx ON blocks (position);");
 }

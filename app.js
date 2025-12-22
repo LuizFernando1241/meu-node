@@ -4,8 +4,6 @@ const STORAGE_KEY = "meu-node-v2";
 const BASE_PATH = "/meu-node";
 const SAVE_DEBOUNCE_MS = 250;
 const WEEK_STARTS_MONDAY = true;
-const DEFAULT_EVENT_DURATION = 60;
-const TIME_STEP_MINUTES = 30;
 const API_BASE_URL = "https://meu-node.onrender.com";
 const APP_PIN_KEY = "lifeos-app-pin";
 const DEFAULT_APP_PIN = "meu-node-2025-abc123";
@@ -76,34 +74,17 @@ const NOTE_TEMPLATES = {
   })
 };
 
-const HOURS = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00"];
-const CALENDAR_START_HOUR = 7;
-const CALENDAR_END_HOUR = 18;
-
 const ROUTE_META = {
-  today: { title: "Hoje", eyebrow: "Executar" },
-  inbox: { title: "Inbox", eyebrow: "Capturar" },
-  week: { title: "Semana", eyebrow: "Planejar" },
   calendar: { title: "Calendario", eyebrow: "Agenda" },
   projects: { title: "Projetos", eyebrow: "Visao macro" },
   project: { title: "Projeto", eyebrow: "Detalhe" },
-  pages: { title: "Paginas", eyebrow: "Organizar" },
-  page: { title: "Pagina", eyebrow: "Detalhe" },
-  areas: { title: "Areas", eyebrow: "Estrutura" },
-  area: { title: "Area", eyebrow: "Detalhe" }
+  notes: { title: "Notas", eyebrow: "Post-its" }
 };
 
 const el = {
   appRoot: document.getElementById("appRoot"),
-  globalSearch: document.getElementById("globalSearch"),
-  searchClear: document.getElementById("searchClear"),
   createBtn: document.getElementById("createBtn"),
-  helpBtn: document.getElementById("helpBtn"),
-  countToday: document.getElementById("countToday"),
-  countInbox: document.getElementById("countInbox"),
-  countWeek: document.getElementById("countWeek"),
   countProjects: document.getElementById("countProjects"),
-  countPages: document.getElementById("countPages"),
   pageEyebrow: document.getElementById("pageEyebrow"),
   pageTitle: document.getElementById("pageTitle"),
   pageActions: document.getElementById("pageActions"),
@@ -122,9 +103,6 @@ const el = {
   modalCancel: document.getElementById("modalCancel"),
   modalSave: document.getElementById("modalSave"),
   modalDelete: document.getElementById("modalDelete"),
-  commandPalette: document.getElementById("commandPalette"),
-  commandInput: document.getElementById("commandInput"),
-  commandList: document.getElementById("commandList"),
   toastContainer: document.getElementById("toastContainer"),
   offlineBanner: document.getElementById("offlineBanner"),
   mobileCreateBtn: document.getElementById("mobileCreateBtn")
@@ -136,13 +114,6 @@ const modalState = {
   previousFocus: null
 };
 
-const commandState = {
-  open: false,
-  index: 0,
-  filtered: [],
-  previousFocus: null
-};
-
 let state = normalizeState(loadState());
 let saveTimer = null;
 let syncTimer = null;
@@ -151,17 +122,12 @@ let syncPending = false;
 let syncReady = false;
 let suppressSync = false;
 let lastSyncErrorAt = 0;
-let searchTimer = null;
 
 const pendingDeletes = {
-  pages: new Set(),
-  blocks: new Set(),
   tasks: new Set(),
-  events: new Set(),
   notes: new Set(),
   projects: new Set(),
-  areas: new Set(),
-  inbox: new Set()
+  areas: new Set()
 };
 
 async function init() {
@@ -175,131 +141,20 @@ async function init() {
     });
   }
   applyRouteFromLocation();
-  scheduleSearch(state.ui.search);
   renderAll();
   await loadRemoteState();
-  runMigrations();
 }
 
 init().catch((error) => {
   console.error("Failed to init app.", error);
 });
 
-function runMigrations() {
-  if (!state.meta.migrations) {
-    state.meta.migrations = { pagesFromNotes: false, pagesSeeded: false, notesRetired: false };
-  }
-  let changed = false;
-
-  if (!state.meta.migrations.notesRetired && state.notes.length) {
-    const existingPageIds = new Set(state.pages.map((page) => page.id));
-    state.notes.forEach((note) => {
-      if (!existingPageIds.has(note.id)) {
-        migrateNoteToPage(note);
-      }
-      markDeleted("notes", note.id);
-    });
-    state.notes = [];
-    state.meta.migrations.notesRetired = true;
-    changed = true;
-  }
-
-  if (!state.meta.migrations.pagesFromNotes && state.pages.length === 0 && state.notes.length) {
-    state.notes.forEach((note) => {
-      migrateNoteToPage(note);
-    });
-    state.meta.migrations.pagesFromNotes = true;
-    changed = true;
-  }
-
-  if (!state.meta.migrations.pagesSeeded && state.pages.length === 0) {
-    const page = createPage({ title: "Home" });
-    state.pages.push(page);
-    state.meta.migrations.pagesSeeded = true;
-    state.ui.pageId = page.id;
-    changed = true;
-  }
-
-  if (state.pages.length && !state.ui.pageId) {
-    state.ui.pageId = state.pages[0].id;
-    changed = true;
-  }
-
-  if (changed) {
-    saveState();
-    renderAll();
-  }
-}
-
-function migrateNoteToPage(note) {
-  if (!note) {
-    return null;
-  }
-  const page = createPage({
-    id: note.id,
-    title: note.title,
-    projectId: note.projectId || null,
-    areaId: note.areaId || null,
-    createdAt: note.createdAt,
-    updatedAt: note.updatedAt
-  });
-  state.pages.push(page);
-  (note.blocks || []).forEach((block, index) => {
-    const pageBlock = createBlock({
-      id: block.id,
-      pageId: page.id,
-      type: block.type,
-      position: index,
-      text: block.text,
-      items: block.items,
-      rows: block.rows,
-      url: block.url,
-      createdAt: note.createdAt,
-      updatedAt: note.updatedAt
-    });
-    state.blocks.push(pageBlock);
-  });
-  return page;
-}
-
 function bindEvents() {
-  if (el.globalSearch) {
-    el.globalSearch.addEventListener("input", () => {
-      state.ui.search = el.globalSearch.value;
-      scheduleSearch(state.ui.search);
-      saveStateDebounced();
-      renderAll();
-    });
-    el.globalSearch.addEventListener("keydown", (event) => {
-      if (event.key === "/" && !el.globalSearch.value) {
-        event.preventDefault();
-        openCommandPalette();
-      }
-    });
-  }
-
-  if (el.searchClear) {
-    el.searchClear.addEventListener("click", () => {
-      state.ui.search = "";
-      state.ui.searchResults = null;
-      state.ui.searching = false;
-      state.ui.lastSearchQuery = "";
-      if (el.globalSearch) {
-        el.globalSearch.value = "";
-      }
-      saveState();
-      renderAll();
-    });
-  }
-
   if (el.createBtn) {
     el.createBtn.addEventListener("click", openCreateChooser);
   }
   if (el.mobileCreateBtn) {
     el.mobileCreateBtn.addEventListener("click", openCreateChooser);
-  }
-  if (el.helpBtn) {
-    el.helpBtn.addEventListener("click", openHelpModal);
   }
 
   document.querySelectorAll("[data-route]").forEach((node) => {
@@ -345,7 +200,6 @@ function bindEvents() {
   }
 
   document.addEventListener("keydown", handleGlobalShortcuts);
-  document.addEventListener("click", handleGlobalClick);
   // Hide details panel on mobile when scrolling/touch-moving to avoid it covering content
   window.addEventListener("scroll", handleMobileScroll, { passive: true });
   window.addEventListener("touchmove", handleMobileScroll, { passive: true });
@@ -356,45 +210,23 @@ function bindEvents() {
 }
 
 function handleGlobalShortcuts(event) {
-  if (commandState.open) {
-    handleCommandPaletteKeydown(event);
+  if (!isModalOpen()) {
     return;
   }
-
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-    event.preventDefault();
-    openCommandPalette();
-    return;
+  if (event.key === "Escape") {
+    closeModal();
   }
-
-  if (isModalOpen()) {
-    if (event.key === "Escape") {
-      closeModal();
-    }
-    if (event.key === "Tab") {
-      trapTabKey(event);
-    }
-    return;
-  }
-
-  handleInboxShortcuts(event);
-}
-
-function handleGlobalClick(event) {
-  if (commandState.open && el.commandPalette) {
-    const card = el.commandPalette.querySelector(".command-card");
-    if (card && !card.contains(event.target)) {
-      closeCommandPalette();
-    }
+  if (event.key === "Tab") {
+    trapTabKey(event);
   }
 }
 
 function handlePopState() {
-  const path = normalizeRouteAlias(normalizePath(stripBasePath(window.location.pathname)));
+  const path = normalizePath(stripBasePath(window.location.pathname));
   const route = parseRoute(path);
   if (!route) {
-    state.ui.route = "/today";
-    history.replaceState({}, "", toPublicPath("/today"));
+    state.ui.route = "/calendar";
+    history.replaceState({}, "", toPublicPath("/calendar"));
   } else {
     state.ui.route = path;
   }
@@ -406,13 +238,13 @@ function applyRouteFromLocation() {
   const query = new URLSearchParams(window.location.search);
   const forwarded = query.get("path");
   if (forwarded) {
-    const normalizedForward = normalizeRouteAlias(normalizePath(forwarded));
+    const normalizedForward = normalizePath(forwarded);
     history.replaceState({}, "", toPublicPath(normalizedForward));
   }
-  const path = normalizeRouteAlias(normalizePath(stripBasePath(window.location.pathname)));
+  const path = normalizePath(stripBasePath(window.location.pathname));
   const route = parseRoute(path);
   if (!route) {
-    navigate("/today", { replace: true });
+    navigate("/calendar", { replace: true });
     return;
   }
   state.ui.route = path;
@@ -420,7 +252,7 @@ function applyRouteFromLocation() {
 }
 
 function navigate(path, options = {}) {
-  const normalized = normalizeRouteAlias(normalizePath(path));
+  const normalized = normalizePath(path);
   const route = parseRoute(normalized);
   if (!route) {
     return;
@@ -438,27 +270,14 @@ function navigate(path, options = {}) {
 
 function normalizePath(path) {
   if (!path || path === "/") {
-    return "/today";
+    return "/calendar";
   }
   let cleaned = path.trim();
   if (!cleaned.startsWith("/")) {
     cleaned = `/${cleaned}`;
   }
   cleaned = cleaned.replace(/\/+$/, "");
-  return cleaned || "/today";
-}
-
-function normalizeRouteAlias(path) {
-  if (!path) {
-    return path;
-  }
-  if (path === "/notes") {
-    return "/pages";
-  }
-  if (path.startsWith("/notes/")) {
-    return path.replace("/notes/", "/pages/");
-  }
-  return path;
+  return cleaned || "/calendar";
 }
 
 function stripBasePath(path) {
@@ -485,15 +304,6 @@ function toPublicPath(path) {
 function parseRoute(path) {
   const cleaned = normalizePath(path);
   const parts = cleaned.split("/").filter(Boolean);
-  if (!parts.length || parts[0] === "today") {
-    return { name: "today" };
-  }
-  if (parts[0] === "inbox") {
-    return { name: "inbox" };
-  }
-  if (parts[0] === "week") {
-    return { name: "week" };
-  }
   if (parts[0] === "calendar") {
     return { name: "calendar" };
   }
@@ -503,58 +313,29 @@ function parseRoute(path) {
     }
     return { name: "projects" };
   }
-  if (parts[0] === "pages") {
+  if (parts[0] === "notes") {
     if (parts[1]) {
-      return { name: "page", id: parts[1] };
+      return { name: "notes", id: parts[1] };
     }
-    return { name: "pages" };
-  }
-  if (parts[0] === "areas") {
-    if (parts[1]) {
-      return { name: "area", id: parts[1] };
-    }
-    return { name: "areas" };
+    return { name: "notes" };
   }
   return null;
 }
 
 function defaultState() {
   return {
-    pages: [],
-    blocks: [],
     tasks: [],
-    events: [],
     notes: [],
     projects: [],
     areas: [],
-    inbox: [],
-    meta: {
-      lastReviewAt: null,
-      migrations: {
-        pagesFromNotes: false,
-        pagesSeeded: false,
-        notesRetired: false
-      }
-    },
+    meta: {},
     ui: {
-      route: "/today",
-      search: "",
+      route: "/calendar",
       selected: { kind: null, id: null },
       loading: true,
-      searching: false,
-      lastSearchQuery: "",
-      searchResults: null,
-      weekTab: "plan",
-      weekOffset: 0,
-      weekShowTimeBlocks: true,
-      calendarTab: "month",
-      calendarTabTouched: false,
       calendarMonthOffset: 0,
       projectFilter: "active",
-      notesNoteId: null,
-      pageId: null,
-      inboxSelection: [],
-      overdueCollapsed: true
+      notesNoteId: null
     }
   };
 }
@@ -584,26 +365,14 @@ function normalizeState(data) {
     ...base.meta,
     ...(data.meta || {})
   };
-  if (!meta.migrations) {
-    meta.migrations = { ...base.meta.migrations };
-  } else {
-    meta.migrations = { ...base.meta.migrations, ...meta.migrations };
-  }
-  if (!["week", "month"].includes(ui.calendarTab)) {
-    ui.calendarTab = "month";
-  }
-  if (!ui.calendarTabTouched && ui.calendarTab === "week") {
-    ui.calendarTab = "month";
+  if (!parseRoute(ui.route)) {
+    ui.route = base.ui.route;
   }
   return {
-    pages: Array.isArray(data.pages) ? data.pages.map(normalizePage).filter(Boolean) : [],
-    blocks: Array.isArray(data.blocks) ? data.blocks.map(normalizeBlock).filter(Boolean) : [],
     tasks: Array.isArray(data.tasks) ? data.tasks.map(normalizeTask).filter(Boolean) : [],
-    events: Array.isArray(data.events) ? data.events.map(normalizeEvent).filter(Boolean) : [],
     notes: Array.isArray(data.notes) ? data.notes.map(normalizeNote).filter(Boolean) : [],
     projects: Array.isArray(data.projects) ? data.projects.map(normalizeProject).filter(Boolean) : [],
     areas: Array.isArray(data.areas) ? data.areas.map(normalizeArea).filter(Boolean) : [],
-    inbox: Array.isArray(data.inbox) ? data.inbox.map(normalizeInboxItem).filter(Boolean) : [],
     meta,
     ui
   };
@@ -678,121 +447,6 @@ async function apiDelete(path) {
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
-}
-
-function scheduleSearch(query) {
-  const trimmed = (query || "").trim();
-  if (!trimmed) {
-    state.ui.searchResults = null;
-    state.ui.searching = false;
-    state.ui.lastSearchQuery = "";
-    return;
-  }
-  if (searchTimer) {
-    clearTimeout(searchTimer);
-  }
-  searchTimer = setTimeout(() => {
-    searchTimer = null;
-    runSearch(trimmed);
-  }, 300);
-}
-
-async function runSearch(query) {
-  state.ui.searching = true;
-  state.ui.lastSearchQuery = query;
-  renderMain();
-  try {
-    const data = await apiRequest(`/search?q=${encodeURIComponent(query)}`);
-    state.ui.searchResults = {
-      tasks: Array.isArray(data.tasks) ? data.tasks.map(taskFromApi).filter(Boolean) : [],
-      events: Array.isArray(data.events) ? data.events.map(eventFromApi).filter(Boolean) : [],
-      projects: Array.isArray(data.projects) ? data.projects.map(projectFromApi).filter(Boolean) : [],
-      pages: Array.isArray(data.pages) ? data.pages.map(pageFromApi).filter(Boolean) : []
-    };
-  } catch (error) {
-    state.ui.searchResults = null;
-  } finally {
-    state.ui.searching = false;
-    renderMain();
-  }
-}
-
-function inferQuickCapture(text) {
-  const raw = String(text || "").trim();
-  const lower = raw.toLowerCase();
-  const now = new Date();
-
-  if (!raw) {
-    return null;
-  }
-
-  let kind = "task";
-  let date = "";
-  let time = "";
-
-  if (lower.startsWith("pagina:") || lower.startsWith("nota:")) {
-    kind = "note";
-  }
-
-  if (/\bhoje\b/.test(lower)) {
-    date = formatDate(now);
-  }
-  if (/\bamanha\b/.test(lower)) {
-    date = formatDate(addDays(now, 1));
-  }
-
-  const dateMatch = lower.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
-  if (dateMatch) {
-    const day = parseInt(dateMatch[1], 10);
-    const month = parseInt(dateMatch[2], 10);
-    let year = dateMatch[3] ? parseInt(dateMatch[3], 10) : now.getFullYear();
-    if (year < 100) {
-      year += 2000;
-    }
-    const parsed = new Date(year, month - 1, day);
-    if (!Number.isNaN(parsed.getTime())) {
-      date = formatDate(parsed);
-    }
-  }
-
-  const timeMatch = lower.match(/(\b\d{1,2}):(\d{2})/);
-  if (timeMatch) {
-    const hh = String(timeMatch[1]).padStart(2, "0");
-    const mm = String(timeMatch[2]).padStart(2, "0");
-    time = `${hh}:${mm}`;
-  } else {
-    const hourMatch = lower.match(/(\b\d{1,2})\s*h\b/);
-    if (hourMatch) {
-      const hh = String(hourMatch[1]).padStart(2, "0");
-      time = `${hh}:00`;
-    }
-  }
-
-  if (time) {
-    kind = "event";
-    if (!date) {
-      date = formatDate(now);
-    }
-  } else if (!date) {
-    date = formatDate(now);
-  }
-
-  let title = raw;
-  title = title.replace(/^(nota|pagina):\s*/i, "");
-  title = title.replace(/\bhoje\b/gi, "");
-  title = title.replace(/\bamanha\b/gi, "");
-  if (dateMatch) {
-    title = title.replace(dateMatch[0], "");
-  }
-  if (timeMatch) {
-    title = title.replace(timeMatch[0], "");
-  }
-  title = title.replace(/\s{2,}/g, " ").trim();
-  if (!title) {
-    title = raw;
-  }
-
-  return { kind, title, date, time };
 }
 
 function parseDateTime(value) {
@@ -906,118 +560,6 @@ function taskToApi(task) {
   };
 }
 
-function eventFromApi(data) {
-  if (!data) {
-    return null;
-  }
-  const startParts = parseDateTime(data.startAt);
-  const date = startParts.date || formatDate(new Date());
-  const start = startParts.time || "09:00";
-  const duration = diffMinutes(data.startAt, data.endAt);
-  return normalizeEvent({
-    id: data.id,
-    title: data.title,
-    date,
-    start,
-    duration,
-    location: data.location || "",
-    notes: data.notes || "",
-    createdAt: data.createdAt,
-    updatedAt: data.updatedAt
-  });
-}
-
-function eventToApi(event) {
-  const startAt = formatDateTime(event.date, event.start);
-  const duration = Number(event.duration) || DEFAULT_EVENT_DURATION;
-  const endAt = addMinutesToDateTime(event.date, event.start, duration);
-  return {
-    id: event.id,
-    title: event.title,
-    startAt,
-    endAt,
-    location: event.location || "",
-    notes: event.notes || ""
-  };
-}
-
-function pageFromApi(data) {
-  if (!data) {
-    return null;
-  }
-  return normalizePage({
-    id: data.id,
-    title: data.title,
-    parentId: data.parentId || null,
-    icon: data.icon || "",
-    cover: data.cover || "",
-    projectId: data.projectId || null,
-    areaId: data.areaId || null,
-    createdAt: data.createdAt,
-    updatedAt: data.updatedAt
-  });
-}
-
-function pageToApi(page) {
-  return {
-    id: page.id,
-    title: page.title,
-    parentId: page.parentId || null,
-    icon: page.icon || "",
-    cover: page.cover || "",
-    projectId: page.projectId || null,
-    areaId: page.areaId || null,
-    createdAt: page.createdAt,
-    updatedAt: page.updatedAt
-  };
-}
-
-function blockFromApi(data) {
-  if (!data) {
-    return null;
-  }
-  const content = data.content || {};
-  return normalizeBlock({
-    id: data.id,
-    pageId: data.pageId,
-    parentBlockId: data.parentBlockId || null,
-    type: data.type,
-    position: data.position,
-    text: content.text,
-    items: content.items,
-    rows: content.rows,
-    url: content.url,
-    createdAt: data.createdAt,
-    updatedAt: data.updatedAt
-  });
-}
-
-function blockToApi(block) {
-  const content = {};
-  if (["text", "heading", "quote", "title"].includes(block.type)) {
-    content.text = block.text || "";
-  }
-  if (block.type === "list" || block.type === "checklist") {
-    content.items = Array.isArray(block.items) ? block.items : [];
-  }
-  if (block.type === "table") {
-    content.rows = Array.isArray(block.rows) ? block.rows : [];
-  }
-  if (block.type === "embed") {
-    content.url = block.url || "";
-  }
-  return {
-    id: block.id,
-    pageId: block.pageId,
-    parentBlockId: block.parentBlockId || null,
-    type: block.type,
-    position: Number.isFinite(block.position) ? block.position : 0,
-    content,
-    createdAt: block.createdAt,
-    updatedAt: block.updatedAt
-  };
-}
-
 function noteFromApi(data) {
   if (!data) {
     return null;
@@ -1096,51 +638,22 @@ function areaToApi(area) {
   };
 }
 
-function inboxFromApi(data) {
-  if (!data) {
-    return null;
-  }
-  return normalizeInboxItem({
-    id: data.id,
-    title: data.rawText || "",
-    kind: data.inferredType || "task",
-    createdAt: data.createdAt
-  });
-}
-
-function inboxToApi(item) {
-  return {
-    id: item.id,
-    rawText: item.title || "",
-    inferredType: item.kind || "task",
-    createdAt: item.createdAt
-  };
-}
-
 async function loadRemoteState() {
   try {
     state.ui.loading = true;
     renderMain();
-    const [pages, blocks, areas, projects, tasks, events, notes, inbox] = await Promise.all([
-      apiRequest("/pages"),
-      apiRequest("/blocks"),
+    const [areas, projects, tasks, notes] = await Promise.all([
       apiRequest("/areas"),
       apiRequest("/projects"),
       apiRequest("/tasks"),
-      apiRequest("/events"),
-      apiRequest("/notes"),
-      apiRequest("/inbox")
+      apiRequest("/notes")
     ]);
 
     const nextState = normalizeState({
-      pages: (pages || []).map(pageFromApi).filter(Boolean),
-      blocks: (blocks || []).map(blockFromApi).filter(Boolean),
       areas: (areas || []).map(areaFromApi).filter(Boolean),
       projects: (projects || []).map(projectFromApi).filter(Boolean),
       tasks: (tasks || []).map(taskFromApi).filter(Boolean),
-      events: (events || []).map(eventFromApi).filter(Boolean),
       notes: (notes || []).map(noteFromApi).filter(Boolean),
-      inbox: (inbox || []).map(inboxFromApi).filter(Boolean),
       meta: state.meta,
       ui: state.ui
     });
@@ -1211,14 +724,10 @@ async function flushDirty() {
   syncPending = false;
   try {
     await flushDeletes();
-    await flushList(state.pages, upsertPage);
-    await flushList(state.blocks, upsertBlock);
     await flushList(state.areas, upsertArea);
     await flushList(state.projects, upsertProject);
     await flushList(state.tasks, upsertTask);
-    await flushList(state.events, upsertEvent);
     await flushList(state.notes, upsertNote);
-    await flushList(state.inbox, upsertInbox);
   } catch (error) {
     const now = Date.now();
     if (now - lastSyncErrorAt > 5000) {
@@ -1235,14 +744,10 @@ async function flushDirty() {
 }
 
 async function flushDeletes() {
-  await flushDeleteSet("blocks", pendingDeletes.blocks, (id) => apiDelete(`/blocks/${id}`));
-  await flushDeleteSet("pages", pendingDeletes.pages, (id) => apiDelete(`/pages/${id}`));
   await flushDeleteSet("tasks", pendingDeletes.tasks, (id) => apiDelete(`/tasks/${id}`));
-  await flushDeleteSet("events", pendingDeletes.events, (id) => apiDelete(`/events/${id}`));
   await flushDeleteSet("notes", pendingDeletes.notes, (id) => apiDelete(`/notes/${id}`));
   await flushDeleteSet("projects", pendingDeletes.projects, (id) => apiDelete(`/projects/${id}`));
   await flushDeleteSet("areas", pendingDeletes.areas, (id) => apiDelete(`/areas/${id}`));
-  await flushDeleteSet("inbox", pendingDeletes.inbox, (id) => apiDelete(`/inbox/${id}`));
 }
 
 async function flushDeleteSet(_kind, set, action) {
@@ -1274,30 +779,6 @@ async function upsertTask(task) {
   return taskFromApi(data);
 }
 
-async function upsertPage(page) {
-  const data = await apiRequest("/pages", {
-    method: "POST",
-    body: JSON.stringify(pageToApi(page))
-  });
-  return pageFromApi(data);
-}
-
-async function upsertBlock(block) {
-  const data = await apiRequest("/blocks", {
-    method: "POST",
-    body: JSON.stringify(blockToApi(block))
-  });
-  return blockFromApi(data);
-}
-
-async function upsertEvent(event) {
-  const data = await apiRequest("/events", {
-    method: "POST",
-    body: JSON.stringify(eventToApi(event))
-  });
-  return eventFromApi(data);
-}
-
 async function upsertNote(note) {
   const data = await apiRequest("/notes", {
     method: "POST",
@@ -1320,14 +801,6 @@ async function upsertArea(area) {
     body: JSON.stringify(areaToApi(area))
   });
   return areaFromApi(data);
-}
-
-async function upsertInbox(item) {
-  const data = await apiRequest("/inbox", {
-    method: "POST",
-    body: JSON.stringify(inboxToApi(item))
-  });
-  return inboxFromApi(data);
 }
 
 function normalizeUpdatedAt(value) {
@@ -1371,52 +844,6 @@ function normalizeTask(task) {
     normalized.timeBlock && typeof normalized.timeBlock === "object"
       ? normalizeTimeBlock(normalized.timeBlock)
       : null;
-  normalized.createdAt =
-    normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
-  normalized.updatedAt =
-    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
-  return normalized;
-}
-
-function normalizeEvent(event) {
-  if (!event || typeof event !== "object") {
-    return null;
-  }
-  const normalized = { ...event };
-  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("event");
-  normalized.title = typeof normalized.title === "string" ? normalized.title : "Novo evento";
-  normalized.date = typeof normalized.date === "string" ? normalized.date : formatDate(new Date());
-  normalized.start = typeof normalized.start === "string" ? normalized.start : "09:00";
-  normalized.duration = Number.isFinite(normalized.duration)
-    ? Math.max(15, normalized.duration)
-    : 60;
-  normalized.location = typeof normalized.location === "string" ? normalized.location : "";
-  normalized.notes = typeof normalized.notes === "string" ? normalized.notes : "";
-  delete normalized.startAt;
-  delete normalized.endAt;
-  delete normalized.projectId;
-  delete normalized.areaId;
-  delete normalized.recurrence;
-  delete normalized.archived;
-  normalized.createdAt =
-    normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
-  normalized.updatedAt =
-    normalizeUpdatedAt(normalized.updatedAt) || normalizeUpdatedAt(normalized.createdAt);
-  return normalized;
-}
-
-function normalizePage(page) {
-  if (!page || typeof page !== "object") {
-    return null;
-  }
-  const normalized = { ...page };
-  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("page");
-  normalized.title = typeof normalized.title === "string" ? normalized.title : "Nova pagina";
-  normalized.parentId = typeof normalized.parentId === "string" ? normalized.parentId : null;
-  normalized.icon = typeof normalized.icon === "string" ? normalized.icon : "";
-  normalized.cover = typeof normalized.cover === "string" ? normalized.cover : "";
-  normalized.projectId = typeof normalized.projectId === "string" ? normalized.projectId : null;
-  normalized.areaId = typeof normalized.areaId === "string" ? normalized.areaId : null;
   normalized.createdAt =
     normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
   normalized.updatedAt =
@@ -1518,23 +945,6 @@ function normalizeArea(area) {
   return normalized;
 }
 
-function normalizeInboxItem(item) {
-  if (!item || typeof item !== "object") {
-    return null;
-  }
-  const normalized = { ...item };
-  normalized.id = typeof normalized.id === "string" ? normalized.id : uid("cap");
-  normalized.title = typeof normalized.title === "string" ? normalized.title : "Captura";
-  normalized.kind = ["task", "note", "event"].includes(normalized.kind)
-    ? normalized.kind
-    : "task";
-  delete normalized.rawText;
-  delete normalized.inferredType;
-  normalized.createdAt =
-    normalizeUpdatedAt(normalized.createdAt) || new Date().toISOString();
-  return normalized;
-}
-
 function normalizeTimeBlock(block) {
   if (!block || typeof block !== "object") {
     return null;
@@ -1557,18 +967,6 @@ function formatDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
-function formatTimeLabel(time) {
-  return time || "--:--";
-}
-
-function getRoundedTime() {
-  const now = new Date();
-  const minutes = now.getMinutes();
-  const step = Math.max(15, Number(TIME_STEP_MINUTES) || 30);
-  const rounded = Math.ceil(minutes / step) * step;
-  now.setMinutes(rounded, 0, 0);
-  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-}
 
 function parseDate(value) {
   if (!value || typeof value !== "string") {
@@ -1597,27 +995,6 @@ function addMonths(date, months) {
   return result;
 }
 
-function buildTimeSlots(startHour, endHour, stepMinutes) {
-  const slots = [];
-  const start = startHour * 60;
-  const end = endHour * 60;
-  const step = Math.max(15, Number(stepMinutes) || 30);
-  for (let minutes = start; minutes <= end; minutes += step) {
-    const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
-    const mm = String(minutes % 60).padStart(2, "0");
-    slots.push(`${hh}:${mm}`);
-  }
-  return slots;
-}
-
-function getCalendarSlots() {
-  return buildTimeSlots(
-    CALENDAR_START_HOUR,
-    CALENDAR_END_HOUR,
-    TIME_STEP_MINUTES
-  );
-}
-
 function dateOnly(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -1632,21 +1009,6 @@ function sameDay(a, b) {
   );
 }
 
-function timeToMinutes(time) {
-  if (!time || typeof time !== "string") {
-    return 0;
-  }
-  const parts = time.split(":").map(Number);
-  if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) {
-    return 0;
-  }
-  return parts[0] * 60 + parts[1];
-}
-
-function formatDayLabel(date) {
-  return date.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" });
-}
-
 function getWeekStart(date, startsMonday) {
   if (!date || !(date instanceof Date)) {
     date = new Date();
@@ -1654,55 +1016,6 @@ function getWeekStart(date, startsMonday) {
   const day = date.getDay();
   const diff = startsMonday ? (day === 0 ? -6 : 1 - day) : -day;
   return addDays(dateOnly(date), diff);
-}
-
-function getWeekDays(offset = 0) {
-  const base = addDays(new Date(), offset * 7);
-  const weekStart = getWeekStart(base, WEEK_STARTS_MONDAY);
-  const days = [];
-  for (let i = 0; i < 7; i += 1) {
-    const day = addDays(weekStart, i);
-    days.push({
-      date: formatDate(day),
-      label: formatDayLabel(day),
-      isToday: sameDay(day, new Date())
-    });
-  }
-  return days;
-}
-
-function createPage(data = {}) {
-  const page = normalizePage({
-    id: data.id || uid("page"),
-    title: data.title || "Nova pagina",
-    parentId: data.parentId || null,
-    icon: data.icon || "",
-    cover: data.cover || "",
-    projectId: data.projectId || null,
-    areaId: data.areaId || null,
-    createdAt: data.createdAt || new Date().toISOString(),
-    updatedAt: data.updatedAt || new Date().toISOString()
-  });
-  markDirty(page);
-  return page;
-}
-
-function createBlock(data = {}) {
-  const block = normalizeBlock({
-    id: data.id || uid("block"),
-    pageId: data.pageId || "",
-    parentBlockId: data.parentBlockId || null,
-    type: data.type || "text",
-    position: Number.isFinite(data.position) ? data.position : 0,
-    text: data.text,
-    items: data.items,
-    rows: data.rows,
-    url: data.url,
-    createdAt: data.createdAt || new Date().toISOString(),
-    updatedAt: data.updatedAt || new Date().toISOString()
-  });
-  markDirty(block);
-  return block;
 }
 
 function createTask(data = {}) {
@@ -1722,22 +1035,6 @@ function createTask(data = {}) {
   });
   markDirty(task);
   return task;
-}
-
-function createEvent(data = {}) {
-  const event = normalizeEvent({
-    id: uid("event"),
-    title: data.title || "Novo evento",
-    date: data.date || formatDate(new Date()),
-    start: data.start || "09:00",
-    duration: Number.isFinite(data.duration) ? data.duration : DEFAULT_EVENT_DURATION,
-    location: data.location || "",
-    notes: data.notes || "",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  });
-  markDirty(event);
-  return event;
 }
 
 function createNote(data = {}) {
@@ -1779,33 +1076,11 @@ function createArea(data = {}) {
   return area;
 }
 
-function createInboxItem(title) {
-  const item = normalizeInboxItem({
-    id: uid("cap"),
-    title: title || "Captura",
-    kind: suggestInboxKind(title),
-    createdAt: new Date().toISOString()
-  });
-  markDirty(item);
-  return item;
-}
-
 function touch(item) {
   if (item) {
     item.updatedAt = new Date().toISOString();
     markDirty(item);
   }
-}
-
-function suggestInboxKind(text) {
-  const value = (text || "").toLowerCase();
-  if (value.includes("reuniao") || value.includes("call") || value.includes("evento")) {
-    return "event";
-  }
-  if (value.includes("pagina") || value.includes("nota") || value.includes("ideia")) {
-    return "note";
-  }
-  return "task";
 }
 
 function matchesQuery(value, query) {
@@ -1818,54 +1093,14 @@ function matchesQuery(value, query) {
   return value.toLowerCase().includes(query.toLowerCase());
 }
 
-function getBlockText(block) {
-  if (!block) {
-    return "";
-  }
-  if (block.type === "list") {
-    return (block.items || []).join(" ");
-  }
-  if (block.type === "checklist") {
-    return (block.items || []).map((item) => item.text).join(" ");
-  }
-  if (block.type === "table") {
-    return (block.rows || []).map((row) => row.join(" ")).join(" ");
-  }
-  if (block.type === "embed") {
-    return block.url || "";
-  }
-  return block.text || "";
-}
-
 function getTask(id) {
   return state.tasks.find((task) => task.id === id) || null;
-}
-
-function getEvent(id) {
-  return state.events.find((event) => event.id === id) || null;
 }
 
 function getNote(id) {
   return state.notes.find((note) => note.id === id) || null;
 }
 
-function getPage(id) {
-  return state.pages.find((page) => page.id === id) || null;
-}
-
-function getPageBlocks(pageId, parentBlockId = null) {
-  return state.blocks
-    .filter((block) => block.pageId === pageId && block.parentBlockId === parentBlockId)
-    .sort((a, b) => a.position - b.position);
-}
-
-function getNextBlockPosition(pageId, parentBlockId = null) {
-  const blocks = getPageBlocks(pageId, parentBlockId);
-  if (!blocks.length) {
-    return 0;
-  }
-  return blocks[blocks.length - 1].position + 1;
-}
 
 function getProject(id) {
   return state.projects.find((project) => project.id === id) || null;
@@ -1880,9 +1115,6 @@ function getSelectedItem() {
   if (selection.kind === "task") {
     return { kind: "task", item: getTask(selection.id) };
   }
-  if (selection.kind === "event") {
-    return { kind: "event", item: getEvent(selection.id) };
-  }
   if (selection.kind === "note") {
     return { kind: "note", item: getNote(selection.id) };
   }
@@ -1892,87 +1124,11 @@ function getSelectedItem() {
   return { kind: null, item: null };
 }
 
-function getTodayKey() {
-  return formatDate(new Date());
-}
-
-function getOverdueTasks() {
-  const today = dateOnly(new Date());
-  return state.tasks.filter((task) => {
-    if (task.status === "done" || !task.dueDate) {
-      return false;
-    }
-    const due = parseDate(task.dueDate);
-    return due && due < today;
-  });
-}
-
-function getTodayTasks() {
-  const today = getTodayKey();
-  return state.tasks.filter((task) => {
-    if (task.status === "done" || task.timeBlock) {
-      return false;
-    }
-    return task.dueDate === today;
-  });
-}
-
-function getNextDaysTasks(days = 7) {
-  const today = dateOnly(new Date());
-  const end = addDays(today, days - 1); // -1 para incluir o último dia no intervalo
-  return state.tasks.filter((task) => {
-    if (task.status === "done" || !task.dueDate) {
-      return false;
-    }
-    const due = parseDate(task.dueDate);
-    return due && due >= today && due <= end;
-  });
-}
-
-function getAgendaItems(dateKey) {
-  const items = [];
-  state.events.forEach((event) => {
-    if (event.date === dateKey) {
-      items.push({
-        kind: "event",
-        id: event.id,
-        title: event.title,
-        start: event.start,
-        duration: event.duration
-      });
-    }
-  });
-  state.tasks.forEach((task) => {
-    if (task.status === "done" || !task.timeBlock) {
-      return;
-    }
-    if (task.timeBlock.date === dateKey) {
-      items.push({
-        kind: "task",
-        id: task.id,
-        title: task.title,
-        start: task.timeBlock.start,
-        duration: task.timeBlock.duration
-      });
-    }
-  });
-  items.sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
-  return items;
-}
-
-function countFocusTasks() {
-  return state.tasks.filter((task) => task.focus && task.status !== "done").length;
-}
-
 function isFirstRun() {
   return (
-    state.pages.length === 0 &&
-    state.blocks.length === 0 &&
     state.tasks.length === 0 &&
-    state.events.length === 0 &&
     state.notes.length === 0 &&
-    state.projects.length === 0 &&
-    state.inbox.length === 0
+    state.projects.length === 0
   );
 }
 
@@ -1985,12 +1141,6 @@ function renderAll() {
 }
 
 function renderTopbar() {
-  if (el.globalSearch) {
-    el.globalSearch.value = state.ui.search || "";
-  }
-  if (el.searchClear) {
-    el.searchClear.classList.toggle("hidden", !state.ui.search);
-  }
 }
 
 function renderSidebar() {
@@ -2003,22 +1153,12 @@ function renderSidebar() {
     node.classList.toggle("active", isActive);
   });
 
-  setCount(el.countInbox, state.inbox.length);
-  setCount(el.countToday, getTodayTasks().length + getAgendaItems(getTodayKey()).length);
-  setCount(el.countWeek, getNextDaysTasks(7).length);
   setCount(el.countProjects, state.projects.filter((project) => project.status === "active").length);
-  setCount(el.countPages, state.pages.length);
 }
 
 function renderPageHeader() {
   const route = parseRoute(state.ui.route);
-  let meta = route ? ROUTE_META[route.name] : ROUTE_META.today;
-  if (route && route.name === "page") {
-    const page = getPage(route.id);
-    if (page && page.title) {
-      meta = { ...meta, title: page.title };
-    }
-  }
+  const meta = route ? ROUTE_META[route.name] : ROUTE_META.calendar;
   if (el.pageEyebrow) {
     el.pageEyebrow.textContent = meta.eyebrow;
   }
@@ -2034,7 +1174,7 @@ function renderPageHeader() {
 function renderMain() {
   const route = parseRoute(state.ui.route);
   if (!route) {
-    navigate("/today", { replace: true });
+    navigate("/calendar", { replace: true });
     return;
   }
   el.viewRoot.innerHTML = "";
@@ -2044,98 +1184,18 @@ function renderMain() {
     return;
   }
 
-  const query = (state.ui.search || "").trim().toLowerCase();
-  if (query) {
-    renderGlobalSearchView(el.viewRoot, query);
-    return;
-  }
-
-  if (route.name === "today") {
-    renderTodayView(el.viewRoot);
-  } else if (route.name === "inbox") {
-    renderInboxView(el.viewRoot);
-  } else if (route.name === "week") {
-    renderWeekView(el.viewRoot);
-  } else if (route.name === "calendar") {
+  if (route.name === "calendar") {
     renderCalendarView(el.viewRoot);
   } else if (route.name === "projects") {
     renderProjectsView(el.viewRoot);
   } else if (route.name === "project") {
     renderProjectDetail(el.viewRoot, route.id);
-  } else if (route.name === "pages") {
-    renderPagesView(el.viewRoot);
-  } else if (route.name === "page") {
-    renderPagesView(el.viewRoot, route.id);
-  } else if (route.name === "areas") {
-    renderAreasView(el.viewRoot);
-  } else if (route.name === "area") {
-    renderAreaDetail(el.viewRoot, route.id);
+  } else if (route.name === "notes") {
+    renderNotesView(el.viewRoot, route.id);
   } else {
     const empty = createElement("div", "empty", "Rota nao encontrada.");
     el.viewRoot.append(empty);
   }
-}
-
-function renderGlobalSearchView(root, query) {
-  const apiResults =
-    state.ui.searchResults && state.ui.lastSearchQuery === query
-      ? state.ui.searchResults
-      : null;
-  const results = apiResults || getSearchResults(query);
-  results.pages = Array.isArray(results.pages) ? results.pages : [];
-  results.tasks = Array.isArray(results.tasks) ? results.tasks : [];
-  results.events = Array.isArray(results.events) ? results.events : [];
-  results.projects = Array.isArray(results.projects) ? results.projects : [];
-  const wrap = createElement("div", "today-grid");
-
-  if (state.ui.searching && !apiResults) {
-    wrap.append(createElement("div", "list-meta", "Buscando..."));
-    root.append(wrap);
-    return;
-  }
-
-  if (
-    results.tasks.length === 0 &&
-    results.events.length === 0 &&
-    results.projects.length === 0 &&
-    results.pages.length === 0
-  ) {
-    wrap.append(createElement("div", "empty", "Sem resultados."));
-    root.append(wrap);
-    return;
-  }
-
-  if (results.tasks.length) {
-    const section = createSection("Tarefas", "");
-    results.tasks.forEach((task) => section.body.append(createTaskRow(task)));
-    wrap.append(section.section);
-  }
-  if (results.events.length) {
-    const section = createSection("Eventos", "");
-    results.events.forEach((event) => section.body.append(createEventRow(event)));
-    wrap.append(section.section);
-  }
-  if (results.projects.length) {
-    const section = createSection("Projetos", "");
-    results.projects.forEach((project) => {
-      const card = createProjectCard(project);
-      card.addEventListener("click", () => navigate(`/projects/${project.id}`));
-      section.body.append(card);
-    });
-    wrap.append(section.section);
-  }
-  if (results.pages.length) {
-    const section = createSection("Paginas", "");
-    results.pages.forEach((page) => {
-      const row = createElement("div", "task-row");
-      row.append(createElement("div", "task-title", page.title));
-      row.addEventListener("click", () => navigate(`/pages/${page.id}`));
-      section.body.append(row);
-    });
-    wrap.append(section.section);
-  }
-
-  root.append(wrap);
 }
 
 function renderLoadingView(root) {
@@ -2149,70 +1209,17 @@ function renderLoadingView(root) {
   root.append(wrap);
 }
 
-function getSearchResults(query) {
-  const tasks = state.tasks.filter((task) =>
-    matchesQuery(`${task.title} ${task.notes || ""}`, query)
-  );
-  const events = state.events.filter((event) =>
-    matchesQuery(`${event.title} ${event.notes || ""}`, query)
-  );
-  const projects = state.projects.filter((project) =>
-    matchesQuery(`${project.title} ${project.objective || ""}`, query)
-  );
-  const pages = state.pages.filter((page) => {
-    const blockText = getPageBlocks(page.id).map(getBlockText).join(" ");
-    return matchesQuery(`${page.title || ""} ${blockText}`, query);
-  });
-  return {
-    tasks: tasks.slice(0, 6),
-    events: events.slice(0, 6),
-    projects: projects.slice(0, 6),
-    pages: pages.slice(0, 6)
-  };
-}
-
 function renderPageActions(route, container) {
   if (!route) {
     return;
-  }
-  if (route.name === "today") {
-    container.append(
-      createButton("Nova tarefa", "ghost-btn", () => openTaskModal({ dueDate: getTodayKey() })),
-      createButton("Novo evento", "ghost-btn", () => openEventModal({ date: getTodayKey() }))
-    );
-  }
-  if (route.name === "inbox") {
-    container.append(
-      createButton("Capturar", "ghost-btn", () => {
-        const input = document.querySelector(".capture-input");
-        if (input) {
-          input.focus();
-        }
-      })
-    );
-  }
-  if (route.name === "week") {
-    container.append(
-      createButton("Hoje", "ghost-btn", () => {
-        state.ui.weekOffset = 0;
-        saveState();
-        renderMain();
-      }),
-      createButton("Nova tarefa", "ghost-btn", () => openTaskModal({})),
-      createButton("Novo evento", "ghost-btn", () => openEventModal({})),
-      createButton("Semana -", "ghost-btn", () => shiftWeek(-1)),
-      createButton("Semana +", "ghost-btn", () => shiftWeek(1))
-    );
   }
   if (route.name === "calendar") {
     container.append(
       createButton("Hoje", "ghost-btn", () => {
         state.ui.calendarMonthOffset = 0;
-        state.ui.weekOffset = 0;
         saveState();
         renderMain();
-      }),
-      createButton("Novo evento", "primary-btn", () => openEventModal({}))
+      })
     );
   }
   if (route.name === "projects") {
@@ -2223,14 +1230,8 @@ function renderPageActions(route, container) {
       createButton("Nova tarefa", "ghost-btn", () => openTaskModal({ projectId: route.id }))
     );
   }
-  if (route.name === "pages" || route.name === "page") {
-    container.append(
-      createButton("Nova pagina", "primary-btn", () => createPageAndOpen()),
-      createButton("Templates", "ghost-btn", openTemplateChooser)
-    );
-  }
-  if (route.name === "areas") {
-    container.append(createButton("Nova area", "primary-btn", openAreaModal));
+  if (route.name === "notes") {
+    container.append(createButton("Nova nota", "primary-btn", () => openNoteModal({})));
   }
 }
 
@@ -2248,328 +1249,8 @@ function completeTaskWithUndo(task) {
   });
 }
 
-function getHeroCandidate() {
-  const todayKey = getTodayKey();
-  const focusTask = state.tasks.find((task) => task.focus && task.status !== "done");
-  if (focusTask) {
-    return { kind: "task", item: focusTask };
-  }
-
-  const agenda = getAgendaItems(todayKey);
-  if (agenda.length) {
-    const next = agenda[0];
-    if (next.kind === "event") {
-      const event = getEvent(next.id);
-      if (event) {
-        return { kind: "event", item: event };
-      }
-    }
-    if (next.kind === "task") {
-      const task = getTask(next.id);
-      if (task) {
-        return { kind: "task", item: task };
-      }
-    }
-  }
-
-  const overdue = getOverdueTasks()[0];
-  if (overdue) {
-    return { kind: "task", item: overdue };
-  }
-
-  const todayTask = getTodayTasks().find((task) => task.status !== "done");
-  if (todayTask) {
-    return { kind: "task", item: todayTask };
-  }
-
-  const nextTask = getNextDaysTasks(7).find((task) => task.status !== "done");
-  if (nextTask) {
-    return { kind: "task", item: nextTask };
-  }
-  return null;
-}
-
-function createHeroCard(hero) {
-  const card = createElement("div", "card hero-card");
-  const title = createElement("div", "hero-title", hero.item.title);
-  const metaParts = [];
-
-  if (hero.kind === "event") {
-    if (hero.item.date) metaParts.push(hero.item.date);
-    if (hero.item.start) metaParts.push(hero.item.start);
-  } else if (hero.kind === "task") {
-    if (hero.item.timeBlock) {
-      if (hero.item.timeBlock.date) metaParts.push(hero.item.timeBlock.date);
-      if (hero.item.timeBlock.start) metaParts.push(hero.item.timeBlock.start);
-    } else if (hero.item.dueDate) {
-      metaParts.push(hero.item.dueDate);
-    }
-  }
-
-  const meta = metaParts.length ? createElement("div", "list-meta", metaParts.join(" ")) : null;
-  const actions = createElement("div", "card-actions");
-
-  if (hero.kind === "task") {
-    actions.append(
-      createButton("Concluir", "primary-btn", () => completeTaskWithUndo(hero.item)),
-      createButton("Abrir", "ghost-btn", () => selectItem("task", hero.item.id))
-    );
-  } else if (hero.kind === "event") {
-    actions.append(
-      createButton("Abrir", "primary-btn", () => selectItem("event", hero.item.id)),
-      createButton("Editar", "ghost-btn", () => openEventModal(hero.item))
-    );
-  }
-
-  card.append(title);
-  if (meta) {
-    card.append(meta);
-  }
-  card.append(actions);
-  return card;
-}
-
-function renderTodayView(root) {
-  const wrap = createElement("div", "today-grid");
-  const query = (state.ui.search || "").trim().toLowerCase();
-
-  const captureCard = createElement("div", "card");
-  captureCard.append(createElement("div", "card-title", "Captura"));
-  const capture = document.createElement("input");
-  capture.className = "capture-input";
-  capture.placeholder = "Capturar para hoje (ex: reuniao 14:00)";
-  capture.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      const value = capture.value.trim();
-      if (!value) {
-        return;
-      }
-      const captureInfo = inferQuickCapture(value);
-      if (!captureInfo) {
-        return;
-      }
-      if (captureInfo.kind === "event") {
-        const eventItem = createEvent({
-          title: captureInfo.title,
-          date: captureInfo.date || getTodayKey(),
-          start: captureInfo.time || "09:00",
-          duration: DEFAULT_EVENT_DURATION
-        });
-        state.events.push(eventItem);
-        showToast("Evento criado.");
-      } else if (captureInfo.kind === "note") {
-        openNoteModal({ title: captureInfo.title });
-        capture.value = "";
-        return;
-      } else {
-        const task = createTask({ title: captureInfo.title, dueDate: captureInfo.date || getTodayKey() });
-        state.tasks.unshift(task);
-        showToast("Tarefa criada.");
-      }
-      capture.value = "";
-      saveState();
-      renderMain();
-    }
-  });
-  captureCard.append(capture);
-  wrap.append(captureCard);
-
-  const focusSection = createSection("Agora", "");
-  const hero = getHeroCandidate();
-  if (hero) {
-    focusSection.body.append(createHeroCard(hero));
-  }
-  const focusTasks = state.tasks.filter(
-    (task) =>
-      task.status !== "done" &&
-      task.focus &&
-      matchesTaskSearch(task, query)
-  ).filter((task) => !hero || hero.kind !== "task" || task.id !== hero.item.id);
-  if (focusTasks.length) {
-    const grid = createElement("div", "focus-grid stagger");
-    focusTasks.slice(0, 3).forEach((task, index) => {
-      const card = createTaskCard(task, { compact: true });
-      card.style.setProperty("--delay", `${index * 40}ms`);
-      grid.append(card);
-    });
-    focusSection.body.append(grid);
-  }
-  if (!hero && !focusTasks.length) {
-    focusSection.body.append(createElement("div", "list-meta", "Sem itens."));
-  }
-  wrap.append(focusSection.section);
-
-  const agendaSection = createSection("Agenda", "");
-  const timeline = createElement("div", "timeline");
-  const agendaItems = getAgendaItems(getTodayKey()).filter((item) =>
-    matchesQuery(item.title, query)
-  );
-  getCalendarSlots().forEach((time) => {
-    const slot = createElement("div", "timeline-slot");
-    const label = createElement("div", "timeline-time", time);
-    slot.append(label);
-    const slotItems = agendaItems.filter((item) => item.start === time);
-    slotItems.forEach((item) => {
-      const chip = createCalendarChip(item);
-      slot.append(chip);
-    });
-    attachDropHandlers(slot, { date: getTodayKey(), time });
-    slot.addEventListener("click", () => openEventModal({ date: getTodayKey(), start: time }));
-    timeline.append(slot);
-  });
-  agendaSection.body.append(timeline);
-  wrap.append(agendaSection.section);
-
-  const tasksSection = createSection("Proximo", "");
-  const overdue = getOverdueTasks().filter((task) => matchesTaskSearch(task, query));
-  if (overdue.length) {
-    const overdueWrap = createElement("div", "section");
-    const header = createElement("div", "section-header");
-    const title = createElement("div", "section-title", `Atrasadas (${overdue.length})`);
-    const toggle = createButton(
-      state.ui.overdueCollapsed ? "Mostrar" : "Ocultar",
-      "ghost-btn",
-      () => {
-        state.ui.overdueCollapsed = !state.ui.overdueCollapsed;
-        saveState();
-        renderMain();
-      }
-    );
-    header.append(title, toggle);
-    overdueWrap.append(header);
-    if (!state.ui.overdueCollapsed) {
-      overdue.forEach((task) => overdueWrap.append(createTaskRow(task)));
-    }
-    tasksSection.body.append(overdueWrap);
-  }
-
-  const todayTasks = getTodayTasks().filter((task) => matchesTaskSearch(task, query));
-  if (!todayTasks.length) {
-    tasksSection.body.append(createElement("div", "list-meta", "Sem itens."));
-  } else {
-    todayTasks.forEach((task) => tasksSection.body.append(createTaskRow(task)));
-  }
-  wrap.append(tasksSection.section);
-
-  const nextSection = createSection("Depois", "");
-  const nextTasks = getNextDaysTasks(7)
-    .filter((task) => task.dueDate !== getTodayKey())
-    .filter((task) => matchesTaskSearch(task, query))
-    .slice(0, 7);
-  if (!nextTasks.length) {
-    nextSection.body.append(createElement("div", "list-meta", "Sem itens."));
-  } else {
-    nextTasks.forEach((task) => nextSection.body.append(createTaskRow(task, { compact: true })));
-  }
-  wrap.append(nextSection.section);
-
-  root.append(wrap);
-}
-
-function renderInboxView(root) {
-  state.ui.inboxSelection = state.ui.inboxSelection.filter((id) =>
-    state.inbox.some((item) => item.id === id)
-  );
-  const capture = document.createElement("input");
-  capture.className = "capture-input";
-  capture.placeholder = "Capturar no inbox (sem organizar)";
-  capture.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      const value = capture.value.trim();
-      if (!value) {
-        return;
-      }
-      state.inbox.unshift(createInboxItem(value));
-      capture.value = "";
-      saveState();
-      renderMain();
-    }
-  });
-
-  root.append(capture);
-
-  if (state.ui.inboxSelection.length) {
-    const bulk = createElement("div", "bulk-bar");
-    bulk.append(
-      createElement("div", "card-title", `${state.ui.inboxSelection.length} selecionados`)
-    );
-    bulk.append(
-      createButton("Processar", "ghost-btn", () =>
-        openBulkProcessModal(state.ui.inboxSelection)
-      )
-    );
-    bulk.append(
-      createButton("Arquivar", "ghost-btn", () =>
-        bulkArchiveInbox(state.ui.inboxSelection)
-      )
-    );
-    bulk.append(
-      createButton("Deletar", "ghost-btn danger", () =>
-        bulkDeleteInbox(state.ui.inboxSelection)
-      )
-    );
-    root.append(bulk);
-  }
-
-  const list = createElement("div", "inbox-list");
-  if (!state.inbox.length) {
-    list.append(createElement("div", "empty", "Inbox vazia."));
-  } else {
-    const kindOrder = { event: 0, task: 1, note: 2 };
-    const filtered = state.inbox
-      .filter((item) => matchesQuery(item.title, state.ui.search))
-      .sort((a, b) => {
-        const rankA = kindOrder[a.kind] ?? 3;
-        const rankB = kindOrder[b.kind] ?? 3;
-        if (rankA !== rankB) return rankA - rankB;
-        return new Date(b.createdAt) - new Date(a.createdAt);
-      });
-    filtered.forEach((item) => list.append(createInboxRow(item)));
-  }
-  root.append(list);
-}
-
 function renderCalendarView(root) {
-  const tabs = createElement("div", "week-tabs");
-  const activeTab = state.ui.calendarTabTouched ? state.ui.calendarTab : "month";
-  const monthBtn = createButton("Mes", "tab-btn", () => setCalendarTab("month"));
-  const weekBtn = createButton("Semana", "tab-btn", () => setCalendarTab("week"));
-  monthBtn.classList.toggle("active", activeTab === "month");
-  weekBtn.classList.toggle("active", activeTab === "week");
-  tabs.append(monthBtn, weekBtn);
-  root.append(tabs);
-
-  if (activeTab === "week") {
-    renderCalendarWeek(root);
-  } else {
-    renderCalendarMonth(root);
-  }
-}
-
-function renderCalendarWeek(root) {
-  const grid = createElement("div", "calendar-week-grid");
-  const days = getWeekDays(0);
-  days.forEach((day) => {
-    const column = createElement("div", "calendar-day");
-    const header = createElement("div", "calendar-day-header");
-    header.append(createElement("span", "", day.label));
-    const headerBtn = createButton("+", "ghost-btn", (event) => {
-      event.stopPropagation();
-      openEventModal({ date: day.date });
-    });
-    headerBtn.classList.add("calendar-header-btn");
-    header.append(headerBtn);
-    column.append(header);
-    const items = getAgendaItems(day.date);
-    if (items.length) {
-      items.forEach((item) => column.append(createCalendarChip(item)));
-    }
-    column.addEventListener("click", () => openEventModal({ date: day.date }));
-    grid.append(column);
-  });
-  root.append(grid);
+  renderCalendarMonth(root);
 }
 
 function renderCalendarMonth(root) {
@@ -2604,24 +1285,17 @@ function renderCalendarMonth(root) {
       cell.classList.add("muted");
     }
     cell.append(createElement("div", "calendar-day-number", `${day.getDate()}`));
-    const items = getAgendaItems(dayKey);
-    if (items.length) {
-      const count = createElement("div", "list-meta", `${items.length} itens`);
+    const dueCount = state.tasks.filter(
+      (task) => task.dueDate === dayKey && task.status !== "done"
+    ).length;
+    if (dueCount) {
+      const count = createElement("div", "list-meta", `${dueCount} itens`);
       cell.append(count);
     }
-    cell.addEventListener("click", () => {
-      openEventModal({ date: dayKey });
-    });
+    cell.addEventListener("click", () => openDayView(dayKey));
     grid.append(cell);
   }
   root.append(grid);
-}
-
-function setCalendarTab(tab) {
-  state.ui.calendarTab = tab;
-  state.ui.calendarTabTouched = true;
-  saveState();
-  renderMain();
 }
 
 function shiftCalendarMonth(offset) {
@@ -2630,158 +1304,8 @@ function shiftCalendarMonth(offset) {
   renderMain();
 }
 
-function renderWeekView(root) {
-  const tabs = createElement("div", "week-tabs");
-  const planBtn = createButton("Planejar", "tab-btn", () => setWeekTab("plan"));
-  const reviewBtn = createButton("Revisar", "tab-btn", () => setWeekTab("review"));
-  planBtn.classList.toggle("active", state.ui.weekTab === "plan");
-  reviewBtn.classList.toggle("active", state.ui.weekTab === "review");
-  tabs.append(planBtn, reviewBtn);
-  root.append(tabs);
-
-  if (state.ui.weekTab === "review") {
-    renderWeekReview(root);
-  } else {
-    renderWeekPlan(root);
-  }
-}
-
-function renderWeekPlan(root) {
-  const layout = createElement("div", "week-layout");
-  const grid = createElement("div", "week-grid");
-  const days = getWeekDays(state.ui.weekOffset);
-  const query = (state.ui.search || "").trim().toLowerCase();
-
-  days.forEach((day) => {
-    const column = createElement("div", "week-day");
-    const header = createElement("div", "week-header");
-    const label = createElement("span", "", day.label);
-    header.append(label);
-    const headerBtn = createButton("+", "ghost-btn", (event) => {
-      event.stopPropagation();
-      openEventModal({ date: day.date });
-    });
-    headerBtn.classList.add("week-header-btn");
-    header.append(headerBtn);
-    if (day.isToday) {
-      label.classList.add("pill");
-    }
-    header.addEventListener("click", () => openEventModal({ date: day.date }));
-    column.append(header);
-    attachDropHandlers(column, { date: day.date, time: null });
-
-    const dayTasks = state.tasks.filter((task) => {
-      if (task.status === "done") {
-        return false;
-      }
-      return task.dueDate === day.date && !task.timeBlock && matchesTaskSearch(task, query);
-    });
-    dayTasks.forEach((task) => {
-      column.append(createTaskRow(task, { compact: true }));
-    });
-
-    getCalendarSlots().forEach((time) => {
-      const slot = createElement("div", "week-slot");
-      const label = createElement("div", "list-meta", time);
-      slot.append(label);
-      let slotItems = getScheduledItems(day.date, time).filter((item) =>
-        matchesQuery(item.title, query)
-      );
-      if (!state.ui.weekShowTimeBlocks) {
-        slotItems = slotItems.filter((item) => item.kind === "event");
-      }
-      slotItems.forEach((item) => {
-        const chip = createCalendarChip(item);
-        slot.append(chip);
-      });
-      attachDropHandlers(slot, { date: day.date, time });
-      slot.addEventListener("click", (event) => {
-        if (event.target.closest(".calendar-chip")) {
-          return;
-        }
-        openEventModal({ date: day.date, start: time });
-      });
-      column.append(slot);
-    });
-    grid.append(column);
-  });
-
-  layout.append(grid);
-
-  const side = createElement("div", "week-tasks");
-  const weekTasks = state.tasks.filter((task) => {
-    if (task.status === "done") {
-      return false;
-    }
-    return (
-      (!task.dueDate || !days.find((day) => day.date === task.dueDate)) &&
-      matchesTaskSearch(task, query)
-    );
-  });
-
-  if (!weekTasks.length) {
-    side.append(createElement("div", "empty", "Sem itens."));
-  } else {
-    weekTasks.forEach((task) => side.append(createTaskRow(task)));
-  }
-
-  layout.append(side);
-  root.append(layout);
-}
-
-function renderWeekReview(root) {
-  const sections = [
-    { title: "Inbox pendente", items: state.inbox, type: "inbox" },
-    { title: "Atrasadas", items: getOverdueTasks(), type: "task" },
-    { title: "Proximas 14 dias", items: getNextDaysTasks(14), type: "task" },
-    {
-      title: "Sem projeto/area",
-      items: state.tasks.filter(
-        (task) =>
-          task.status !== "done" &&
-          !task.projectId &&
-          !task.areaId
-      ),
-      type: "task"
-    },
-    {
-      title: "Projetos sem proximo passo",
-      items: state.projects.filter((project) => {
-        if (project.status === "done") return false;
-        return !state.tasks.some(
-          (task) => task.projectId === project.id && task.status !== "done"
-        );
-      }),
-      type: "project"
-    }
-  ];
-
-  sections.forEach((section) => {
-    const block = createSection(section.title, "");
-    if (!section.items.length) {
-      block.body.append(createElement("div", "list-meta", "Sem itens."));
-    } else {
-      section.items.forEach((item) => {
-        if (section.type === "task") {
-          block.body.append(createTaskRow(item, { compact: true }));
-        } else if (section.type === "inbox") {
-          block.body.append(createInboxRow(item, { compact: true }));
-        } else if (section.type === "project") {
-          const card = createProjectCard(item);
-          card.addEventListener("click", () => navigate(`/projects/${item.id}`));
-          block.body.append(card);
-        }
-      });
-    }
-    root.append(block.section);
-  });
-
-  const closeBtn = createButton("Fechar semana", "primary-btn", () => {
-    state.meta.lastReviewAt = new Date().toISOString();
-    saveState();
-    showToast("Revisao registrada.");
-  });
-  root.append(closeBtn);
+function openDayView(dateKey) {
+  showToast(`Dia ${dateKey}`);
 }
 
 function renderProjectsView(root) {
